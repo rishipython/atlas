@@ -1,0 +1,139 @@
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Triton kernel that performs LayerNorm over the last dimension of a 2‑D tensor
+@triton.jit
+def _layernorm_kernel(
+    x_ptr,          # input tensor pointer
+    weight_ptr,     # weight vector pointer
+    bias_ptr,       # bias vector pointer
+    y_ptr,          # output tensor pointer
+    M: tl.constexpr,
+    N: tl.constexpr,
+    stride_x: tl.constexpr,
+    stride_y: tl.constexpr,
+    eps: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)  # one program per row
+    # base offsets for this row
+    base_x = row * stride_x
+    base_y = row * stride_y
+
+    # First pass: compute mean and variance
+    sum_  = 0.0
+    sum_sq = 0.0
+
+    for i in range(0, N, BLOCK):
+        # mask for the current block
+        mask = (i + tl.arange(0, BLOCK)) < N
+        # load input values as float32 for precision
+        vals = tl.load(x_ptr + base_x + i + tl.arange(0, BLOCK), mask=mask, other=0.0, dtype=tl.float32)
+        sum_  += tl.sum(vals, axis=0)
+        sum_sq += tl.sum(vals * vals, axis=0)
+
+    mean = sum_ / N
+    var  = sum_sq / N - mean * mean
+    denom = tl.sqrt(var + eps)
+
+    # Second pass: compute output
+    for i in range(0, N, BLOCK):
+        mask = (i + tl.arange(0, BLOCK)) < N
+
+        # load input, weight and bias
+        vals = tl.load(x_ptr + base_x + i + tl.arange(0, BLOCK), mask=mask, other=0.0, dtype=tl.float32)
+        w_vals = tl.load(weight_ptr + i + tl.arange(0, BLOCK), mask=mask, other=0.0, dtype=tl.float32)
+        b_vals = tl.load(bias_ptr + i + tl.arange(0, BLOCK), mask=mask, other=0.0, dtype=tl.float32)
+
+        # LayerNorm formula
+        norm = (vals - mean) / denom
+        out_f = w_vals * norm + b_vals
+
+        # cast back to original dtype of x
+        out = out_f.to(x_ptr.dtype)
+        tl.store(y_ptr + base_y + i + tl.arange(0, BLOCK), out, mask=mask)
+
+
+def optimized_layernorm(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
+    """
+    Layer Normalization over the last dimension of a 2‑D tensor using Triton.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (M, N).
+    weight : torch.Tensor
+        Learnable weight vector of shape (N,).
+    bias : torch.Tensor
+        Learnable bias vector of shape (N,).
+    eps : float, optional
+        Small epsilon for numerical stability (default: 1e-5).
+
+    Returns
+    -------
+    torch.Tensor
+        Normalized output tensor of the same shape and dtype as `x`.
+    """
+    assert x.dim() == 2, "Input tensor must be 2-D"
+    assert weight.dim() == 1 and bias.dim() == 1, "Weight and bias must be 1-D"
+    M, N = x.shape
+    assert weight.shape[0] == N and bias.shape[0] == N, "Weight and bias must match last dimension"
+
+    # Ensure tensors are contiguous for stride calculations
+    x = x.contiguous()
+    weight = weight.contiguous()
+    bias = bias.contiguous()
+
+    y = torch.empty_like(x)
+
+    # Block size for vectorized operations
+    BLOCK = 128
+
+    # Strides
+    stride_x = x.stride(0)
+    stride_y = y.stride(0)
+
+    grid = (M,)
+
+    _layernorm_kernel[grid](
+        x_ptr=x,
+        weight_ptr=weight,
+        bias_ptr=bias,
+        y_ptr=y,
+        M=M,
+        N=N,
+        stride_x=stride_x,
+        stride_y=stride_y,
+        eps=eps,
+        BLOCK=BLOCK,
+    )
+
+    return y
+
+
+# ------------------ Test harness ------------------
+if __name__ == "__main__":
+    torch.manual_seed(42)
+
+    def test(shape, dtype=torch.float32):
+        M, N = shape["M"], shape["N"]
+        x = torch.randn(M, N, dtype=dtype, device="cuda")
+        weight = torch.randn(N, dtype=dtype, device="cuda")
+        bias = torch.randn(N, dtype=dtype, device="cuda")
+
+        ref = torch.nn.functional.layer_norm(x, [N], weight, bias, eps=1e-5)
+        out = optimized_layernorm(x, weight, bias, eps=1e-5)
+
+        if not torch.allclose(ref, out, atol=0.01, rtol=0.01):
+            diff = (ref - out).abs().max()
+            print(f"FAIL shape {shape} diff {diff}")
+        else:
+            print(f"PASS shape {shape}")
+
+    shapes = [{"M": 1024, "N": 1024}, {"M": 2048, "N": 4096}]
+    for s in shapes:
+        test(s, dtype=torch.float32)
+        test(s, dtype=torch.float16)
+```

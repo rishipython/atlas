@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from benchmark.base import EvalResult
-from benchmark.kernel.problems import KernelProblem
+from benchmark.kernel.problems import KERNEL_PROBLEMS, KernelProblem
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,30 @@ def evaluate_kernel(
     gpu_id: int = 0,
 ) -> EvalResult:
     """Run *generated_code* against *problem* in an isolated subprocess."""
+
+    if not generated_code or not generated_code.strip():
+        return EvalResult(
+            problem_id=problem.problem_id,
+            correct=False,
+            score=0.0,
+            feedback=(
+                "No code extracted from model response. "
+                "Expected a ```python fenced block containing "
+                f"`def {problem.entry_point}(...)`."
+            ),
+        )
+
+    if f"def {problem.entry_point}" not in generated_code:
+        return EvalResult(
+            problem_id=problem.problem_id,
+            correct=False,
+            score=0.0,
+            feedback=(
+                f"Extracted code does not define `{problem.entry_point}`. "
+                "Make sure the wrapper function is named exactly "
+                f"`{problem.entry_point}` and lives in the final ```python block."
+            ),
+        )
 
     harness = _HARNESS.format(
         reference_code=problem.reference_code,
@@ -195,3 +219,80 @@ def evaluate_kernel(
         feedback="\n".join(lines),
         metadata={"per_shape": results},
     )
+
+
+def _main():
+    """CLI helper: evaluate a candidate solution for a single kernel problem.
+
+    Reads the solution from a file (``-f``) or from stdin. By default the
+    input is passed through ``extract_code``, so you can paste the raw
+    model response (including ``<think>`` traces and surrounding prose)
+    and the last ```python fenced block will be pulled out and run.
+
+    Requires an actual GPU environment with Triton installed — this won't
+    run on macOS / CPU-only machines.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Run and evaluate a candidate Triton solution.",
+    )
+    parser.add_argument(
+        "--problem-id", "-p",
+        required=True,
+        choices=sorted(KERNEL_PROBLEMS.keys()),
+        help="Which kernel problem to evaluate against.",
+    )
+    parser.add_argument(
+        "--file", "-f",
+        type=str, default=None,
+        help="Path to a file containing the solution. If omitted, read stdin.",
+    )
+    parser.add_argument(
+        "--raw",
+        action="store_true",
+        help=(
+            "Skip markdown extraction and pass the input verbatim to the "
+            "evaluator. Use when your input is already pure Python code."
+        ),
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int, default=120,
+        help="Subprocess timeout in seconds (default 120).",
+    )
+    parser.add_argument(
+        "--gpu-id",
+        type=int, default=0,
+        help="CUDA_VISIBLE_DEVICES value for the subprocess (default 0).",
+    )
+    args = parser.parse_args()
+
+    if args.file:
+        raw = Path(args.file).read_text()
+    else:
+        raw = sys.stdin.read()
+
+    if args.raw:
+        solution = raw.strip()
+    else:
+        from utils.extract import extract_code
+        solution = extract_code(raw)
+
+    if not solution:
+        print("[error] no solution extracted from input", file=sys.stderr)
+        sys.exit(2)
+
+    problem = KERNEL_PROBLEMS[args.problem_id]
+    result = evaluate_kernel(
+        problem, solution, timeout=args.timeout, gpu_id=args.gpu_id
+    )
+
+    status = "PASS" if result.correct else "FAIL"
+    print(f"[{status}] {result.problem_id}  score={result.score:.3f}")
+    print(result.feedback)
+    sys.exit(0 if result.correct else 1)
+
+
+if __name__ == "__main__":
+    _main()

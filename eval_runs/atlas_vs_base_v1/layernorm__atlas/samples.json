@@ -1,0 +1,74 @@
+[
+  {
+    "sample_idx": 0,
+    "raw_length": 3448,
+    "code_length": 3434,
+    "gen_time_s": 19.1,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\neu64txj.py\", line 109, in <module>\n    triton_out = optimized_layernorm(x, weight, bias)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_neu64txj.py\", line 83, in optimized_layernorm\n    _layernorm_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 14:14:\n    M: tl.constexpr, N: tl.constexpr,\n    stride_x, stride_w, stride_b, stride_out,\n    eps: tl.constexpr,\n    BLOCK_N: tl.constexpr\n):\n    # Each program handles one row\n    row = tl.program_id(0)\n    if row >= M:\n        return\n\n    # --- compute mean and variance over the row ---\n    sum_val = tl.zeros([1], dtype=tl.float32)[0]\n              ^\nunsupported tensor index: constexpr[0]\n"
+  },
+  {
+    "sample_idx": 1,
+    "raw_length": 2898,
+    "code_length": 2884,
+    "gen_time_s": 25.4,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "  {'M': 1024, 'N': 1024}: INCORRECT \u2014 /site-packages/triton/runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 18:13:\n    stride_x: tl.int32,\n    eps: tl.float32,\n    BLOCK_N: tl.constexpr,\n):\n    \"\"\"\n    Triton kernel that performs layer normalization over the last dimension\n    of a 2\u2011D tensor. Each program processes one row of the input.\n    \"\"\"\n    row = tl.program_id(0)\n\n    # ---------- First pass: compute mean and variance ----------\n    sum_   = tl.zeros([1], dtype=tl.float32)[0]\n             ^\nunsupported tensor index: constexpr[0]\n\n  {'M': 2048, 'N': 4096}: INCORRECT \u2014 /site-packages/triton/runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 18:13:\n    stride_x: tl.int32,\n    eps: tl.float32,\n    BLOCK_N: tl.constexpr,\n):\n    \"\"\"\n    Triton kernel that performs layer normalization over the last dimension\n    of a 2\u2011D tensor. Each program processes one row of the input.\n    \"\"\"\n    row = tl.program_id(0)\n\n    # ---------- First pass: compute mean and variance ----------\n    sum_   = tl.zeros([1], dtype=tl.float32)[0]\n             ^\nunsupported tensor index: constexpr[0]\n"
+  },
+  {
+    "sample_idx": 2,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 26.06,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_layernorm(...)`."
+  },
+  {
+    "sample_idx": 3,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 26.06,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_layernorm(...)`."
+  },
+  {
+    "sample_idx": 4,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 26.1,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_layernorm(...)`."
+  },
+  {
+    "sample_idx": 5,
+    "raw_length": 3021,
+    "code_length": 3021,
+    "gen_time_s": 26.08,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\n  File \"/tmp/atlas_eval_q89qtz35.py\", line 12\n    ```python\n    ^\nSyntaxError: invalid syntax\n"
+  },
+  {
+    "sample_idx": 6,
+    "raw_length": 3132,
+    "code_length": 3118,
+    "gen_time_s": 23.52,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\nTraceback (most recent call last):\n  File \"/tmp/atlas_eval_3fnpf_si.py\", line 116, in <module>\n    assert torch.allclose(ref, out, atol=1e-2, rtol=1e-2), f\"Mismatch for shape {cfg}\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Mismatch for shape {'M': 1024, 'N': 1024}\n"
+  },
+  {
+    "sample_idx": 7,
+    "raw_length": 2983,
+    "code_length": 2969,
+    "gen_time_s": 25.76,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "  {'M': 1024, 'N': 1024}: INCORRECT \u2014 /runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 27:12:\n    row = tl.program_id(0)\n    if row >= M:\n        return\n\n    # --- 1st pass: compute mean and variance per row -----------------\n    sum = 0.0\n    sumsq = 0.0\n    for start in range(0, N, BLOCK_N):\n        offset = row * stride_x + start\n        ptr = x_ptr + offset\n        mask = start + tl.arange(0, BLOCK_N) < N\n        x = tl.load(ptr, mask=mask, other=0.0)\n            ^\nMask argument cannot be block type if pointer argument is not a block\n\n  {'M': 2048, 'N': 4096}: INCORRECT \u2014 /runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 27:12:\n    row = tl.program_id(0)\n    if row >= M:\n        return\n\n    # --- 1st pass: compute mean and variance per row -----------------\n    sum = 0.0\n    sumsq = 0.0\n    for start in range(0, N, BLOCK_N):\n        offset = row * stride_x + start\n        ptr = x_ptr + offset\n        mask = start + tl.arange(0, BLOCK_N) < N\n        x = tl.load(ptr, mask=mask, other=0.0)\n            ^\nMask argument cannot be block type if pointer argument is not a block\n"
+  }
+]

@@ -1,0 +1,142 @@
+```python
+import torch
+import triton
+import triton.language as tl
+
+# --------------------------------------------------------------------------- #
+# Triton kernel for matrix multiplication (float32)
+# --------------------------------------------------------------------------- #
+@triton.jit
+def _matmul_kernel(
+    A_ptr, B_ptr, C_ptr,
+    M, N, K,
+    stride_a_m, stride_a_k,
+    stride_b_k, stride_b_n,
+    stride_c_m, stride_c_n,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    """
+    A: (M, K), B: (K, N), C: (M, N)
+    """
+    # Block coordinates
+    row = tl.program_id(0) * BLOCK_M
+    col = tl.program_id(1) * BLOCK_N
+
+    # Allocate accumulator
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    # Loop over K dimension
+    for k in range(0, K, BLOCK_K):
+        # Masks for loading A and B
+        a_row = row + tl.arange(0, BLOCK_M)[:, None]
+        a_col = k + tl.arange(0, BLOCK_K)[None, :]
+        b_row = k + tl.arange(0, BLOCK_K)[:, None]
+        b_col = col + tl.arange(0, BLOCK_N)[None, :]
+
+        a_mask = (a_row < M) & (a_col < K)
+        b_mask = (b_row < K) & (b_col < N)
+
+        # Load tiles
+        a = tl.load(
+            A_ptr + a_row * stride_a_m + a_col * stride_a_k,
+            mask=a_mask,
+            other=0.0,
+        )
+        b = tl.load(
+            B_ptr + b_row * stride_b_k + b_col * stride_b_n,
+            mask=b_mask,
+            other=0.0,
+        )
+
+        # Accumulate
+        acc += tl.dot(a, b)
+
+    # Write the result
+    c_row = row + tl.arange(0, BLOCK_M)[:, None]
+    c_col = col + tl.arange(0, BLOCK_N)[None, :]
+    c_mask = (c_row < M) & (c_col < N)
+
+    tl.store(
+        C_ptr + c_row * stride_c_m + c_col * stride_c_n,
+        acc,
+        mask=c_mask,
+    )
+
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
+def optimized_matmul(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    """
+    Compute C = A @ B using a Triton kernel.
+
+    Parameters
+    ----------
+    A : torch.Tensor
+        Shape (M, K), dtype float32, on GPU.
+    B : torch.Tensor
+        Shape (K, N), dtype float32, on GPU.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape (M, N), dtype float32.
+    """
+    assert A.is_cuda and B.is_cuda, "Triton kernel requires GPU tensors."
+    assert A.dim() == 2 and B.dim() == 2, "A and B must be 2-D."
+    M, K = A.shape
+    K2, N = B.shape
+    assert K == K2, f"Inner dimensions must match: got {K} and {K2}."
+
+    C = torch.empty((M, N), dtype=A.dtype, device=A.device)
+
+    # Block sizes (tuned for 512/1024 matrices)
+    BLOCK_M = 128
+    BLOCK_N = 128
+    BLOCK_K = 128
+
+    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
+
+    _matmul_kernel[grid](
+        A, B, C,
+        M, N, K,
+        A.stride(0), A.stride(1),
+        B.stride(0), B.stride(1),
+        C.stride(0), C.stride(1),
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_K=BLOCK_K,
+    )
+
+    return C
+
+# --------------------------------------------------------------------------- #
+# Reference implementation (for testing)
+# --------------------------------------------------------------------------- #
+def reference_matmul(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    return torch.matmul(A, B)
+
+# --------------------------------------------------------------------------- #
+# Optional: simple test harness
+# --------------------------------------------------------------------------- #
+if __name__ == "__main__":
+    torch.manual_seed(0)
+    shapes = [
+        {"M": 512, "K": 512, "N": 512},
+        {"M": 1024, "K": 1024, "N": 1024},
+    ]
+
+    for shape in shapes:
+        M, K, N = shape["M"], shape["K"], shape["N"]
+        A = torch.randn(M, K, dtype=torch.float32, device="cuda")
+        B = torch.randn(K, N, dtype=torch.float32, device="cuda")
+
+        C_ref = reference_matmul(A, B)
+        C_opt = optimized_matmul(A, B)
+
+        if not torch.allclose(C_ref, C_opt, atol=0.1, rtol=0.1):
+            print(f"Mismatch for shape {shape}")
+        else:
+            print(f"Success for shape {shape}")
+```

@@ -64,11 +64,68 @@ for the following operation.
 
 ## Requirements
 - Use the Triton library (`import triton` and `import triton.language as tl`).
-- Define a Python wrapper function named `{kp.entry_point}` that accepts the \
-same inputs as the reference function and returns a `torch.Tensor`.
+- Define a Python wrapper function named exactly `{kp.entry_point}` that \
+accepts the same inputs as the reference function and returns a `torch.Tensor`.
 - The wrapper should allocate the output tensor, compute grid dimensions, and \
 launch your Triton kernel.
 - Output must be numerically close to the reference (atol={kp.atol}, rtol={kp.rtol}).
+- Include any `import` statements your code needs (e.g. `import torch`, \
+`import triton`, `import triton.language as tl`).
 
-Return ONLY valid Python code (no markdown fences, no explanations). The code \
-will be executed directly."""
+## Response format
+You may reason through the problem first. When you are done, put the final, \
+complete, self-contained solution as the **last** fenced code block in your \
+response, in exactly this form:
+
+```python
+# your full solution here (imports + kernel + wrapper function `{kp.entry_point}`)
+```
+
+Only the contents of the last ```python ... ``` block will be executed; \
+everything outside it is ignored. Do not split the solution across multiple \
+blocks — the last block must be runnable on its own."""
+
+
+def _main():
+    """CLI helper: print the full prompt (system + user) for a given problem.
+
+    Useful for eyeballing what the model actually sees, or for piping into
+    a chat UI to smoke-test a model without spinning up vLLM/Modal.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Print the full prompt for a kernel problem.",
+    )
+    parser.add_argument(
+        "--problem-id", "-p",
+        required=True,
+        choices=sorted(KERNEL_PROBLEMS.keys()),
+        help="Which kernel problem to render the prompt for.",
+    )
+    parser.add_argument(
+        "--part",
+        choices=["system", "user", "both"],
+        default="both",
+        help="Which part of the prompt to print (default: both).",
+    )
+    args = parser.parse_args()
+
+    from agent.prompts import TRITON_SYSTEM_PROMPT
+
+    user = _build_prompt(KERNEL_PROBLEMS[args.problem_id])
+
+    if args.part == "system":
+        print(TRITON_SYSTEM_PROMPT)
+    elif args.part == "user":
+        print(user)
+    else:
+        print("=" * 20 + " SYSTEM PROMPT " + "=" * 20)
+        print(TRITON_SYSTEM_PROMPT)
+        print()
+        print("=" * 20 + " USER PROMPT " + "=" * 20)
+        print(user)
+
+
+if __name__ == "__main__":
+    _main()

@@ -1,0 +1,108 @@
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Kernel that computes the maximum value of each row
+@triton.jit
+def _softmax_max_kernel(
+    x_ptr,  # input tensor pointer
+    max_ptr,  # output max buffer pointer
+    M, N,  # dimensions
+    stride_x,  # stride of the input tensor
+    BLOCK_N: tl.constexpr,  # block size along the last dimension
+):
+    pid = tl.program_id(0)
+    if pid >= M:
+        return
+
+    # Compute max for this row
+    max_val = -float("inf")
+    row_offset = pid * stride_x
+    for i in range(0, N, BLOCK_N):
+        offset = i
+        mask = (offset + tl.arange(0, BLOCK_N) < N)
+        ptr = x_ptr + row_offset + offset
+        vals = tl.load(ptr, mask=mask, other=-float("inf"))
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+    tl.store(max_ptr + pid, max_val)
+
+
+# Kernel that computes softmax using the pre-computed row-wise max
+@triton.jit
+def _softmax_kernel(
+    x_ptr,
+    max_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x,
+    stride_out,
+    BLOCK_N: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    if pid >= M:
+        return
+
+    max_val = tl.load(max_ptr + pid)
+    row_offset_x = pid * stride_x
+    row_offset_out = pid * stride_out
+
+    # First pass: compute sum of exp(row - max)
+    sum_exp = 0.0
+    for i in range(0, N, BLOCK_N):
+        offset = i
+        mask = (offset + tl.arange(0, BLOCK_N) < N)
+        ptr = x_ptr + row_offset_x + offset
+        vals = tl.load(ptr, mask=mask, other=0.0)
+        vals = vals - max_val
+        vals = tl.exp(vals)
+        sum_exp += tl.sum(vals, axis=0)
+
+    # Second pass: compute softmax and write to output
+    for i in range(0, N, BLOCK_N):
+        offset = i
+        mask = (offset + tl.arange(0, BLOCK_N) < N)
+        ptr = x_ptr + row_offset_x + offset
+        out_ptr_l = out_ptr + row_offset_out + offset
+        vals = tl.load(ptr, mask=mask, other=0.0)
+        vals = vals - max_val
+        vals = tl.exp(vals) / sum_exp
+        tl.store(out_ptr_l, vals, mask=mask)
+
+
+def optimized_softmax(x: torch.Tensor) -> torch.Tensor:
+    """
+    Compute softmax along the last dimension of a 2-D tensor using Triton.
+    Supports arbitrary N (not limited to powers of two).
+    """
+    assert x.ndim == 2, "Input must be 2-D"
+    device = x.device
+    dtype = x.dtype
+
+    M, N = x.shape
+    out = torch.empty_like(x, dtype=dtype, device=device)
+    max_buf = torch.empty(M, dtype=torch.float32, device=device)
+
+    # Define block size for the last dimension
+    BLOCK_N = 128
+
+    # Launch kernel to compute row-wise max
+    grid = (M,)
+    _softmax_max_kernel[grid](
+        x_ptr=x.data_ptr(),
+        max_ptr=max_buf.data_ptr(),
+        M=M,
+        N=N,
+        stride_x=x.stride(0),
+        BLOCK_N=BLOCK_N,
+    )
+
+    # Launch kernel to compute softmax using the pre-computed max
+    _softmax_kernel[grid](
+        x_ptr=x.data_ptr(),
+        max_ptr=max_buf.data_ptr(),
+        out_ptr=out.data_ptr(),
+        M=M,
+        N=N,
+        stride_x=x.stride(0),

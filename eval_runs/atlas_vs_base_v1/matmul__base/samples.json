@@ -1,0 +1,74 @@
+[
+  {
+    "sample_idx": 0,
+    "raw_length": 3912,
+    "code_length": 3898,
+    "gen_time_s": 16.25,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\nTraceback (most recent call last):\n  File \"/tmp/atlas_eval_7v3zrvg6.py\", line 152, in <module>\n    C_opt = optimized_matmul(A, B)\n            ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_7v3zrvg6.py\", line 120, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n"
+  },
+  {
+    "sample_idx": 1,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 21.93,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_matmul(...)`."
+  },
+  {
+    "sample_idx": 2,
+    "raw_length": 2935,
+    "code_length": 2921,
+    "gen_time_s": 15.23,
+    "correct": true,
+    "score": 2.03445,
+    "feedback": "  {'M': 512, 'K': 512, 'N': 512}: correct, speedup=0.9291x\n  {'M': 1024, 'K': 1024, 'N': 1024}: correct, speedup=3.1398x"
+  },
+  {
+    "sample_idx": 3,
+    "raw_length": 3608,
+    "code_length": 3594,
+    "gen_time_s": 18.77,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\nTraceback (most recent call last):\n  File \"/tmp/atlas_eval_m8hiit8r.py\", line 120, in <module>\n    C_opt = optimized_matmul(A, B)\n            ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_m8hiit8r.py\", line 97, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n"
+  },
+  {
+    "sample_idx": 4,
+    "raw_length": 3128,
+    "code_length": 3114,
+    "gen_time_s": 16.86,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\n^^^^\n  File \"/tmp/atlas_eval_3jjjtnq9.py\", line 89, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 38:15:\n    for k in range(0, K, BLOCK_K):\n        # Load a tile of A: (BLOCK_M, BLOCK_K)\n        a_ptr = A + (row + tl.arange(0, BLOCK_M)) * stride_a_m \\\n                      + (k + tl.arange(0, BLOCK_K)) * stride_a_k\n        # Load a tile of B: (BLOCK_K, BLOCK_N)\n        b_ptr = B + (k + tl.arange(0, BLOCK_K)) * stride_b_k \\\n                      + (col + tl.arange(0, BLOCK_N)) * stride_b_n\n\n        a = tl.load(a_ptr)\n        b = tl.load(b_ptr)\n\n        acc += tl.dot(a, b)\n               ^\ninput and other must have equal ranks >= 2\n"
+  },
+  {
+    "sample_idx": 5,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 21.93,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_matmul(...)`."
+  },
+  {
+    "sample_idx": 6,
+    "raw_length": 2533,
+    "code_length": 2519,
+    "gen_time_s": 17.98,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "  {'M': 512, 'K': 512, 'N': 512}: INCORRECT \u2014 Traceback (most recent call last):\n  File \"/tmp/atlas_eval_oxpn03zp.py\", line 131, in main\n    gen_out = gen_fn(*inputs)\n              ^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_oxpn03zp.py\", line 91, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n\n  {'M': 1024, 'K': 1024, 'N': 1024}: INCORRECT \u2014 Traceback (most recent call last):\n  File \"/tmp/atlas_eval_oxpn03zp.py\", line 131, in main\n    gen_out = gen_fn(*inputs)\n              ^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_oxpn03zp.py\", line 91, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n"
+  },
+  {
+    "sample_idx": 7,
+    "raw_length": 3540,
+    "code_length": 3526,
+    "gen_time_s": 19.64,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "  {'M': 512, 'K': 512, 'N': 512}: INCORRECT \u2014 Traceback (most recent call last):\n  File \"/tmp/atlas_eval_t12o6eqr.py\", line 149, in main\n    gen_out = gen_fn(*inputs)\n              ^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_t12o6eqr.py\", line 96, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n\n  {'M': 1024, 'K': 1024, 'N': 1024}: INCORRECT \u2014 Traceback (most recent call last):\n  File \"/tmp/atlas_eval_t12o6eqr.py\", line 149, in main\n    gen_out = gen_fn(*inputs)\n              ^^^^^^^^^^^^^^^\n  File \"/tmp/atlas_eval_t12o6eqr.py\", line 96, in optimized_matmul\n    matmul_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 743, in run\n    launch_metadata = kernel.launch_metadata(grid, stream, *bound_args.values())\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 482, in launch_metadata\n    self._init_handles()\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 456, in _init_handles\n    raise_(OutOfResources(self.metadata.shared, max_shared, \"shared memory\"))\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 448, in raise_\n    raise err\ntriton.runtime.errors.OutOfResources: out of resource: shared memory, Required: 262144, Hardware limit: 166912. Reducing block sizes or `num_stages` may help.\n"
+  }
+]

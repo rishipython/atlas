@@ -1,0 +1,74 @@
+[
+  {
+    "sample_idx": 0,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 24.51,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_softmax(...)`."
+  },
+  {
+    "sample_idx": 1,
+    "raw_length": 3224,
+    "code_length": 3210,
+    "gen_time_s": 16.85,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\n^^^^^^^\n  File \"/tmp/atlas_eval_au80k9gg.py\", line 80, in optimized_softmax\n    _softmax_kernel[grid](\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 370, in <lambda>\n    return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 720, in run\n    kernel = self._do_compile(key, signature, device, constexprs, options, attrs, warmup)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/runtime/jit.py\", line 849, in _do_compile\n    kernel = self.compile(src, target=target, options=options.__dict__)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 304, in compile\n    module = src.make_ir(target, options, codegen_fns, module_map, context)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/triton/compiler/compiler.py\", line 80, in make_ir\n    return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntriton.compiler.errors.CompilationError: at 17:12:\n    stride_y: tl.int32,\n    BLOCK_COLS: tl.constexpr,\n):\n    # The program id corresponds to the row index.\n    row = tl.program_id(0)\n\n    # Compute the row-wise maximum.\n    max_val = tl.full([], -float(\"inf\"), dtype=tl.float32)\n    for offset in range(0, N, BLOCK_COLS):\n        mask = (offset + tl.arange(0, BLOCK_COLS)) < N\n        ptr = X_ptr + row * stride_x + offset * stride_y\n        x = tl.load(ptr, mask=mask, other=-float(\"inf\"))\n            ^\nMask argument cannot be block type if pointer argument is not a block\n"
+  },
+  {
+    "sample_idx": 2,
+    "raw_length": 2101,
+    "code_length": 2101,
+    "gen_time_s": 22.05,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\n  File \"/tmp/atlas_eval_v353yuvj.py\", line 80\n    \"\"\"\n    ^\nSyntaxError: unterminated triple-quoted string literal (detected at line 155)\n"
+  },
+  {
+    "sample_idx": 3,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 22.04,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_softmax(...)`."
+  },
+  {
+    "sample_idx": 4,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 22.03,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_softmax(...)`."
+  },
+  {
+    "sample_idx": 5,
+    "raw_length": 0,
+    "code_length": 0,
+    "gen_time_s": 22.04,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "No code extracted from model response. Expected a ```python fenced block containing `def optimized_softmax(...)`."
+  },
+  {
+    "sample_idx": 6,
+    "raw_length": 2987,
+    "code_length": 2986,
+    "gen_time_s": 22.05,
+    "correct": false,
+    "score": 0.0,
+    "feedback": "Subprocess crashed (rc=1):\n  File \"/tmp/atlas_eval_poliwj_3.py\", line 12\n    ```python\n    ^\nSyntaxError: invalid syntax\n"
+  },
+  {
+    "sample_idx": 7,
+    "raw_length": 2838,
+    "code_length": 2824,
+    "gen_time_s": 16.76,
+    "correct": true,
+    "score": 0.4861,
+    "feedback": "  {'M': 1024, 'N': 1024}: correct, speedup=0.3157x\n  {'M': 2048, 'N': 4096}: correct, speedup=0.5867x\n  {'M': 256, 'N': 8192}: correct, speedup=0.5559x"
+  }
+]

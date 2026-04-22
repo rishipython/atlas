@@ -9,8 +9,12 @@ benchmark:
 
 agent:
   type: llm
-  model: Qwen/Qwen3-8B
+  # model: Qwen/Qwen3-8B
+  model: openai/gpt-oss-20b
   api_base: http://localhost:8000/v1
   api_key: EMPTY
   temperature: 0.6
-  max_tokens: 4096
+  # Reasoning models (gpt-oss, Qwen3-thinking, DeepSeek-R1) spend a lot of
+  # tokens on the internal chain-of-thought before emitting the final code
+  # block. Keep this generous so the ```python block isn't truncated.
+  max_tokens: 16384 # 4096

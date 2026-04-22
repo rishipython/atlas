@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
-import re
 
 from agent.base import AgentResult, BaseAgent
+from agent.prompts import TRITON_SYSTEM_PROMPT
+from utils.extract import extract_code
 from utils.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["LLMAgent", "TRITON_SYSTEM_PROMPT"]
 
 
 class LLMAgent(BaseAgent):
@@ -24,10 +27,7 @@ class LLMAgent(BaseAgent):
     ):
         super().__init__(**kwargs)
         self.llm = llm
-        self.system_prompt = system_prompt or (
-            "You are an expert programmer specializing in GPU kernel optimization "
-            "with Triton. Return ONLY valid Python code with no markdown formatting."
-        )
+        self.system_prompt = system_prompt or TRITON_SYSTEM_PROMPT
         self.temperature = temperature
         self.max_tokens = max_tokens
 
@@ -42,8 +42,11 @@ class LLMAgent(BaseAgent):
             temperature=self.temperature,
             max_tokens=self.max_tokens,
         )
-        solution = _strip_markdown_fences(response)
-        logger.debug("LLMAgent raw response length: %d chars", len(response))
+        solution = extract_code(response)
+        logger.debug(
+            "LLMAgent response: %d chars raw -> %d chars extracted",
+            len(response), len(solution),
+        )
 
         trajectory = [
             {"role": "prompt", "content": prompt},
@@ -54,12 +57,3 @@ class LLMAgent(BaseAgent):
             solution=solution,
             trajectory=trajectory,
         )
-
-
-def _strip_markdown_fences(text: str) -> str:
-    """Remove ```python ... ``` wrappers if present."""
-    pattern = r"```(?:python)?\s*\n(.*?)```"
-    match = re.search(pattern, text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return text.strip()

@@ -1,0 +1,98 @@
+import torch
+import triton
+import triton.language as tl
+
+# Triton kernel that computes softmax along the last dimension of a 2‑D tensor.
+@triton.jit
+def _softmax_kernel(
+    X_ptr: tl.tensor,
+    Y_ptr: tl.tensor,
+    N: tl.int32,
+    stride_x: tl.int32,
+    stride_y: tl.int32,
+    BLOCK_COLS: tl.constexpr,
+):
+    # The program id corresponds to the row index.
+    row = tl.program_id(0)
+
+    # Compute the row-wise maximum.
+    max_val = tl.full([], -float("inf"), dtype=tl.float32)
+    for offset in range(0, N, BLOCK_COLS):
+        mask = (offset + tl.arange(0, BLOCK_COLS)) < N
+        ptr = X_ptr + row * stride_x + offset * stride_y
+        x = tl.load(ptr, mask=mask, other=-float("inf"))
+        x = tl.cast(x, tl.float32)          # cast fp16/bf16 to fp32
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+
+    # Compute the sum of exp(x - max) for the row.
+    sum_val = tl.zeros([], dtype=tl.float32)
+    for offset in range(0, N, BLOCK_COLS):
+        mask = (offset + tl.arange(0, BLOCK_COLS)) < N
+        ptr = X_ptr + row * stride_x + offset * stride_y
+        x = tl.load(ptr, mask=mask, other=0.0)
+        x = tl.cast(x, tl.float32)
+        sum_val += tl.sum(tl.exp(x - max_val), axis=0)
+
+    # Write the softmax output.
+    for offset in range(0, N, BLOCK_COLS):
+        mask = (offset + tl.arange(0, BLOCK_COLS)) < N
+        ptr_in = X_ptr + row * stride_x + offset * stride_y
+        ptr_out = Y_ptr + row * stride_x + offset * stride_y
+        x = tl.load(ptr_in, mask=mask, other=0.0)
+        x = tl.cast(x, tl.float32)
+        x = tl.exp(x - max_val) / sum_val
+        tl.store(ptr_out, x, mask=mask)
+
+
+def optimized_softmax(x: torch.Tensor) -> torch.Tensor:
+    """
+    Compute softmax along the last dimension of a 2‑D tensor using Triton.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor of shape (M, N).
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor of the same shape as `x` containing the softmax probabilities.
+    """
+    assert x.ndim == 2, "Input must be a 2‑D tensor."
+    M, N = x.shape
+    y = torch.empty_like(x, device=x.device)
+
+    # Launch one block per row.
+    grid = (M,)
+    BLOCK_COLS = 128  # Tune this for best performance.
+
+    _softmax_kernel[grid](
+        x,
+        y,
+        N,
+        x.stride(0),
+        x.stride(1),
+        BLOCK_COLS=BLOCK_COLS,
+    )
+    return y
+
+
+# --------------------------------------------------------------------------- #
+# Quick sanity check (runs on CUDA). Uncomment to test directly.
+# --------------------------------------------------------------------------- #
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    shapes = [
+        {"M": 1024, "N": 1024},
+        {"M": 2048, "N": 4096},
+        {"M": 256,  "N": 8192},
+    ]
+    for shape in shapes:
+        M, N = shape["M"], shape["N"]
+        x = torch.randn(M, N, device=device, dtype=torch.float16)
+        y_ref = torch.nn.functional.softmax(x, dim=-1)
+        y_opt = optimized_softmax(x)
+        if not torch.allclose(y_ref, y_opt, atol=0.01, rtol=0.01):
+            print(f"Mismatch for shape {shape}")
+        else:
+            print(f"Success for shape {shape}")

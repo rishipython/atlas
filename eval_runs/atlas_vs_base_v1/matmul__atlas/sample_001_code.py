@@ -1,0 +1,125 @@
+import torch
+import triton
+import triton.language as tl
+
+# Triton kernel performing a tiled matrix multiplication
+@triton.jit
+def _matmul_kernel(
+    A_ptr, B_ptr, C_ptr,
+    M, N, K,
+    stride_a0, stride_a1,
+    stride_b0, stride_b1,
+    stride_c0, stride_c1,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_K: tl.constexpr,
+):
+    # Compute the block row/col indices
+    pid_x = tl.program_id(0)
+    pid_y = tl.program_id(1)
+    row = pid_x * BLOCK_M + tl.arange(0, BLOCK_M)
+    col = pid_y * BLOCK_N + tl.arange(0, BLOCK_N)
+
+    # Masks for the current block in the matrix dimensions
+    mask_row = row < M
+    mask_col = col < N
+
+    # Accumulator for the C block
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+
+    # Loop over the K dimension in tiles
+    for k in range(0, K, BLOCK_K):
+        k_ptr = k + tl.arange(0, BLOCK_K)
+
+        # Mask for the current K tile
+        mask_k = k_ptr < K
+
+        # Pointers to the current A and B tiles
+        a_ptr = (
+            A_ptr
+            + row[:, None] * stride_a0
+            + k_ptr[None, :] * stride_a1
+        )
+        b_ptr = (
+            B_ptr
+            + k_ptr[:, None] * stride_b0
+            + col[None, :] * stride_b1
+        )
+
+        # Load tiles with appropriate masks
+        a = tl.load(
+            a_ptr,
+            mask=mask_row[:, None] & mask_k[None, :],
+            other=0.0,
+            dtype=tl.float32,
+        )
+        b = tl.load(
+            b_ptr,
+            mask=mask_k[:, None] & mask_col[None, :],
+            other=0.0,
+            dtype=tl.float32,
+        )
+
+        # Accumulate the product
+        acc += tl.dot(a, b)
+
+    # Store the result tile
+    c_ptr = (
+        C_ptr
+        + row[:, None] * stride_c0
+        + col[None, :] * stride_c1
+    )
+    tl.store(
+        c_ptr,
+        acc,
+        mask=mask_row[:, None] & mask_col[None, :],
+    )
+
+
+def optimized_matmul(A: torch.Tensor, B: torch.Tensor) -> torch.Tensor:
+    """
+    Compute C = A @ B using an optimized Triton kernel.
+
+    Args:
+        A: Tensor of shape (M, K) and dtype torch.float32.
+        B: Tensor of shape (K, N) and dtype torch.float32.
+
+    Returns:
+        Tensor C of shape (M, N) containing the matrix product.
+    """
+    assert A.ndim == 2 and B.ndim == 2, "A and B must be 2-D tensors"
+    M, K = A.shape
+    K2, N = B.shape
+    assert K == K2, "Inner dimensions must match"
+
+    # Allocate output tensor
+    C = torch.empty((M, N), device=A.device, dtype=A.dtype)
+
+    # Block sizes – tuned for 512x512 and 1024x1024 workloads
+    BLOCK_M = 128
+    BLOCK_N = 128
+    BLOCK_K = 128
+
+    # Grid dimensions
+    grid = (triton.cdiv(M, BLOCK_M), triton.cdiv(N, BLOCK_N))
+
+    # Launch the kernel
+    _matmul_kernel[grid](
+        A,
+        B,
+        C,
+        M,
+        N,
+        K,
+        A.stride(0),
+        A.stride(1),
+        B.stride(0),
+        B.stride(1),
+        C.stride(0),
+        C.stride(1),
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_K=BLOCK_K,
+    )
+
+    return C
