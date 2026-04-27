@@ -274,6 +274,60 @@ def _rank_normalize(scores: list[float]) -> list[float]:
     return ranks
 
 
+def _record_correct(rec: dict[str, Any]) -> bool:
+    cm = rec.get("child_metrics") or {}
+    return float(cm.get("correctness", 0.0)) >= 1.0
+
+
+def _weight_for_record(
+    rec: dict[str, Any],
+    weight_scheme: str,
+) -> float:
+    cm = rec["child_metrics"]
+    combined = float(cm["combined_score"])
+    speedup = float(cm.get("speedup", 0.0))
+    correct = _record_correct(rec)
+    if weight_scheme == "raw_score":
+        return combined
+    if weight_scheme == "binary":
+        return 1.0 if correct else 0.0
+    if weight_scheme == "uniform":
+        return 1.0
+    if weight_scheme == "strict_speedup":
+        return speedup if correct else 0.0
+    raise ValueError(f"unknown weight_scheme={weight_scheme!r}")
+
+
+def _select_records(
+    records: list[dict[str, Any]],
+    *,
+    selection: str,
+    problem_id_override: str | None,
+) -> list[dict[str, Any]]:
+    if selection == "all":
+        return records
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for rec in records:
+        if selection == "best-per-source":
+            key = str(rec.get("_source") or "unknown_source")
+        elif selection == "best-per-problem":
+            key = problem_id_override or _record_problem_id(rec) or "unknown"
+        else:
+            raise ValueError(f"unknown selection={selection!r}")
+        groups.setdefault(key, []).append(rec)
+
+    chosen: list[dict[str, Any]] = []
+    for group in groups.values():
+        chosen.append(
+            max(
+                group,
+                key=lambda r: float((r.get("child_metrics") or {}).get("combined_score", 0.0)),
+            )
+        )
+    return chosen
+
+
 def build_records(
     trace_records: list[dict[str, Any]],
     *,
@@ -282,11 +336,23 @@ def build_records(
     min_score: float,
     require_triton: bool,
     rank_normalize: bool,
+    weight_scheme: str,
+    selection: str,
+    correct_only: bool,
     reasoning_index: dict[str, str],
     problem_id_override: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     usable = [r for r in trace_records if _record_is_usable(r, min_score=min_score, require_triton=require_triton)]
     logger.info("records: total=%d usable=%d", len(trace_records), len(usable))
+    if correct_only:
+        usable = [r for r in usable if _record_correct(r)]
+        logger.info("records after correct_only filter: %d", len(usable))
+    usable = _select_records(
+        usable,
+        selection=selection,
+        problem_id_override=problem_id_override,
+    )
+    logger.info("records after selection=%s: %d", selection, len(usable))
     if not usable:
         return [], []
 
@@ -300,12 +366,13 @@ def build_records(
     phase2_records: list[dict[str, Any]] = []
 
     for pid, recs in by_problem.items():
-        scores = [float(r["child_metrics"]["combined_score"]) for r in recs]
-        weights = _rank_normalize(scores) if rank_normalize else scores
+        raw_weights = [_weight_for_record(r, weight_scheme) for r in recs]
+        weights = _rank_normalize(raw_weights) if rank_normalize else raw_weights
         logger.info(
-            "problem=%s n=%d score range=[%.3f, %.3f] weight-scheme=%s",
-            pid, len(recs), min(scores), max(scores),
-            "rank" if rank_normalize else "raw_score",
+            "problem=%s n=%d weight range=[%.3f, %.3f] weight-scheme=%s%s",
+            pid, len(recs), min(raw_weights), max(raw_weights),
+            weight_scheme,
+            " + rank_norm" if rank_normalize else "",
         )
         if emit_phase2:
             try:
@@ -336,6 +403,8 @@ def build_records(
                 "sample_weight": float(w),
                 "correct": float(cm.get("correctness", 0.0)) >= 1.0,
                 "speedup": float(cm.get("speedup", 0.0)),
+                "weight_scheme": weight_scheme,
+                "selection": selection,
             }
             if reasoning:
                 common["reasoning"] = reasoning
@@ -418,6 +487,33 @@ def main() -> None:
     parser.add_argument("--min-score", type=float, default=0.5, help="Filter out records with combined_score below this (default 0.5).")
     parser.add_argument("--require-triton", action="store_true", default=True, help="Keep only records whose child_code actually uses triton (default True).")
     parser.add_argument("--no-require-triton", dest="require_triton", action="store_false", help="Keep records even if no triton usage detected.")
+    parser.add_argument(
+        "--selection",
+        choices=["all", "best-per-source", "best-per-problem"],
+        default="all",
+        help=(
+            "Which trace records to keep before emission. "
+            "'all' keeps every usable trajectory, 'best-per-source' keeps the "
+            "top-scoring child from each input trace file, and "
+            "'best-per-problem' keeps one top-scoring child per problem."
+        ),
+    )
+    parser.add_argument(
+        "--weight-scheme",
+        choices=["raw_score", "binary", "uniform", "strict_speedup"],
+        default="raw_score",
+        help=(
+            "How to map each kept trajectory to sample_weight. "
+            "'raw_score' uses combined_score, 'binary' uses 1/0 correctness, "
+            "'uniform' gives every example weight 1, and 'strict_speedup' "
+            "uses speedup for correct kernels and 0 otherwise."
+        ),
+    )
+    parser.add_argument(
+        "--correct-only",
+        action="store_true",
+        help="Keep only fully-correct trajectories before selection/weighting.",
+    )
     parser.add_argument("--rank-normalize-weights", action="store_true", help="Per-problem rank-normalize sample_weight into [0,1] (robust across reward scales).")
     parser.add_argument("--problem-id-override", default=None, help="Force all records to this problem_id (skips dir-name inference).")
     args = parser.parse_args()
@@ -428,6 +524,12 @@ def main() -> None:
         parser.error("--out-phase1 is required when --phase is 1 or both")
     if emit_phase2 and not args.out_phase2:
         parser.error("--out-phase2 is required when --phase is 2 or both")
+    if args.rank_normalize_weights and args.weight_scheme in {"uniform", "binary"}:
+        logger.warning(
+            "rank normalization with weight_scheme=%s is usually not meaningful; "
+            "continuing anyway",
+            args.weight_scheme,
+        )
 
     records: list[dict[str, Any]] = []
     for path in args.traces:
@@ -450,6 +552,9 @@ def main() -> None:
         min_score=args.min_score,
         require_triton=args.require_triton,
         rank_normalize=args.rank_normalize_weights,
+        weight_scheme=args.weight_scheme,
+        selection=args.selection,
+        correct_only=args.correct_only,
         reasoning_index=reasoning_index,
         problem_id_override=args.problem_id_override,
     )

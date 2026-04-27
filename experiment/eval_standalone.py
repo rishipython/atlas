@@ -47,6 +47,9 @@ from pathlib import Path
 import modal
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+
+from experiment.research_metrics import parse_pass_ks, summarize_sample_records
 
 BASE_MODEL_DEFAULT = "openai/gpt-oss-20b"
 VLLM_PORT = 8000
@@ -399,6 +402,7 @@ def _sample_and_score(
     extract_code,
     evaluate_kernel,
     outputs_vol,
+    pass_ks: list[int],
     batch_size: int = 32,
 ) -> tuple[list[dict], dict]:
     """Generate n_samples from (served_model) for (problem) and score."""
@@ -461,21 +465,14 @@ def _sample_and_score(
             outputs_vol.commit()
 
     # Aggregate
-    correct = [s for s in samples if s["correct"]]
+    metrics = summarize_sample_records(samples, pass_ks=pass_ks)
     summary = {
         "problem_id": problem.problem_id,
         "served_model": served_model,
-        "n_samples": n_samples,
         "temperature": temperature,
-        "pass_at_1": 1.0 if samples and samples[0]["correct"] else 0.0,
-        "pass_at_k": len(correct) / max(1, n_samples),
-        "num_correct": len(correct),
-        "best_speedup_when_correct": max(
-            (s["score"] for s in correct), default=0.0
-        ),
-        "mean_speedup_when_correct": (
-            sum(s["score"] for s in correct) / len(correct) if correct else 0.0
-        ),
+        "pass_ks": pass_ks,
+        **metrics,
+        "best_speedup_when_correct": metrics["best_speedup"],
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     (output_dir / "samples.json").write_text(json.dumps(samples, indent=2))
@@ -504,6 +501,7 @@ def run_eval_sweep(
     seed: int,
     eval_base: bool,
     eval_adapter: bool,
+    pass_ks: list[int],
 ) -> dict:
     """Run (problems × {base, adapter}) on one container with one vLLM server."""
     import openai
@@ -566,6 +564,7 @@ def run_eval_sweep(
                     extract_code=extract_code,
                     evaluate_kernel=evaluate_kernel,
                     outputs_vol=OUTPUTS_VOL,
+                    pass_ks=pass_ks,
                 )
                 summary["tag"] = tag
                 all_summaries.append(summary)
@@ -586,13 +585,14 @@ def run_eval_sweep(
         print("\n=== CROSS-CONDITION COMPARISON ===", flush=True)
         print(
             f"{'problem':<12} {'leg':<8} {'pass@1':>7} {'pass@k':>7} "
-            f"{'n_corr':>7} {'best_sp':>8} {'mean_sp':>8}",
+            f"{'n_corr':>7} {'exp_sp':>8} {'best_sp':>8} {'mean_sp':>8}",
             flush=True,
         )
         for s in all_summaries:
             print(
                 f"{s['problem_id']:<12} {s['tag']:<8} {s['pass_at_1']:>7.2f} "
                 f"{s['pass_at_k']:>7.2f} {s['num_correct']:>7} "
+                f"{s['expected_speedup']:>8.3f} "
                 f"{s['best_speedup_when_correct']:>8.3f} "
                 f"{s['mean_speedup_when_correct']:>8.3f}",
                 flush=True,
@@ -628,6 +628,7 @@ def main(
     seed: int = 42,
     eval_base: bool = True,
     eval_adapter: bool = True,
+    pass_ks: str = "1,5,10,20,50,100",
 ):
     """Head-to-head eval: base gpt-oss-20b vs ATLAS(LoRA) over multiple
     kernel problems, in a single container sharing one vLLM server.
@@ -660,12 +661,14 @@ def main(
         seed=seed,
         eval_base=eval_base,
         eval_adapter=eval_adapter,
+        pass_ks=parse_pass_ks(pass_ks),
     )
     print("\n=== COMPARE ===")
     for leg in compare["legs"]:
         print(
             f"  {leg['problem_id']:<12} {leg.get('tag', '?'):<8} "
             f"pass@1={leg['pass_at_1']:.2f} pass@k={leg['pass_at_k']:.2f} "
+            f"expected_speedup={leg['expected_speedup']:.3f} "
             f"best_speedup={leg['best_speedup_when_correct']:.3f}"
         )
     print(
