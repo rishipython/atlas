@@ -35,7 +35,8 @@ python -m pip install --upgrade pip setuptools wheel virtualenv
 # ---------------------------------------------------------------------------
 # Training env
 # ---------------------------------------------------------------------------
-python -m venv "$ROOT/.venv-train"
+rm -rf "$ROOT/.venv-train"
+python -m virtualenv "$ROOT/.venv-train"
 source "$ROOT/.venv-train/bin/activate"
 pip install --upgrade pip setuptools wheel
 pip install \
@@ -60,7 +61,8 @@ deactivate
 # ---------------------------------------------------------------------------
 # Serving/search env
 # ---------------------------------------------------------------------------
-python -m venv "$ROOT/.venv-serve"
+rm -rf "$ROOT/.venv-serve"
+python -m virtualenv "$ROOT/.venv-serve"
 source "$ROOT/.venv-serve/bin/activate"
 pip install --upgrade pip setuptools wheel
 # Let vLLM own its torch pin here; do not preinstall torch.
