@@ -76,6 +76,11 @@ def main() -> None:
     parser.add_argument("--out", required=True, help="output JSONL")
     parser.add_argument("--problem-id", required=True)
     parser.add_argument(
+        "--handoff-suffix",
+        default="kernel",
+        help="Handoff word for clean_synth_trace ('kernel' for Triton, 'it' for algotune).",
+    )
+    parser.add_argument(
         "--wrong-values-gap",
         type=float,
         default=0.5,
@@ -88,12 +93,26 @@ def main() -> None:
         help="CRASHED advantage = min_correct_adv - this.",
     )
     parser.add_argument(
-        "--adv-clip",
+        "--adv-clip-min",
         type=float,
-        default=2.5,
-        help="Clip |advantage| ≤ adv_clip before writing (training also clips).",
+        default=-2.5,
+        help="Lower clip bound for advantage (applied as max(adv, adv_clip_min)).",
+    )
+    parser.add_argument(
+        "--adv-clip-max",
+        default="2.5",
+        help=(
+            "Upper clip bound for advantage. Pass 'none' to disable upper clipping "
+            "(one-sided lower-only clip)."
+        ),
     )
     args = parser.parse_args()
+
+    clip_max_raw = str(args.adv_clip_max).strip().lower()
+    clip_max = None if clip_max_raw in {"none", "null", "inf", "+inf"} else float(args.adv_clip_max)
+    clip_min = float(args.adv_clip_min)
+    if clip_max is not None and clip_min > clip_max:
+        raise ValueError(f"adv-clip-min ({clip_min}) must be <= adv-clip-max ({clip_max})")
 
     trace_path = Path(args.trace)
     synth_dir = Path(args.synth_dir)
@@ -152,7 +171,8 @@ def main() -> None:
     )
     print(
         f"[build_adv] penalties: WRONG_VALUES={wrong_penalty:.3f}  "
-        f"CRASHED={crash_penalty:.3f}  (clip ±{args.adv_clip})"
+        f"CRASHED={crash_penalty:.3f}  "
+        f"(clip min={clip_min}, max={'none' if clip_max is None else clip_max})"
     )
 
     # --- Pass 2: build records -------------------------------------------
@@ -184,7 +204,9 @@ def main() -> None:
             raw_adv = wrong_penalty
         else:
             raw_adv = crash_penalty
-        adv = max(-args.adv_clip, min(args.adv_clip, raw_adv))
+        adv = max(clip_min, raw_adv)
+        if clip_max is not None:
+            adv = min(clip_max, adv)
 
         content_path = synth_dir / f"iter_{iteration:03d}_content.txt"
         if not content_path.exists():
@@ -194,7 +216,7 @@ def main() -> None:
         if not raw_reasoning.strip():
             empty_synth.append(iteration)
             continue
-        cleaned = clean_synth_trace(raw_reasoning)
+        cleaned = clean_synth_trace(raw_reasoning, handoff_suffix=args.handoff_suffix)
         clean_code = _strip_oe_scaffold(child_code)
 
         out_records.append(

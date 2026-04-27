@@ -568,6 +568,159 @@ def synthesize_batch_remote(
 
 
 # ---------------------------------------------------------------------------
+# Algotune-flavored synth: no Triton references, numpy/scipy-style cues.
+# ---------------------------------------------------------------------------
+_STYLE_CUES_ALGOTUNE = """\
+- Write stream-of-consciousness prose, not a polished explanation or tutorial.
+- Use conversational openers: "We need to ...", "Let's ...", "Actually ...", "But ...", "Hmm ...", "Wait ...".
+- Short inline snippets in single backticks are fine (e.g. `D = -2 * X @ X.T + sq[:, None] + sq[None, :]`), but NEVER emit a full function body.
+- Reconsider choices mid-thought a few times: "Wait — that won't work because ...", "Hmm, actually ...", "On second thought ...".
+- Genuinely consider at least 2-3 alternative designs and explain why you reject each one before committing (e.g. "Python nested loops vs vectorised numpy vs scipy's cdist vs numba", "FFT convolution vs direct vs np.convolve", "Taylor series vs Pade + scaling/squaring vs scipy.linalg.expm").
+- Ask yourself pointed questions and answer them ("Do we get enough speedup from pure numpy, or do we need scipy? ... Let's see, the Gram-matrix trick is a single BLAS call, that's fine.").
+- Think about the numerical details: float64 vs float32, accumulation order, tiny negatives from cancellation (clip to 0?), complex-valued FFT output (take .real), padding length (next pow-of-two for FFT speed), symmetry tricks.
+- Mention the rtol/atol budget when it motivates a decision.
+- Do NOT describe this as "reasoning" or "a monologue" — just think.
+- Do NOT reference any external material: no "the log shows", no "the evolution logs", no meta-commentary about having been shown a solution. You are reasoning from the task alone.
+"""
+
+_HARD_RULES_ALGOTUNE = """\
+ABSOLUTELY FORBIDDEN:
+- Do not emit any triple-backtick fenced code block (no ```python, no ```, nothing fenced).
+- Do not write a complete function body for the entry point.
+- Do not output the final solution in any form.
+- Do not say things like "Here's the final code:" or "Below is the implementation:".
+
+WHAT TO DO INSTEAD:
+- End the trace with a single short handoff sentence like "OK, I think I have the design. Time to write it."
+- Then stop. The caller will append the real code after your handoff.
+"""
+
+_SYNTH_SYSTEM_ALGOTUNE = (
+    "You are gpt-oss-20b and you are thinking through a Python "
+    "numerical-computing speedup task. You will be given the task and a "
+    "short design brief describing the solution shape you should converge "
+    "on. Your job is to write the chain-of-thought you would go through "
+    "WHILE you work out the solution — exploring, second-guessing "
+    "yourself, trying an alternative, coming back to the original, "
+    "worrying about numerical edge cases. Do NOT write a tutorial or a "
+    "textbook explanation. Do NOT write the final code.\n\n"
+    "Style requirements:\n"
+    + _STYLE_CUES_ALGOTUNE
+    + "\nLength target: roughly 4000–8000 characters of dense thinking. "
+    "Short tidy summaries are not what we want — we want a real "
+    "exploration with dead ends and revisions. Once you have worked out "
+    "the design, do a brief sanity check of edge cases and STOP with the "
+    "handoff sentence. Do not pad the trace. If you notice yourself "
+    "starting sentences with the same phrase more than twice, you have "
+    "finished — write the handoff and stop.\n\n"
+    + _HARD_RULES_ALGOTUNE
+    + "\nOutput format: your entire response is the trace itself. No "
+    "preamble like 'Here is the reasoning:' — start directly with the "
+    "first thought ('We need to...' or similar)."
+)
+
+
+# ---------------------------------------------------------------------------
+# Local entrypoint: algotune-flavored synth (uses algotune_prompts).
+# ---------------------------------------------------------------------------
+@app.local_entrypoint()
+def main_algotune(
+    trace_path: str,
+    problem_id: str,
+    out_name: str,
+    temperature: float = 0.6,
+    top_p: float = 0.9,
+    max_tokens: int = 3200,
+    reasoning_effort: str = "low",
+    base_model: str = BASE_MODEL_DEFAULT,
+    seed: int = 101,
+    max_trajectories: int = 0,
+):
+    """Synthesize one reasoning trace per OE trajectory for an algotune problem.
+
+    Identical batching strategy to ``main_all``, but uses the
+    algotune-flavored system prompt and the simple user-facing base
+    prompt produced by ``experiment.algotune_prompts``.
+    """
+    sys.path.insert(0, str(REPO_ROOT))
+    from experiment.algotune_prompts import (  # noqa: E402
+        build_algotune_prompts,
+        design_brief_from_code,
+    )
+
+    base_system, base_user, _ep = build_algotune_prompts(problem_id)
+
+    records = [
+        json.loads(line)
+        for line in Path(trace_path).read_text().splitlines()
+        if line.strip()
+    ]
+    if max_trajectories and len(records) > max_trajectories:
+        records = records[:max_trajectories]
+
+    tasks: list[dict] = []
+    for r in records:
+        iteration = r.get("iteration")
+        child_code = r.get("child_code") or ""
+        child_metrics = r.get("child_metrics") or {}
+        feedback = (r.get("artifacts") or {}).get("feedback", "") or ""
+        if not child_code:
+            print(f"[local] skipping iter={iteration}: empty child_code")
+            continue
+
+        design_brief = design_brief_from_code(child_code)
+        synth_user_message = _build_synth_user_message(
+            base_system=base_system,
+            base_user=base_user,
+            design_brief=design_brief,
+        )
+        target_context = {
+            "problem_id": problem_id,
+            "task_family": "algotune",
+            "iteration": iteration,
+            "child_id": r.get("child_id"),
+            "parent_id": r.get("parent_id"),
+            "child_metrics": child_metrics,
+            "feedback": feedback[:2000],
+            "base_system": base_system,
+            "base_user": base_user,
+            "final_code": child_code,
+            "design_brief": design_brief,
+        }
+        tasks.append(
+            {
+                "task_id": f"iter_{iteration:03d}",
+                "synth_user": synth_user_message,
+                "target_context": target_context,
+            }
+        )
+
+    print(
+        f"[local] queued {len(tasks)} algotune synth tasks from {trace_path} "
+        f"(problem={problem_id}, out=synth/{out_name})"
+    )
+
+    results = synthesize_batch_remote.remote(
+        tasks=tasks,
+        synth_system=_SYNTH_SYSTEM_ALGOTUNE,
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens,
+        reasoning_effort=reasoning_effort,
+        base_model=base_model,
+        seed=seed,
+        out_dir_rel=f"synth/{out_name}",
+    )
+
+    ok = sum(1 for r in results if r.get("content"))
+    print(f"\n=== BATCH ALGOTUNE SYNTH DONE: {ok}/{len(results)} non-empty ===")
+    print(
+        f"\nDownload with:\n  modal volume get atlas-openevolve-outputs "
+        f"synth/{out_name} ./runs/\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Local entrypoint: synth one reasoning trace per trajectory in a trace.
 # ---------------------------------------------------------------------------
 @app.local_entrypoint()

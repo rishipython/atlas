@@ -121,14 +121,24 @@ def _trim_incomplete_tail(text: str) -> str:
     return text
 
 
-def clean_synth_trace(raw: str) -> str:
-    """Apply the full post-processing chain."""
+def clean_synth_trace(raw: str, handoff_suffix: str = "kernel") -> str:
+    """Apply the full post-processing chain.
+
+    ``handoff_suffix`` controls the appended handoff sentence when the
+    trace doesn't already end with a recognisable hand-off.  Use
+    ``"kernel"`` (default) for Triton tasks and ``"it"`` for generic
+    algotune-style Python tasks.
+    """
     cleaned = _strip_long_fenced_blocks(raw)
     cleaned = _strip_repetition_tail(cleaned)
     cleaned = _trim_incomplete_tail(cleaned)
     cleaned = cleaned.rstrip()
-    if not cleaned.endswith(("kernel now.", "kernel.", "write it.")):
-        cleaned += "\n\nOK, I think I have the design. Time to write the kernel."
+    recognised_endings = ("kernel now.", "kernel.", "write it.", "write it now.")
+    if not cleaned.endswith(recognised_endings):
+        if handoff_suffix == "kernel":
+            cleaned += "\n\nOK, I think I have the design. Time to write the kernel."
+        else:
+            cleaned += "\n\nOK, I think I have the design. Time to write it."
     return cleaned
 
 
