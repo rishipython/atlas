@@ -2,6 +2,18 @@
 
 This repo can now run without Modal on a single Colab Pro A100.
 
+The Colab setup uses two local virtualenvs because the serving/search stack and
+the training stack currently want incompatible `torch` versions:
+
+- `.venv-serve`
+  - `vllm==0.19.1`
+  - `openevolve==0.2.27`
+  - its own `torch` pinned by vLLM
+- `.venv-train`
+  - `torch==2.6.0`
+  - `flash-attn`
+  - `transformers/peft/trl` training stack
+
 ## Is one A100 enough?
 
 Yes for the current priority experiments, with a few caveats:
@@ -25,13 +37,12 @@ Practical recommendation:
 !bash setup/colab_install.sh
 ```
 
-If the flash-attn wheel URL mismatches your Colab Python version, run:
+This will create:
 
-```bash
-!python --version
-```
-
-and swap the `cp311` tag in `setup/colab_install.sh` if needed.
+- `.venv-train`
+- `.venv-serve`
+- `setup/run_train_python.sh`
+- `setup/run_serve_python.sh`
 
 ## Generate local study scripts
 
@@ -108,7 +119,7 @@ Main outputs:
 ## Suggested first smoke test
 
 ```bash
-!python experiment/local_eval_standalone.py \
+!bash setup/run_serve_python.sh experiment/local_eval_standalone.py \
   --problems softmax \
   --run-name smoke_softmax_base \
   --n-samples 8 \
@@ -118,7 +129,7 @@ Main outputs:
 Then, once you have a local adapter directory like `atlas_models/atlas_softmax_adv_sft`, run:
 
 ```bash
-!python experiment/local_eval_standalone.py \
+!bash setup/run_serve_python.sh experiment/local_eval_standalone.py \
   --problems softmax \
   --run-name smoke_softmax_compare \
   --adapter atlas_models/atlas_softmax_adv_sft \

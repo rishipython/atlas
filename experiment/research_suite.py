@@ -58,12 +58,14 @@ def build_plan(
     }
 
     if backend == "local":
-        eval_cmd = "python experiment/local_eval_standalone.py"
-        search_cmd = "python experiment/local_openevolve_runner.py"
-        train_cmd = "python experiment/local_train_atlas_sft.py"
+        py_cmd = "bash setup/run_train_python.sh"
+        eval_cmd = "bash setup/run_serve_python.sh experiment/local_eval_standalone.py"
+        search_cmd = "bash setup/run_serve_python.sh experiment/local_openevolve_runner.py"
+        train_cmd = "bash setup/run_train_python.sh experiment/local_train_atlas_sft.py"
         compare_note = "# Outputs will be written directly under ./eval_runs and ./runs."
         adapter_flag = "--adapter"
     elif backend == "modal":
+        py_cmd = "python"
         eval_cmd = "modal run experiment/eval_standalone.py"
         search_cmd = "modal run experiment/openevolve_runner.py"
         train_cmd = "modal run experiment/train_atlas_sft.py"
@@ -109,7 +111,7 @@ done
     cross_generalization = _sh_header("Train-on-one, test-on-others") + f"""
 # Assumes one OE trace per training task already exists.
 for train_task in {" ".join(tasks)}; do
-  python experiment/build_sft_dataset.py \
+  {py_cmd} experiment/build_sft_dataset.py \
     --traces "runs/${{train_task}}_v3_twophase/oe/evolution_trace.jsonl" \
     --phase 2 \
     --out-phase2 "data/sft/${{train_task}}_trajectory_phase2.jsonl" \
@@ -142,7 +144,7 @@ TASK=softmax
 TRACE="runs/${{TASK}}_v3_twophase/oe/evolution_trace.jsonl"
 
 # A1. Final-only vs trajectory-aware
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_final_only_phase2.jsonl \
@@ -150,7 +152,7 @@ python experiment/build_sft_dataset.py \
   --weight-scheme raw_score \
   --min-score 0.0
 
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_trajectory_all_phase2.jsonl \
@@ -171,7 +173,7 @@ python experiment/build_sft_dataset.py \
   --base-model "{base_model}"
 
 # A2. Binary reward vs latency-aware reward
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_binary_reward_phase2.jsonl \
@@ -179,7 +181,7 @@ python experiment/build_sft_dataset.py \
   --weight-scheme binary \
   --min-score 0.0
 
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_latency_reward_phase2.jsonl \
@@ -188,7 +190,7 @@ python experiment/build_sft_dataset.py \
   --min-score 0.0
 
 # A3. Positive-only SFT vs DPO vs advantage-weighted SFT
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_positive_only_phase2.jsonl \
@@ -197,7 +199,7 @@ python experiment/build_sft_dataset.py \
   --weight-scheme uniform \
   --min-score 0.0
 
-python experiment/build_dpo_dataset.py \
+{py_cmd} experiment/build_dpo_dataset.py \
   --traces "$TRACE" \
   --out data/dpo/${{TASK}}_study_dpo.jsonl
 
@@ -210,7 +212,7 @@ python experiment/build_dpo_dataset.py \
 #   --problem-id "$TASK"
 
 # A4. Successful-only vs include failures
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_success_only_phase2.jsonl \
@@ -219,7 +221,7 @@ python experiment/build_sft_dataset.py \
   --weight-scheme raw_score \
   --min-score 0.0
 
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_with_failures_phase2.jsonl \
@@ -228,7 +230,7 @@ python experiment/build_sft_dataset.py \
   --min-score 0.0
 
 # A5. Direct trajectory vs edit trajectory
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 2 \
   --out-phase2 data/sft/${{TASK}}_direct_phase2.jsonl \
@@ -236,7 +238,7 @@ python experiment/build_sft_dataset.py \
   --weight-scheme raw_score \
   --min-score 0.0
 
-python experiment/build_sft_dataset.py \
+{py_cmd} experiment/build_sft_dataset.py \
   --traces "$TRACE" \
   --phase 1 \
   --out-phase1 data/sft/${{TASK}}_edit_phase1.jsonl \
@@ -248,7 +250,7 @@ python experiment/build_sft_dataset.py \
 
     # 5. Aggregation ---------------------------------------------------------------
     aggregate = _sh_header("Aggregate standalone + search outputs") + f"""
-python experiment/analyze_search.py \
+{py_cmd} experiment/analyze_search.py \
   --traces \
   runs/study_base_search_softmax/oe/evolution_trace.jsonl \
   runs/study_atlas_search_softmax/oe/evolution_trace.jsonl \
@@ -259,7 +261,7 @@ python experiment/analyze_search.py \
   --pass-ks "{pass_ks}" \
   --out study_outputs/search_summary.json
 
-python experiment/summarize_study.py \
+{py_cmd} experiment/summarize_study.py \
   --standalone eval_runs/study_standalone_softmax/compare.json \
                eval_runs/study_standalone_layernorm/compare.json \
                eval_runs/study_standalone_matmul/compare.json \

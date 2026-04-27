@@ -34,6 +34,8 @@ For a single-machine Colab workflow, start with [COLAB_GUIDE.md](/Users/sandeep/
 1. Generate a study workspace:
    - `python experiment/research_suite.py --backend local --out-dir study_runs/atlas_research_suite`
 2. On Colab / remote GPU, run the generated shell scripts in order.
+   - For the local backend, the generated scripts automatically use
+     `setup/run_train_python.sh` and `setup/run_serve_python.sh`.
 3. Download the `eval_runs/` and `runs/` artifacts.
 4. Run the aggregation script:
    - `bash study_runs/atlas_research_suite/05_aggregate_results.sh`
