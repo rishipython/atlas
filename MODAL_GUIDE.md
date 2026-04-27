@@ -1,5 +1,8 @@
 # Modal GPU Training — Detailed Guide
 
+If you are using a single Colab A100 instead of Modal, see
+`COLAB_GUIDE.md` for the local workflow added to this repo.
+
 A practical reference for training neural networks on [Modal](https://modal.com):
 setup, running jobs, GPU types & prices, multi-GPU training, TPU status, cold
 starts, and cost-control tips.

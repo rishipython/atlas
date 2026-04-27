@@ -3,13 +3,22 @@
 This repo now includes a small experiment harness for the comparison matrix and
 ablations discussed in the planning note.
 
+For a single-machine Colab workflow, start with [COLAB_GUIDE.md](/Users/sandeep/Documents/atlas/COLAB_GUIDE.md).
+
 ## Main entry points
 
 - `experiment/research_suite.py`
   - Writes runnable shell scripts for the full study.
+  - Use `--backend local` on Colab, or `--backend modal` if you later switch back.
 - `experiment/eval_standalone.py`
   - Standalone base vs adapter evaluation with pass@k, correctness rate,
     expected speedup, mean speedup among correct samples, and best speedup.
+- `experiment/local_eval_standalone.py`
+  - Local, non-Modal version of the standalone evaluator.
+- `experiment/local_openevolve_runner.py`
+  - Local, non-Modal OpenEvolve runner.
+- `experiment/local_train_atlas_sft.py`
+  - Local, non-Modal reward-weighted LoRA training.
 - `experiment/analyze_search.py`
   - Summarizes OpenEvolve runs as search-efficiency curves.
 - `experiment/summarize_study.py`
@@ -23,7 +32,7 @@ ablations discussed in the planning note.
 ## Suggested workflow
 
 1. Generate a study workspace:
-   - `python experiment/research_suite.py --out-dir study_runs/atlas_research_suite`
+   - `python experiment/research_suite.py --backend local --out-dir study_runs/atlas_research_suite`
 2. On Colab / remote GPU, run the generated shell scripts in order.
 3. Download the `eval_runs/` and `runs/` artifacts.
 4. Run the aggregation script:

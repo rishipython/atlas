@@ -43,6 +43,7 @@ def build_plan(
     n_samples: int,
     search_iterations: int,
     pass_ks: str,
+    backend: str,
 ) -> dict:
     problems_csv = ",".join(tasks)
     adapters = {task: f"atlas_{task}_adv_sft" for task in tasks}
@@ -53,17 +54,33 @@ def build_plan(
         "search_iterations": search_iterations,
         "pass_ks": pass_ks,
         "adapters": adapters,
+        "backend": backend,
     }
+
+    if backend == "local":
+        eval_cmd = "python experiment/local_eval_standalone.py"
+        search_cmd = "python experiment/local_openevolve_runner.py"
+        train_cmd = "python experiment/local_train_atlas_sft.py"
+        compare_note = "# Outputs will be written directly under ./eval_runs and ./runs."
+        adapter_flag = "--adapter"
+    elif backend == "modal":
+        eval_cmd = "modal run experiment/eval_standalone.py"
+        search_cmd = "modal run experiment/openevolve_runner.py"
+        train_cmd = "modal run experiment/train_atlas_sft.py"
+        compare_note = "# Expected outputs land under ./eval_runs after `modal volume get`."
+        adapter_flag = "--adapter-name"
+    else:
+        raise ValueError(f"unsupported backend={backend!r}")
 
     # 1. Base vs ATLAS standalone -------------------------------------------------
     standalone = _sh_header("Standalone base vs ATLAS eval") + f"""
-# Expected outputs land under ./eval_runs after `modal volume get`.
+{compare_note}
 for task in {" ".join(tasks)}; do
   adapter_var="atlas_${{task}}_adv_sft"
-  modal run experiment/eval_standalone.py \
+  {eval_cmd} \
     --problems "$task" \
     --run-name "study_standalone_${{task}}" \
-    --adapter-name "$adapter_var" \
+    {adapter_flag} "$adapter_var" \
     --n-samples {n_samples} \
     --pass-ks "{pass_ks}" \
     --base-model "{base_model}"
@@ -74,15 +91,15 @@ done
     # 2. Base+OE vs ATLAS+OE ------------------------------------------------------
     search = _sh_header("OpenEvolve search runs for base and ATLAS") + f"""
 for task in {" ".join(tasks)}; do
-  modal run experiment/openevolve_runner.py \
+  {search_cmd} \
     --problem-id "$task" \
     --iterations {search_iterations} \
     --run-name "study_base_search_${{task}}"
 
-  modal run experiment/openevolve_runner.py \
+  {search_cmd} \
     --problem-id "$task" \
     --iterations {search_iterations} \
-    --adapter-name "atlas_${{task}}_adv_sft" \
+    {adapter_flag} "atlas_${{task}}_adv_sft" \
     --run-name "study_atlas_search_${{task}}"
 done
 """
@@ -100,21 +117,21 @@ for train_task in {" ".join(tasks)}; do
     --selection all \
     --min-score 0.0
 
-  modal run experiment/train_atlas_sft.py \
+  {train_cmd} \
     --dataset "data/sft/${{train_task}}_trajectory_phase2.jsonl" \
     --phase phase2 \
     --run-name "atlas_${{train_task}}_trajectory" \
     --base-model "{base_model}"
 
-  modal run experiment/eval_standalone.py \
+  {eval_cmd} \
     --problems "{problems_csv}" \
     --run-name "study_transfer_${{train_task}}" \
-    --adapter-name "atlas_${{train_task}}_trajectory" \
+    {adapter_flag} "atlas_${{train_task}}_trajectory" \
     --n-samples {n_samples} \
     --pass-ks "{pass_ks}" \
     --base-model "{base_model}" \
-    --eval-base false \
-    --eval-adapter true
+    --no-eval-base \
+    --eval-adapter
 done
 """
     _write(out_dir / "03_train_on_one_test_on_others.sh", cross_generalization)
@@ -141,13 +158,13 @@ python experiment/build_sft_dataset.py \
   --weight-scheme raw_score \
   --min-score 0.0
 
-modal run experiment/train_atlas_sft.py \
+{train_cmd} \
   --dataset data/sft/${{TASK}}_final_only_phase2.jsonl \
   --phase phase2 \
   --run-name atlas_${{TASK}}_final_only \
   --base-model "{base_model}"
 
-modal run experiment/train_atlas_sft.py \
+{train_cmd} \
   --dataset data/sft/${{TASK}}_trajectory_all_phase2.jsonl \
   --phase phase2 \
   --run-name atlas_${{TASK}}_trajectory_all \
@@ -263,6 +280,7 @@ def main() -> None:
     parser.add_argument("--n-samples", type=int, default=100)
     parser.add_argument("--search-iterations", type=int, default=100)
     parser.add_argument("--pass-ks", default=DEFAULT_PASS_KS)
+    parser.add_argument("--backend", choices=["local", "modal"], default="local")
     args = parser.parse_args()
 
     tasks = [t.strip() for t in args.tasks.split(",") if t.strip()]
@@ -273,6 +291,7 @@ def main() -> None:
         n_samples=args.n_samples,
         search_iterations=args.search_iterations,
         pass_ks=args.pass_ks,
+        backend=args.backend,
     )
     print(json.dumps(manifest, indent=2))
     print(f"\nWrote study plan under {args.out_dir}")
