@@ -29,6 +29,7 @@ image = (
         "numpy>=1.26",
         "scipy>=1.11",
         "numba>=0.60",
+        "grpclib>=0.4.7",
     )
     .add_local_dir(
         str(REPO_ROOT),
@@ -68,6 +69,11 @@ def _wait_for_vllm(port: int, timeout: int = 900) -> None:
     raise RuntimeError(f"vLLM did not come up within {timeout}s")
 
 
+def _uses_gptoss_reasoning(model_name: str) -> bool:
+    name = model_name.lower()
+    return "gpt-oss" in name or "gpt_oss" in name
+
+
 def _start_vllm(base_model: str, adapter_path: str | None) -> subprocess.Popen:
     cmd = [
         sys.executable,
@@ -81,9 +87,9 @@ def _start_vllm(base_model: str, adapter_path: str | None) -> subprocess.Popen:
         "0.80",
         "--max-model-len",
         "32768",
-        "--reasoning-parser",
-        "openai_gptoss",
     ]
+    if _uses_gptoss_reasoning(base_model):
+        cmd.extend(["--reasoning-parser", "openai_gptoss"])
     if adapter_path:
         cmd.extend(["--enable-lora", "--lora-modules", f"atlas={adapter_path}"])
     proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
@@ -108,6 +114,7 @@ def _batched_generate(
     top_p: float,
     max_tokens: int,
     seed: int,
+    use_reasoning_effort: bool,
 ) -> list[tuple[str, str | None, str]]:
     import concurrent.futures as cf
 
@@ -120,7 +127,7 @@ def _batched_generate(
             "max_tokens": max_tokens,
             "seed": seed + sample_idx,
         }
-        if reasoning_effort is not None:
+        if use_reasoning_effort and reasoning_effort is not None:
             params["extra_body"] = {"reasoning_effort": reasoning_effort}
         response = client.chat.completions.create(**params)
         message = response.choices[0].message
@@ -130,7 +137,11 @@ def _batched_generate(
 
     results: list[tuple[str, str | None, str]] = [("", None, "default")] * n_samples
     pending = list(range(n_samples))
-    cascade: list[tuple[str | None, str]] = [(None, "default"), ("medium", "medium"), ("low", "low")]
+    cascade: list[tuple[str | None, str]]
+    if use_reasoning_effort:
+        cascade = [(None, "default"), ("medium", "medium"), ("low", "low")]
+    else:
+        cascade = [(None, "default")]
 
     for effort, label in cascade:
         if not pending:
@@ -178,7 +189,11 @@ def _score_candidate(problem_id: str, candidate_code: str, timeout_s: int = 300)
             "mod = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(mod)\n"
             f"res = mod.evaluate({str(candidate_path)!r})\n"
-            "print('__OE_RESULT__' + json.dumps({'metrics': dict(res.metrics), 'artifacts': dict(res.artifacts)}))\n"
+            "if isinstance(res, dict):\n"
+            "    payload = {'metrics': res, 'artifacts': {}}\n"
+            "else:\n"
+            "    payload = {'metrics': dict(res.metrics), 'artifacts': dict(res.artifacts)}\n"
+            "print('__OE_RESULT__' + json.dumps(payload))\n"
         )
 
         env = os.environ.copy()
@@ -200,10 +215,16 @@ def _score_candidate(problem_id: str, candidate_code: str, timeout_s: int = 300)
             payload = json.loads(line[len("__OE_RESULT__") :])
             metrics = payload.get("metrics") or {}
             artifacts = payload.get("artifacts") or {}
+            correctness = metrics.get("correctness")
+            if correctness is None:
+                correctness = metrics.get("correctness_score", 0.0)
+            speedup = metrics.get("speedup")
+            if speedup is None:
+                speedup = metrics.get("speedup_score", 0.0)
             return {
-                "correct": float(metrics.get("correctness", 0.0) or 0.0) >= 1.0,
+                "correct": float(correctness or 0.0) >= 1.0,
                 "combined_score": float(metrics.get("combined_score", 0.0) or 0.0),
-                "speedup": float(metrics.get("speedup", 0.0) or 0.0),
+                "speedup": float(speedup or 0.0),
                 "feedback": str(artifacts.get("feedback", ""))[:4000],
             }
         return {"correct": False, "combined_score": 0.0, "speedup": 0.0, "feedback": proc.stderr[:2000]}
@@ -262,6 +283,7 @@ def _sample_and_score(
         top_p,
         max_tokens,
         seed,
+        _uses_gptoss_reasoning(served_model),
     )
 
     samples: list[dict] = []
