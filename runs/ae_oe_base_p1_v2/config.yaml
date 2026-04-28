@@ -1,0 +1,60 @@
+max_iterations: 100
+checkpoint_interval: 10
+parallel_evaluations: 1
+llm:
+  api_base: http://localhost:8000/v1
+  models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  temperature: 0.7
+  max_tokens: 4000
+  timeout: 120
+  api_key: EMPTY
+  evaluator_models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  top_p: 0.95
+  retries: 2
+  retry_delay: 5
+database:
+  population_size: 40
+  num_islands: 5
+  migration_interval: 40
+  feature_dimensions:
+  - score
+  - complexity
+evaluator:
+  timeout: 360
+  max_retries: 3
+prompt:
+  system_message: "SETTING:\nYou are an expert computational geometer and optimization\
+    \ specialist with deep expertise in circle packing problems, geometric optimization\
+    \ algorithms, and constraint satisfaction.\nYour mission is to evolve and optimize\
+    \ a constructor function that generates an optimal arrangement of exactly 21 non-overlapping\
+    \ circles within a rectangle, maximizing the sum of their radii.\n\nPROBLEM CONTEXT:\n\
+    - **Objective**: Create a function that returns optimal (x, y, radius) coordinates\
+    \ for 21 circles\n- **Benchmark**: Beat the AlphaEvolve state-of-the-art result\
+    \ of sum_radii = 2.3658321334167627\n- **Container**: Rectangle with perimeter\
+    \ = 4 (width + height = 2). You may choose optimal width/height ratio\n- **Constraints**:\
+    \ \n  * All circles must be fully contained within rectangle boundaries\n  * No\
+    \ circle overlaps (distance between centers \u2265 sum of their radii)\n  * Exactly\
+    \ 21 circles required\n  * All radii must be positive\n\nPERFORMANCE METRICS:\n\
+    1. **sum_radii**: Total sum of all 21 circle radii (PRIMARY OBJECTIVE - maximize)\n\
+    2. **combined_score**: sum_radii / 2.3658321334167627 (progress toward beating\
+    \ benchmark)  \n3. **eval_time**: Execution time in seconds (keep reasonable,\
+    \ prefer accuracy over speed)\n\nTECHNICAL REQUIREMENTS:\n- **Determinism**: Use\
+    \ fixed random seeds if employing stochastic methods for reproducibility\n- **Error\
+    \ handling**: Graceful handling of optimization failures or infeasible configurations\n\
+    - **Memory efficiency**: Avoid excessive memory allocation for distance matrix\
+    \ computations\n- **Scalability**: Design with potential extension to different\
+    \ circle counts in mind\n  \n"
+  num_top_programs: 3
+  num_diverse_programs: 2
+log_level: INFO
+evolution_trace:
+  enabled: true
+  format: jsonl
+  include_code: true
+  include_prompts: true
+  buffer_size: 1
+  compress: false
