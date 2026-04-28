@@ -1,16 +1,4 @@
-"""Task abstraction for the OpenEvolve runner.
-
-A ``TaskSpec`` bundles everything OpenEvolve needs to run on a given
-problem:
-  - the initial program source (the code OpenEvolve mutates)
-  - the evaluator source (the ``evaluate(program_path)`` module OE imports)
-  - the system message OE injects into every mutation prompt
-  - optional hints the runner uses to pick vLLM / eval parameters
-
-Task families register a factory function ``make_task(problem_id) ->
-TaskSpec`` and are plugged into the runner via the ``TASK_FAMILIES``
-dispatch dict in ``experiment.tasks``.
-"""
+"""Task abstraction for the AlgoTune-only OpenEvolve runner."""
 
 from __future__ import annotations
 
@@ -20,40 +8,28 @@ from dataclasses import dataclass, field
 @dataclass
 class TaskSpec:
     task_family: str
-    """Name of the task family (``kernel``, ``alphaevolve``, ``algotune``,
-    ``prompt_opt``).  Used to namespace run outputs."""
+    """Task family name. This branch only keeps ``"algotune"``."""
 
     problem_id: str
-    """Task-family-specific identifier (``softmax``, ``circle_packing_26``,
-    ``pairwise_distance``, ``gsm8k_3q``)."""
+    """Task identifier within the family."""
 
     initial_program: str
-    """Full source of ``initial_program.py``.  Must contain at least one
-    EVOLVE-BLOCK-START / EVOLVE-BLOCK-END pair."""
+    """Full source of ``initial_program.py``."""
 
     evaluator: str
-    """Full source of ``evaluator.py``.  Must define ``evaluate(program_path)
-    -> dict`` returning at minimum ``{"combined_score": float}``."""
+    """Full source of ``evaluator.py``."""
 
     system_message: str
-    """OpenEvolve system prompt.  Injected into every LLM mutation
-    request."""
+    """OpenEvolve system prompt for this task."""
 
     extra_packages: list[str] = field(default_factory=list)
-    """pip packages required by this task's evaluator that are NOT in the
-    base image.  The runner installs them before each run."""
+    """Unused in the current branch but kept for simple task metadata."""
 
     evaluator_timeout: int = 300
-    """Per-candidate evaluator timeout in seconds (OE's ``evaluator.timeout``
-    config key).  Tasks with cheap evals (e.g. circle packing, pairwise
-    distance) should use a small number; tasks that call the LLM in-loop
-    (prompt_opt) need a bigger budget."""
+    """Per-candidate evaluator timeout in seconds."""
 
     uses_vllm_in_evaluator: bool = False
-    """Whether the evaluator makes HTTP calls to the local vLLM server.
-    ``prompt_opt`` does; the others don't.  The runner uses this to decide
-    ``parallel_evaluations`` (keep at 1 when the evaluator contends with
-    OE's own LLM calls)."""
+    """Whether the evaluator calls back into vLLM. AlgoTune tasks do not."""
 
 
 @dataclass

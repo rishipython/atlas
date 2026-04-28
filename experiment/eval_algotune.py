@@ -1,24 +1,9 @@
-"""Standalone (no-OpenEvolve) pass@k eval for algotune problems.
+"""Evaluate Best-of-N on AlgoTune for base and optional ATLAS adapter."""
 
-Parallels ``eval_standalone.py`` but targets the algotune task family
-(CPU numpy/scipy, no Triton).  Evaluates a base model and (optionally)
-an ATLAS LoRA adapter on any subset of algotune problems, with ``n``
-samples per (problem, leg) and writes per-sample outputs + a summary
-JSON to the outputs Volume.
-
-Typical usage::
-
-    modal run experiment/eval_algotune.py \\
-        --problems fft_convolution,convolve2d_full_fill,affine_transform_2d \\
-        --adapter-name atlas_algotune_signal_v1 \\
-        --run-name atlas_algotune_v1 \\
-        --n-samples 40
-"""
 from __future__ import annotations
 
 import json
 import os
-import pickle
 import subprocess
 import sys
 import tempfile
@@ -28,15 +13,12 @@ from pathlib import Path
 import modal
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
 BASE_MODEL_DEFAULT = "openai/gpt-oss-20b"
 VLLM_PORT = 8000
 
 HF_CACHE_VOL = modal.Volume.from_name("atlas-hf-cache", create_if_missing=True)
 MODELS_VOL = modal.Volume.from_name("atlas-models", create_if_missing=True)
-OUTPUTS_VOL = modal.Volume.from_name(
-    "atlas-openevolve-outputs", create_if_missing=True
-)
+OUTPUTS_VOL = modal.Volume.from_name("atlas-openevolve-outputs", create_if_missing=True)
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
@@ -44,7 +26,6 @@ image = (
     .pip_install(
         "vllm==0.19.1",
         "openai>=1.50",
-        "pyyaml>=6",
         "numpy>=1.26",
         "scipy>=1.11",
         "numba>=0.60",
@@ -70,9 +51,6 @@ image = (
 app = modal.App("atlas-eval-algotune", image=image)
 
 
-# ---------------------------------------------------------------------------
-# vLLM subprocess launcher (identical to eval_standalone.py).
-# ---------------------------------------------------------------------------
 def _wait_for_vllm(port: int, timeout: int = 900) -> None:
     import urllib.error
     import urllib.request
@@ -81,8 +59,8 @@ def _wait_for_vllm(port: int, timeout: int = 900) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2) as resp:
-                if resp.status == 200:
+            with urllib.request.urlopen(url, timeout=2) as response:
+                if response.status == 200:
                     return
         except (urllib.error.URLError, ConnectionError, OSError):
             pass
@@ -108,11 +86,9 @@ def _start_vllm(base_model: str, adapter_path: str | None) -> subprocess.Popen:
     ]
     if adapter_path:
         cmd.extend(["--enable-lora", "--lora-modules", f"atlas={adapter_path}"])
-    print(f"[vllm] launching: {' '.join(cmd)}", flush=True)
     proc = subprocess.Popen(cmd, stdout=sys.stdout, stderr=sys.stderr)
     try:
         _wait_for_vllm(VLLM_PORT)
-        print(f"[vllm] ready at http://localhost:{VLLM_PORT}/v1", flush=True)
     except Exception:
         proc.terminate()
         try:
@@ -123,172 +99,87 @@ def _start_vllm(base_model: str, adapter_path: str | None) -> subprocess.Popen:
     return proc
 
 
-# ---------------------------------------------------------------------------
-# Batched concurrent generation (copied from eval_standalone; identical
-# semantics — true parallelism via HTTP, cascading reasoning_effort
-# fallback for empty final-channel content).
-# ---------------------------------------------------------------------------
-def _batched_call(
-    client,
-    served_model: str,
-    messages: list[dict],
-    n: int,
-    temperature: float,
-    top_p: float,
-    max_tokens: int,
-    seed: int,
-    reasoning_effort: str | None,
-    batch_size: int,
-    label: str,
-) -> list[tuple[str, str | None]]:
-    import concurrent.futures as cf
-
-    def _one_call(i: int) -> tuple[str, str | None]:
-        params = dict(
-            model=served_model,
-            messages=messages,
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            n=1,
-            seed=seed + i,
-        )
-        if reasoning_effort is not None:
-            params["extra_body"] = {"reasoning_effort": reasoning_effort}
-        resp = client.chat.completions.create(**params)
-        msg = resp.choices[0].message
-        content = msg.content or ""
-        reasoning = getattr(msg, "reasoning", None) or getattr(
-            msg, "reasoning_content", None
-        )
-        return content, reasoning
-
-    out: list[tuple[str, str | None]] = [("", None)] * n
-    t0 = time.time()
-    with cf.ThreadPoolExecutor(max_workers=batch_size) as pool:
-        futures = {pool.submit(_one_call, i): i for i in range(n)}
-        done_count = 0
-        for fut in cf.as_completed(futures):
-            i = futures[fut]
-            try:
-                out[i] = fut.result()
-            except Exception as exc:  # noqa: BLE001
-                print(f"      [batch:{label}] slot {i} errored: {exc}", flush=True)
-                out[i] = ("", None)
-            done_count += 1
-            if done_count % max(1, batch_size) == 0 or done_count == n:
-                dt = time.time() - t0
-                print(
-                    f"      [batch:{label}] {done_count}/{n} done "
-                    f"effort={reasoning_effort or 'default'} elapsed={dt:.1f}s",
-                    flush=True,
-                )
-    return out
-
-
 def _batched_generate(
     client,
     served_model: str,
-    messages: list[dict],
+    messages: list[dict[str, str]],
     n_samples: int,
     temperature: float,
     top_p: float,
     max_tokens: int,
     seed: int,
-    batch_size: int = 32,
 ) -> list[tuple[str, str | None, str]]:
-    cascade: list[tuple[str | None, str]] = [
-        (None, "default"),
-        ("medium", "medium"),
-        ("low", "low"),
-    ]
+    import concurrent.futures as cf
+
+    def one_call(sample_idx: int, reasoning_effort: str | None) -> tuple[str, str | None]:
+        params: dict = {
+            "model": served_model,
+            "messages": messages,
+            "temperature": temperature,
+            "top_p": top_p,
+            "max_tokens": max_tokens,
+            "seed": seed + sample_idx,
+        }
+        if reasoning_effort is not None:
+            params["extra_body"] = {"reasoning_effort": reasoning_effort}
+        response = client.chat.completions.create(**params)
+        message = response.choices[0].message
+        content = message.content or ""
+        reasoning = getattr(message, "reasoning", None) or getattr(message, "reasoning_content", None)
+        return content, reasoning
+
     results: list[tuple[str, str | None, str]] = [("", None, "default")] * n_samples
-    pending_idx = list(range(n_samples))
+    pending = list(range(n_samples))
+    cascade: list[tuple[str | None, str]] = [(None, "default"), ("medium", "medium"), ("low", "low")]
 
-    for pass_idx, (effort, tag) in enumerate(cascade):
-        if not pending_idx:
+    for effort, label in cascade:
+        if not pending:
             break
-        print(
-            f"      [batch] pass {pass_idx + 1}/{len(cascade)} effort={tag} "
-            f"rolling {len(pending_idx)} completions",
-            flush=True,
-        )
-        draws = _batched_call(
-            client=client,
-            served_model=served_model,
-            messages=messages,
-            n=len(pending_idx),
-            temperature=temperature,
-            top_p=top_p,
-            max_tokens=max_tokens,
-            seed=seed + pass_idx * 7_777_777,
-            reasoning_effort=effort,
-            batch_size=batch_size,
-            label=f"pass{pass_idx + 1}",
-        )
-        next_pending = []
-        for slot, (content, reasoning) in zip(pending_idx, draws):
-            results[slot] = (content, reasoning, tag)
-            if not content.strip():
-                next_pending.append(slot)
-        pending_idx = next_pending
-
-    if pending_idx:
-        print(
-            f"      [batch] {len(pending_idx)} slots remained empty after full cascade",
-            flush=True,
-        )
+        next_pending: list[int] = []
+        with cf.ThreadPoolExecutor(max_workers=min(32, len(pending))) as pool:
+            futures = {pool.submit(one_call, idx, effort): idx for idx in pending}
+            for future in cf.as_completed(futures):
+                idx = futures[future]
+                try:
+                    content, reasoning = future.result()
+                except Exception:
+                    content, reasoning = "", None
+                results[idx] = (content, reasoning, label)
+                if not content.strip():
+                    next_pending.append(idx)
+        pending = next_pending
     return results
 
 
-# ---------------------------------------------------------------------------
-# Evaluator: writes candidate code to a .py file and runs the task's
-# evaluator.evaluate(program_path) from the algotune task registry.
-# ---------------------------------------------------------------------------
 def _score_candidate(problem_id: str, candidate_code: str, timeout_s: int = 300) -> dict:
-    """Score one candidate program.
-
-    Strategy:
-      1. Dump the task evaluator source to a temp file.
-      2. Dump the candidate code to a temp .py file.
-      3. Run ``python -c "import <eval>; print(json.dumps(eval.evaluate(prog)))"``
-         in a subprocess so any candidate segfault/hang doesn't kill us.
-    """
     sys.path.insert(0, "/atlas")
-    from experiment.tasks import get_task  # noqa: E402
+    from experiment.tasks import get_task
 
     spec = get_task("algotune", problem_id)
-
     with tempfile.TemporaryDirectory(prefix=f"algotune_eval_{problem_id}_") as tmpdir:
         tmp = Path(tmpdir)
         candidate_path = tmp / "candidate.py"
         candidate_path.write_text(candidate_code or "# empty\n")
-        # Replace the openevolve import with a local shim so we don't have
-        # to install openevolve just for a one-line data class.
         evaluator_src = spec.evaluator.replace(
             "from openevolve.evaluation_result import EvaluationResult",
             (
                 "class EvaluationResult:\n"
                 "    def __init__(self, metrics=None, artifacts=None):\n"
                 "        self.metrics = metrics or {}\n"
-                "        self.artifacts = artifacts or {}"
+                "        self.artifacts = artifacts or {}\n"
             ),
         )
         evaluator_path = tmp / "evaluator.py"
         evaluator_path.write_text(evaluator_src)
-
-        # Harness runs evaluate() and prints a compact JSON to stdout.
-        harness = (
-            "import importlib.util, json, sys\n"
+        harness_path = tmp / "harness.py"
+        harness_path.write_text(
+            "import importlib.util, json\n"
             f"spec = importlib.util.spec_from_file_location('evmod', {str(evaluator_path)!r})\n"
             "mod = importlib.util.module_from_spec(spec)\n"
             "spec.loader.exec_module(mod)\n"
             f"res = mod.evaluate({str(candidate_path)!r})\n"
-            "out = {'metrics': dict(res.metrics), 'artifacts': dict(res.artifacts)}\n"
-            "print('__OE_RESULT__' + json.dumps(out))\n"
+            "print('__OE_RESULT__' + json.dumps({'metrics': dict(res.metrics), 'artifacts': dict(res.artifacts)}))\n"
         )
-        harness_path = tmp / "harness.py"
-        harness_path.write_text(harness)
 
         env = os.environ.copy()
         env["PYTHONPATH"] = "/atlas" + os.pathsep + env.get("PYTHONPATH", "")
@@ -301,50 +192,45 @@ def _score_candidate(problem_id: str, candidate_code: str, timeout_s: int = 300)
                 env=env,
             )
         except subprocess.TimeoutExpired:
+            return {"correct": False, "combined_score": 0.0, "speedup": 0.0, "feedback": "timeout"}
+
+        for line in (proc.stdout or "").splitlines():
+            if not line.startswith("__OE_RESULT__"):
+                continue
+            payload = json.loads(line[len("__OE_RESULT__") :])
+            metrics = payload.get("metrics") or {}
+            artifacts = payload.get("artifacts") or {}
             return {
-                "correct": False,
-                "score": 0.0,
-                "speedup": 0.0,
-                "combined_score": 0.0,
-                "feedback": f"harness timeout after {timeout_s}s",
+                "correct": float(metrics.get("correctness", 0.0) or 0.0) >= 1.0,
+                "combined_score": float(metrics.get("combined_score", 0.0) or 0.0),
+                "speedup": float(metrics.get("speedup", 0.0) or 0.0),
+                "feedback": str(artifacts.get("feedback", ""))[:4000],
             }
-
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-        for line in stdout.splitlines():
-            if line.startswith("__OE_RESULT__"):
-                try:
-                    data = json.loads(line[len("__OE_RESULT__") :])
-                    metrics = data.get("metrics") or {}
-                    artifacts = data.get("artifacts") or {}
-                    return {
-                        "correct": bool(metrics.get("correctness", 0.0) >= 0.99),
-                        "score": float(metrics.get("speedup", 0.0)),
-                        "speedup": float(metrics.get("speedup", 0.0)),
-                        "combined_score": float(metrics.get("combined_score", 0.0)),
-                        "feedback": str(artifacts.get("feedback", ""))[:4000],
-                    }
-                except Exception as exc:  # noqa: BLE001
-                    return {
-                        "correct": False,
-                        "score": 0.0,
-                        "speedup": 0.0,
-                        "combined_score": 0.0,
-                        "feedback": f"parse error: {exc}; line[:200]={line[:200]!r}",
-                    }
-        return {
-            "correct": False,
-            "score": 0.0,
-            "speedup": 0.0,
-            "combined_score": 0.0,
-            "feedback": f"no result line; exit={proc.returncode}; "
-            f"stdout={stdout[:800]!r}; stderr={stderr[:1200]!r}",
-        }
+        return {"correct": False, "combined_score": 0.0, "speedup": 0.0, "feedback": proc.stderr[:2000]}
 
 
-# ---------------------------------------------------------------------------
-# Per-(problem, leg) sample + score loop.
-# ---------------------------------------------------------------------------
+def _metrics_from_samples(samples: list[dict]) -> dict:
+    rewards = [float(sample["combined_score"]) for sample in samples]
+    correctness = [bool(sample["correct"]) for sample in samples]
+    best_reward_by_k: list[float] = []
+    pass_by_k: list[float] = []
+
+    best_reward = 0.0
+    any_pass = False
+    for reward, passed in zip(rewards, correctness):
+        best_reward = max(best_reward, reward)
+        any_pass = any_pass or passed
+        best_reward_by_k.append(best_reward)
+        pass_by_k.append(1.0 if any_pass else 0.0)
+
+    return {
+        "best_reward_at_n": best_reward_by_k[-1] if best_reward_by_k else 0.0,
+        "pass_at_n": pass_by_k[-1] if pass_by_k else 0.0,
+        "best_reward_by_k": best_reward_by_k,
+        "pass_by_k": pass_by_k,
+    }
+
+
 def _sample_and_score(
     client,
     served_model: str,
@@ -357,105 +243,82 @@ def _sample_and_score(
     max_tokens: int,
     seed: int,
     output_dir: Path,
-    batch_size: int = 32,
 ) -> tuple[list[dict], dict]:
-    sys.path.insert(0, "/atlas")
-    from utils.extract import extract_code  # noqa: E402
+    from utils.extract import extract_code
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "system_message.txt").write_text(system_msg)
     (output_dir / "user_message.txt").write_text(user_msg)
 
-    gen_t0 = time.time()
     generations = _batched_generate(
         client,
-        served_model=served_model,
-        messages=[
+        served_model,
+        [
             {"role": "system", "content": system_msg},
             {"role": "user", "content": user_msg},
         ],
-        n_samples=n_samples,
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        seed=seed,
-        batch_size=batch_size,
-    )
-    total_gen_s = time.time() - gen_t0
-    print(
-        f"      [gen] {n_samples} completions in {total_gen_s:.1f}s "
-        f"({n_samples / max(total_gen_s, 1e-6):.2f} seq/s)",
-        flush=True,
+        n_samples,
+        temperature,
+        top_p,
+        max_tokens,
+        seed,
     )
 
     samples: list[dict] = []
-    for i, (raw, reasoning, winning_effort) in enumerate(generations):
+    for idx, (raw, reasoning, effort) in enumerate(generations):
         code = extract_code(raw)
-        t0 = time.time()
-        result = _score_candidate(problem_id, code, timeout_s=300)
-        score_dt = time.time() - t0
-        samples.append(
-            {
-                "sample_idx": i,
-                "raw_length": len(raw),
-                "code_length": len(code),
-                "reasoning_length": len(reasoning) if reasoning else 0,
-                "winning_reasoning_effort": winning_effort,
-                "score_time_s": round(score_dt, 2),
-                **result,
-            }
-        )
-        (output_dir / f"sample_{i:03d}_raw.txt").write_text(raw)
-        (output_dir / f"sample_{i:03d}_code.py").write_text(code)
+        result = _score_candidate(problem_id, code)
+        sample = {
+            "sample_idx": idx,
+            "winning_reasoning_effort": effort,
+            "raw_length": len(raw),
+            "code_length": len(code),
+            "reasoning_length": len(reasoning) if reasoning else 0,
+            **result,
+        }
+        samples.append(sample)
+        (output_dir / f"sample_{idx:03d}_raw.txt").write_text(raw)
+        (output_dir / f"sample_{idx:03d}_code.py").write_text(code)
         if reasoning:
-            (output_dir / f"sample_{i:03d}_reasoning.txt").write_text(reasoning)
-        print(
-            f"    [{served_model}/{problem_id}] [{i + 1}/{n_samples}] "
-            f"correct={result['correct']} speedup={result['speedup']:.2f}x "
-            f"combined={result['combined_score']:.3f} eval={score_dt:.1f}s",
-            flush=True,
-        )
-        if (i + 1) % 10 == 0 or (i + 1) == n_samples:
-            OUTPUTS_VOL.commit()
+            (output_dir / f"sample_{idx:03d}_reasoning.txt").write_text(reasoning)
 
-    correct = [s for s in samples if s["correct"]]
+    metrics = _metrics_from_samples(samples)
     summary = {
         "problem_id": problem_id,
         "served_model": served_model,
         "n_samples": n_samples,
-        "temperature": temperature,
-        "pass_at_1": 1.0 if samples and samples[0]["correct"] else 0.0,
-        "pass_at_k": len(correct) / max(1, n_samples),
-        "num_correct": len(correct),
-        "best_speedup_when_correct": max(
-            (s["speedup"] for s in correct), default=0.0
-        ),
-        "mean_speedup_when_correct": (
-            sum(s["speedup"] for s in correct) / len(correct) if correct else 0.0
-        ),
-        "mean_combined_when_correct": (
-            sum(s["combined_score"] for s in correct) / len(correct)
-            if correct
-            else 0.0
-        ),
+        **metrics,
     }
-    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     (output_dir / "samples.json").write_text(json.dumps(samples, indent=2))
+    (output_dir / "summary.json").write_text(json.dumps(summary, indent=2))
     OUTPUTS_VOL.commit()
     return samples, summary
 
 
-# ---------------------------------------------------------------------------
-# Modal remote: sweep over (problems, legs).
-# ---------------------------------------------------------------------------
+def _compute_cross_leg_metrics(compare: dict) -> None:
+    summaries = compare["legs"]
+    by_problem: dict[str, dict[str, dict]] = {}
+    for summary in summaries:
+        by_problem.setdefault(summary["problem_id"], {})[summary["tag"]] = summary
+
+    for problem_id, legs in by_problem.items():
+        base = legs.get("base")
+        if not base:
+            continue
+        baseline_reward = float(base["best_reward_at_n"])
+        for tag, leg in legs.items():
+            min_k = None
+            for idx, reward in enumerate(leg["best_reward_by_k"], start=1):
+                if reward >= baseline_reward:
+                    min_k = idx
+                    break
+            leg["min_k_to_base_best_reward"] = min_k
+
+
 @app.function(
     gpu="A100-80GB",
     timeout=3 * 3600,
-    volumes={
-        "/hf_cache": HF_CACHE_VOL,
-        "/atlas_models": MODELS_VOL,
-        "/outputs": OUTPUTS_VOL,
-    },
+    volumes={"/hf_cache": HF_CACHE_VOL, "/atlas_models": MODELS_VOL, "/outputs": OUTPUTS_VOL},
 )
 def run_eval_sweep(
     problems: list[str],
@@ -469,56 +332,44 @@ def run_eval_sweep(
     seed: int,
     eval_base: bool,
     eval_adapter: bool,
-    batch_size: int,
 ) -> dict:
     import openai
 
     sys.path.insert(0, "/atlas")
-    from experiment.algotune_prompts import build_algotune_prompts  # noqa: E402
-    from experiment.tasks import get_task  # noqa: E402
+    from experiment.algotune_prompts import build_algotune_prompts
+    from experiment.tasks import get_task
 
-    for pid in problems:
-        # Validate that this problem is known to the algotune family.
-        get_task("algotune", pid)
+    for problem_id in problems:
+        get_task("algotune", problem_id)
 
     adapter_path = None
     if adapter_name:
         adapter_path = f"/atlas_models/{adapter_name}"
-        assert Path(adapter_path).exists(), (
-            f"Adapter directory {adapter_path} not found on atlas-models Volume"
-        )
-        print(f"[eval] LoRA adapter at {adapter_path}", flush=True)
+        if not Path(adapter_path).exists():
+            raise FileNotFoundError(adapter_path)
+
+    legs: list[tuple[str, str]] = []
+    if eval_base:
+        legs.append((base_model, "base"))
+    if eval_adapter and adapter_path:
+        legs.append(("atlas", "atlas"))
+    if not legs:
+        raise RuntimeError("No evaluation legs requested.")
 
     vllm_proc = _start_vllm(base_model, adapter_path)
-
     try:
-        client = openai.OpenAI(
-            api_key="EMPTY", base_url=f"http://localhost:{VLLM_PORT}/v1"
-        )
-
-        legs: list[tuple[str, str]] = []
-        if eval_base:
-            legs.append((base_model, "base"))
-        if eval_adapter and adapter_path:
-            legs.append(("atlas", "atlas"))
-        assert legs, "No legs to evaluate — set eval_base or eval_adapter + adapter"
-
-        all_summaries: list[dict] = []
+        client = openai.OpenAI(api_key="EMPTY", base_url=f"http://localhost:{VLLM_PORT}/v1")
         base_dir = Path("/outputs") / "eval" / run_name
         base_dir.mkdir(parents=True, exist_ok=True)
 
-        for pid in problems:
-            system_msg, user_msg, _ep = build_algotune_prompts(pid)
-            for served, tag in legs:
-                leg_dir = base_dir / f"{pid}__{tag}"
-                print(
-                    f"\n[eval] === leg: problem={pid} model={tag} (served='{served}') ===",
-                    flush=True,
-                )
+        summaries: list[dict] = []
+        for problem_id in problems:
+            system_msg, user_msg, _ = build_algotune_prompts(problem_id)
+            for served_model, tag in legs:
                 _, summary = _sample_and_score(
                     client=client,
-                    served_model=served,
-                    problem_id=pid,
+                    served_model=served_model,
+                    problem_id=problem_id,
                     system_msg=system_msg,
                     user_msg=user_msg,
                     n_samples=n_samples,
@@ -526,11 +377,10 @@ def run_eval_sweep(
                     top_p=top_p,
                     max_tokens=max_tokens,
                     seed=seed,
-                    output_dir=leg_dir,
-                    batch_size=batch_size,
+                    output_dir=base_dir / f"{problem_id}__{tag}",
                 )
                 summary["tag"] = tag
-                all_summaries.append(summary)
+                summaries.append(summary)
 
         compare = {
             "run_name": run_name,
@@ -539,45 +389,25 @@ def run_eval_sweep(
             "adapter_name": adapter_name,
             "n_samples": n_samples,
             "temperature": temperature,
-            "legs": all_summaries,
+            "legs": summaries,
         }
+        _compute_cross_leg_metrics(compare)
         (base_dir / "compare.json").write_text(json.dumps(compare, indent=2))
         OUTPUTS_VOL.commit()
-
-        print("\n=== CROSS-CONDITION COMPARISON ===", flush=True)
-        print(
-            f"{'problem':<22} {'leg':<8} {'pass@1':>7} {'pass@k':>7} "
-            f"{'n_corr':>7} {'best_sp':>10} {'mean_sp':>10}",
-            flush=True,
-        )
-        for s in all_summaries:
-            print(
-                f"{s['problem_id']:<22} {s['tag']:<8} {s['pass_at_1']:>7.2f} "
-                f"{s['pass_at_k']:>7.2f} {s['num_correct']:>7} "
-                f"{s['best_speedup_when_correct']:>10.2f} "
-                f"{s['mean_speedup_when_correct']:>10.2f}",
-                flush=True,
-            )
         return compare
-
     finally:
-        print("[vllm] terminating server subprocess...", flush=True)
         vllm_proc.terminate()
         try:
             vllm_proc.wait(timeout=30)
         except subprocess.TimeoutExpired:
             vllm_proc.kill()
-        try:
-            HF_CACHE_VOL.commit()
-        except Exception:
-            pass
 
 
 @app.local_entrypoint()
 def main(
     problems: str,
     run_name: str,
-    n_samples: int = 40,
+    n_samples: int = 50,
     temperature: float = 0.7,
     top_p: float = 0.95,
     max_tokens: int = 8192,
@@ -586,17 +416,8 @@ def main(
     seed: int = 42,
     eval_base: bool = True,
     eval_adapter: bool = True,
-    batch_size: int = 32,
-):
-    """Head-to-head pass@k eval: base gpt-oss-20b vs ATLAS(LoRA) on algotune
-    problems, in a single container sharing one vLLM server.
-    """
-    problem_list = [p.strip() for p in problems.split(",") if p.strip()]
-    assert problem_list, f"No problems parsed from {problems!r}"
-    print(
-        f"[local] sweep: problems={problem_list} run_name={run_name} "
-        f"base={eval_base} atlas={eval_adapter} adapter={adapter_name}"
-    )
+) -> None:
+    problem_list = [problem.strip() for problem in problems.split(",") if problem.strip()]
     compare = run_eval_sweep.remote(
         problems=problem_list,
         n_samples=n_samples,
@@ -609,16 +430,6 @@ def main(
         seed=seed,
         eval_base=eval_base,
         eval_adapter=eval_adapter,
-        batch_size=batch_size,
     )
-    print("\n=== COMPARE ===")
-    for leg in compare["legs"]:
-        print(
-            f"  {leg['problem_id']:<22} {leg.get('tag', '?'):<8} "
-            f"pass@1={leg['pass_at_1']:.2f} pass@k={leg['pass_at_k']:.2f} "
-            f"best_speedup={leg['best_speedup_when_correct']:.2f}"
-        )
-    print(
-        f"\nDownload artifacts with:\n"
-        f"  modal volume get atlas-openevolve-outputs eval/{run_name} ./eval_runs/"
-    )
+    print(json.dumps(compare, indent=2))
+    print(f"modal volume get atlas-openevolve-outputs eval/{run_name} ./eval_runs/")

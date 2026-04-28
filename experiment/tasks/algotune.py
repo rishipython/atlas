@@ -1,9 +1,4 @@
-"""AlgoTune task family using upstream OpenEvolve example assets.
-
-This family loads the selected AlgoTune example problems from
-``experiment/tasks/_oe_problems/algotune_examples`` and exposes them
-through our native ``TaskSpec`` registry.
-"""
+"""AlgoTune task family backed by vendored OpenEvolve example assets."""
 
 from __future__ import annotations
 
@@ -14,12 +9,18 @@ from .base import TaskFamily, TaskSpec
 _THIS_DIR = Path(__file__).resolve().parent
 _ALGOTUNE_ROOT = _THIS_DIR / "_oe_problems" / "algotune_examples"
 
-# Chosen sample of relatively simple problems for quick experiments.
-SIMPLE_SAMPLE_PROBLEMS: list[str] = [
-    "fft_convolution",
-    "convolve2d_full_fill",
-    "affine_transform_2d",
-]
+def _available_problem_ids() -> list[str]:
+    problems: list[str] = []
+    for child in sorted(_ALGOTUNE_ROOT.iterdir()):
+        if not child.is_dir():
+            continue
+        required = ["initial_program.py", "evaluator.py", "config.yaml"]
+        if all((child / name).exists() for name in required):
+            problems.append(child.name)
+    return problems
+
+
+AVAILABLE_PROBLEMS = _available_problem_ids()
 
 
 def _extract_system_prompt(config_text: str) -> str:
@@ -49,16 +50,16 @@ def _problem_dir(problem_id: str) -> Path:
     if not d.exists():
         raise ValueError(
             f"algotune has no problem {problem_id!r}; "
-            f"available: {sorted(SIMPLE_SAMPLE_PROBLEMS)}"
+            f"available: {AVAILABLE_PROBLEMS}"
         )
     return d
 
 
 def make_task(problem_id: str) -> TaskSpec:
-    if problem_id not in SIMPLE_SAMPLE_PROBLEMS:
+    if problem_id not in AVAILABLE_PROBLEMS:
         raise ValueError(
             f"algotune has no problem {problem_id!r}; "
-            f"available: {sorted(SIMPLE_SAMPLE_PROBLEMS)}"
+            f"available: {AVAILABLE_PROBLEMS}"
         )
 
     d = _problem_dir(problem_id)
@@ -82,8 +83,8 @@ def make_task(problem_id: str) -> TaskSpec:
 FAMILY = TaskFamily(
     name="algotune",
     make_task=make_task,
-    available_problems=sorted(SIMPLE_SAMPLE_PROBLEMS),
+    available_problems=AVAILABLE_PROBLEMS,
 )
 
 
-__all__ = ["FAMILY", "make_task", "SIMPLE_SAMPLE_PROBLEMS"]
+__all__ = ["AVAILABLE_PROBLEMS", "FAMILY", "make_task"]

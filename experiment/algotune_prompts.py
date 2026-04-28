@@ -1,9 +1,4 @@
-"""Shared prompt builders for algotune base-model eval / training.
-
-We want *one* definition of the base prompt the model sees at eval
-time for an algotune problem, so the synth-reasoning pipeline, the
-advantage-weighted SFT trainer, and the standalone eval all agree on
-what ``(base_system, base_user)`` looks like.
+"""Shared prompt builder for AlgoTune base-model eval and training.
 
 For the system message, we intentionally reuse the exact task-system
 prompt from ``TaskSpec.system_message`` so base/atlas evaluations see
@@ -103,68 +98,4 @@ def build_algotune_prompts(problem_id: str) -> tuple[str, str, str]:
     )
     return spec.system_message, user, entry_point
 
-
-def design_brief_from_code(final_code: str) -> str:
-    """Return a short bullet-list design brief extracted from final code.
-
-    Used by the synth-reasoning driver to give the LLM a target to
-    converge toward WITHOUT handing it the final code verbatim.
-    """
-    signals: list[str] = []
-    # Imports
-    imports = [
-        ln.strip()
-        for ln in final_code.splitlines()
-        if ln.strip().startswith(("import ", "from "))
-    ]
-    if imports:
-        # Dedupe while preserving order
-        seen = set()
-        unique = []
-        for imp in imports:
-            if imp not in seen:
-                seen.add(imp)
-                unique.append(imp)
-        signals.append("- Imports: " + "; ".join(unique[:8]))
-
-    # Package-level hints
-    if "scipy" in final_code:
-        signals.append("- Uses **scipy** functions somewhere in the solution.")
-    if "numba" in final_code or "@njit" in final_code:
-        signals.append("- Uses **numba** JIT compilation.")
-    if "jax" in final_code:
-        signals.append("- Uses **jax** for JIT / vectorization.")
-    if " @ " in final_code or ".dot(" in final_code:
-        signals.append("- Makes use of matrix multiplication (BLAS-backed).")
-    if "fft" in final_code.lower():
-        signals.append("- Uses **FFT** (O(N log N) instead of O(N^2)).")
-    if "cdist" in final_code:
-        signals.append("- Uses `scipy.spatial.distance.cdist`.")
-    if "expm" in final_code:
-        signals.append("- Uses `scipy.linalg.expm` (Pade + scaling/squaring).")
-    if "fftconvolve" in final_code:
-        signals.append("- Uses `scipy.signal.fftconvolve`.")
-
-    # Rough shape: does it avoid Python-level loops?
-    loop_lines = sum(
-        1
-        for ln in final_code.splitlines()
-        if re.match(r"\s*for\s+\w+\s+in\s+range", ln)
-    )
-    if loop_lines == 0:
-        signals.append("- **No Python-level loops** — all work is vectorised.")
-    elif loop_lines <= 2:
-        signals.append(
-            f"- At most {loop_lines} Python-level loop(s) — most work is vectorised."
-        )
-
-    # Length
-    signals.append(f"- Final solution is ~{len(final_code)} characters.")
-
-    return "\n".join(signals)
-
-
-__all__ = [
-    "build_algotune_prompts",
-    "design_brief_from_code",
-]
+__all__ = ["build_algotune_prompts"]
