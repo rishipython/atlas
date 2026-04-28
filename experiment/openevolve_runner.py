@@ -1,24 +1,31 @@
-"""Run OpenEvolve with ``openai/gpt-oss-20b`` on an atlas kernel problem.
+"""Run OpenEvolve with ``openai/gpt-oss-20b`` on any registered task.
 
 Everything lives inside a single Modal container:
   - vLLM is started as a subprocess serving gpt-oss-20b on localhost:8000
   - OpenEvolve's Python API runs in the same container, pointed at localhost
-  - The evaluator is our existing ``evaluate_kernel`` which spawns an isolated
-    subprocess per candidate (so the LLM server and the Triton benchmark
-    share the GPU but never share a Python interpreter)
+  - The evaluator is produced by the task module via ``experiment.tasks``
+    and spawns isolated subprocesses per candidate (so the LLM server and
+    each candidate share the GPU but never share a Python interpreter)
 
-Outputs (initial program, evaluator, config, best program, full
-evolution_trace.jsonl capturing prompts + code + scores for every
-candidate, and OpenEvolve checkpoints) are persisted to the
-``atlas-openevolve-outputs`` Modal Volume.
+Task families supported today (see ``experiment/tasks/__init__.py``):
+  - ``kernel``       — Triton kernel optimisation (softmax, layernorm, matmul)
+  - ``alphaevolve``  — circle packing n=26 (AlphaEvolve math benchmark)
+  - ``algotune``     — AlgoTune-style Python speedup (3 signal tasks)
+  - ``prompt_opt``   — evolve a system prompt for GSM8K-style questions
 
 Usage (from the repo root, ``modal`` conda env):
 
+    # legacy kernel path (task_family defaults to "kernel")
     modal run experiment/openevolve_runner.py --problem-id softmax
-    modal run experiment/openevolve_runner.py \\
-        --problem-id softmax --iterations 30 --run-name softmax_pilot
 
-Download the trajectory + best program locally after a run with::
+    # new task families
+    modal run experiment/openevolve_runner.py \\
+        --task-family alphaevolve --problem-id circle_packing_26 \\
+        --iterations 40 --run-name alphaevolve_pilot_v1
+
+Outputs (initial program, evaluator, config, best program, full
+evolution_trace.jsonl, and OpenEvolve checkpoints) are persisted to the
+``atlas-openevolve-outputs`` Modal Volume.  Download them with::
 
     modal volume get atlas-openevolve-outputs <run_name> ./runs/
 """
@@ -62,12 +69,41 @@ image = (
         "vllm==0.19.1",
         "openevolve==0.2.27",
         "pyyaml>=6",
+        # Task-family-specific evaluator dependencies. Baked into the
+        # image so an individual task's ``extra_packages`` don't need to
+        # trigger a per-run pip install.
+        "scipy>=1.11",
+        "numba>=0.60",
+        "openai>=1.40",
+        # alphaevolve_math problems need jax/optax for the jax-based
+        # optimizers in several initial_program.py files, and sympy/tqdm
+        # for the analytic uncertainty_ineq / heilbronn evaluators.
+        "jax>=0.4.20",
+        "jaxlib>=0.4.20",
+        "optax>=0.1.7",
+        "sympy>=1.12",
+        "tqdm>=4.66",
+        "matplotlib>=3.7",
     )
     .add_local_dir(
         str(REPO_ROOT),
         "/atlas",
         copy=True,
-        ignore=[".venv", "__pycache__", ".git", "runs", "openevolve_output"],
+        ignore=[
+            ".venv",
+            "__pycache__",
+            ".git",
+            "runs",
+            "openevolve_output",
+            # Runtime-only directories — mustn't be snapshotted into the
+            # image because the local Python processes monitoring Modal
+            # runs write into them (log tails, eval result dumps, plots)
+            # and Modal's image builder flags any mid-build mutation as
+            # a fatal error.
+            "logs",
+            "eval_runs",
+            "tmp_runs",
+        ],
     )
     .env({"PYTHONPATH": "/atlas", "HF_HOME": "/hf_cache"})
 )
@@ -145,174 +181,93 @@ def _start_vllm(adapter_path: str | None = None) -> subprocess.Popen:
     return proc
 
 
-# ---------------------------------------------------------------------------
-# Per-problem artifact generation (initial program + evaluator file)
-# ---------------------------------------------------------------------------
-def _build_initial_program(problem_id: str) -> str:
-    """Return the source code for ``initial_program.py`` for this problem.
-
-    The evolve block starts as the *reference PyTorch implementation*
-    renamed to the expected ``entry_point``.  OpenEvolve's first few
-    iterations rewrite this torch-based body into a Triton kernel; the
-    evaluator rewards only candidates that are numerically correct,
-    and the speedup vs. torch becomes the fitness signal.
-    """
-    sys.path.insert(0, str(REPO_ROOT))
-    from benchmark.kernel.problems import KERNEL_PROBLEMS
-
-    kp = KERNEL_PROBLEMS[problem_id]
-    renamed_ref = kp.reference_code.replace(
-        f"def {kp.ref_entry_point}", f"def {kp.entry_point}"
-    ).rstrip()
-
-    return f'''\
-"""Starting program for OpenEvolve — {kp.problem_id}.
-
-Task: {kp.description}
-
-Requirements for the evolved program:
-  - Define a function named exactly `{kp.entry_point}` with the same
-    signature as the reference below.
-  - Numerical output must be close to the reference (atol={kp.atol}, rtol={kp.rtol}).
-  - Test shapes the evaluator will run: {kp.test_shapes}.
-
-The current body is the reference PyTorch implementation (correct but slow).
-Evolve it into a Triton kernel.  Inside the evolve block you may add any
-helper functions, `@triton.jit` kernels, imports, constants, etc. — as long as
-`{kp.entry_point}` remains defined with the same signature.
-"""
-
-# EVOLVE-BLOCK-START
-{renamed_ref}
-# EVOLVE-BLOCK-END
-'''
-
-
-def _build_evaluator(problem_id: str) -> str:
-    """Return the source code for ``evaluator.py`` bound to a problem_id.
-
-    OpenEvolve imports this module and calls ``evaluate(program_path)`` for
-    every candidate.  We delegate to atlas's ``evaluate_kernel``, which runs
-    the candidate in a fresh Python subprocess on the GPU and measures
-    correctness + wall-clock speedup vs. the reference.
-
-    Scoring (``combined_score``) uses graduated partial credit so the
-    archive / MAP-Elites front can accumulate progressively better
-    attempts rather than being flooded with 0.0s:
-
-      * Shape ran and was correct  →  0.50 + 0.50 * min(speedup, 2.0)
-      * Shape ran but numerical mismatch                →  0.15
-      * Shape ran and threw during the call             →  0.05
-      * Subprocess crashed before printing results      →  0.00
-
-    ``combined_score`` is the average per-shape score.  The strictly-
-    correct speedup (matching the benchmark's historical definition) is
-    still reported as the ``speedup`` metric, and the full per-shape
-    breakdown + subprocess feedback are stored as artifacts so OpenEvolve
-    can surface the exact error text to the LLM on the next mutation.
-    """
-    return f'''\
-"""Auto-generated OpenEvolve evaluator for problem_id={problem_id!r}."""
-from __future__ import annotations
-
-import sys
-sys.path.insert(0, "/atlas")
-
-from benchmark.kernel.evaluator import evaluate_kernel
-from benchmark.kernel.problems import KERNEL_PROBLEMS
-from openevolve.evaluation_result import EvaluationResult
-
-PROBLEM_ID = {problem_id!r}
+# Per-task-family OE config presets. These are merged *on top of* the
+# kernel-oriented default below. The keys are task_family strings (matching
+# ``experiment.tasks.TASK_FAMILIES``). Each preset is a shallow nested
+# override: keys at ``prompt``/``database``/``llm``/``evaluator`` level
+# replace the defaults, other sub-keys are left untouched.
+#
+# The settings here are ported from the OpenEvolve repo's own tuned
+# configs:
+#   * ``algotune``              ← ``examples/algotune/*/config.yaml``
+#   * ``alphaevolve``,          ← ``examples/circle_packing_with_artifacts/config.yaml``
+#     ``alphaevolve_math``,
+#     ``circle_packing_artifacts``
+# (numbers trimmed where our 40-iter/40k-token budget requires it.)
+_REPO_PRESETS: dict[str, dict] = {
+    "algotune": {
+        "checkpoint_interval": 10,
+        "diff_based_evolution": False,
+        "max_code_length": 20000,
+        "llm": {
+            "temperature": 0.4,
+            "max_tokens": 128000,
+            "timeout": 150,
+            "retries": 3,
+        },
+        "prompt": {
+            "num_top_programs": 5,
+            "num_diverse_programs": 5,
+            "include_artifacts": True,
+        },
+        "database": {
+            "population_size": 1000,
+            "archive_size": 100,
+            "num_islands": 4,
+            "feature_bins": 10,
+            "migration_interval": 20,
+            "migration_rate": 0.1,
+            "elite_selection_ratio": 0.1,
+            "exploration_ratio": 0.3,
+            "exploitation_ratio": 0.6,
+        },
+        "evaluator": {
+            "timeout": 200,
+            "max_retries": 3,
+            "cascade_evaluation": True,
+            "cascade_thresholds": [0.5, 0.8],
+            "parallel_evaluations": 4,
+        },
+    },
+    "alphaevolve": {
+        "llm": {"temperature": 0.4, "max_tokens": 16000},
+        "diff_based_evolution": False,
+        "prompt": {"num_top_programs": 3, "num_diverse_programs": 2},
+        "database": {
+            "num_islands": 4,
+            "archive_size": 50,
+            "elite_selection_ratio": 0.1,
+            "exploration_ratio": 0.4,
+            "exploitation_ratio": 0.5,
+            "migration_interval": 10,
+            "migration_rate": 0.15,
+            "feature_dimensions": ["score", "complexity"],
+            "feature_bins": 10,
+        },
+    },
+}
+# Aliases — same preset for other circle-packing / alphaevolve families.
+_REPO_PRESETS["alphaevolve_math"] = _REPO_PRESETS["alphaevolve"]
+_REPO_PRESETS["circle_packing_artifacts"] = _REPO_PRESETS["alphaevolve"]
 
 
-def _per_shape_score(r: dict) -> float:
-    """Graduated per-shape credit. See module docstring for levels."""
-    if r.get("correct"):
-        speedup = float(r.get("speedup", 0.0))
-        return 0.5 + 0.5 * min(speedup, 2.0)
-    # "error" field is populated when the call raised — compile error,
-    # wrong-shape output, pointer issue, etc.  This is a runnable but
-    # broken attempt and is very useful context for the LLM.
-    if "error" in r:
-        return 0.05
-    # No error string + not correct means the call returned a tensor
-    # whose values didn't match the reference — closer to "almost right"
-    # than a full crash, so it gets a slightly higher partial-credit score.
-    return 0.15
-
-
-def evaluate(program_path: str):
-    with open(program_path, "r") as f:
-        code = f.read()
-
-    problem = KERNEL_PROBLEMS[PROBLEM_ID]
-    result = evaluate_kernel(problem, code, timeout=180)
-
-    per_shape = (result.metadata or {{}}).get("per_shape", [])
-    if per_shape:
-        shape_scores = [_per_shape_score(r) for r in per_shape]
-        progress = sum(shape_scores) / len(shape_scores)
-    else:
-        # Subprocess crashed before printing any per-shape result. Leave
-        # progress at 0 — feedback still carries the traceback as an
-        # artifact so the LLM can see what went wrong.
-        shape_scores = []
-        progress = 0.0
-
-    metrics = {{
-        "correctness": 1.0 if result.correct else 0.0,
-        "speedup": float(result.score),  # strict: 0 unless every shape correct
-        "combined_score": float(progress),
-    }}
-
-    artifacts = {{
-        "feedback": result.feedback[:6000],
-        "per_shape": str(per_shape)[:6000],
-        "shape_scores": str(shape_scores),
-    }}
-    return EvaluationResult(metrics=metrics, artifacts=artifacts)
-'''
-
-
-def _build_system_message(problem_id: str) -> str:
-    """The system prompt OpenEvolve injects into every mutation request.
-
-    Combines the atlas Triton API cheatsheet with an explicit goal statement.
-    We deliberately drop the ``## Response format`` section of the cheatsheet:
-    that section tells the LLM to put its answer in a single fenced ```python
-    block, which directly conflicts with OpenEvolve's SEARCH/REPLACE diff
-    format requested by its built-in user-message template.
-    """
-    sys.path.insert(0, str(REPO_ROOT))
-    from agent.prompts import TRITON_SYSTEM_PROMPT
-    from benchmark.kernel.problems import KERNEL_PROBLEMS
-
-    kp = KERNEL_PROBLEMS[problem_id]
-
-    # Keep the opening paragraph + strip the "## Response format" section
-    # before the "## Triton API rules" section (which we want to keep).
-    rules_marker = "## Triton API rules"
-    if rules_marker in TRITON_SYSTEM_PROMPT:
-        intro, rules = TRITON_SYSTEM_PROMPT.split(rules_marker, 1)
-        intro = intro.split("## Response format", 1)[0].rstrip()
-        triton_cheatsheet = f"{intro}\n\n{rules_marker}{rules}"
-    else:
-        triton_cheatsheet = TRITON_SYSTEM_PROMPT
-
-    header = (
-        f"Your task: improve the program inside the EVOLVE-BLOCK to make "
-        f"`{kp.entry_point}` faster than the reference PyTorch implementation "
-        f"while remaining numerically correct on the listed test shapes. "
-        f"The winning strategy is almost always to replace the PyTorch call "
-        f"with a custom `@triton.jit` kernel launched from a thin Python "
-        f"wrapper.  Follow the response format specified in the user "
-        f"message exactly (OpenEvolve expects SEARCH/REPLACE diff blocks).\n\n"
-    )
-    return header + triton_cheatsheet
+def _apply_preset(cfg: dict, preset: dict) -> None:
+    """Shallow-nested merge: ``preset`` overrides ``cfg`` one level deep."""
+    for top_key, top_val in preset.items():
+        if isinstance(top_val, dict) and isinstance(cfg.get(top_key), dict):
+            cfg[top_key].update(top_val)
+        else:
+            cfg[top_key] = top_val
 
 
 def _build_config(
-    iterations: int, system_message: str, served_model: str = MODEL_ID
+    iterations: int,
+    system_message: str,
+    served_model: str = MODEL_ID,
+    evaluator_timeout: int = 300,
+    parallel_evaluations: int = 1,
+    task_family: str = "kernel",
+    random_seed: int = 42,
 ) -> dict:
     """OpenEvolve YAML config, rendered as a Python dict for yaml.safe_dump.
 
@@ -321,13 +276,24 @@ def _build_config(
     ``--lora-modules``, and the HF id (``openai/gpt-oss-20b``) otherwise.
     OpenEvolve's OpenAI client uses this as the ``model`` field in
     /v1/chat/completions calls.
+
+    ``evaluator_timeout`` and ``parallel_evaluations`` come from the
+    per-task ``TaskSpec`` so cheap CPU-only evaluators (circle packing,
+    pairwise distance) don't waste 5 minutes each while GPU-heavy or
+    LLM-driven evaluators (kernel, prompt_opt) keep the big budget they
+    need.
     """
-    return {
+    cfg = {
         "max_iterations": iterations,
         "checkpoint_interval": 5,
         "log_level": "INFO",
-        "random_seed": 42,
+        "random_seed": random_seed,
         "diff_based_evolution": True,
+        # Let the LLM replace the entire EVOLVE-BLOCK instead of emitting
+        # SEARCH/REPLACE diffs when it thinks a rewrite is warranted.
+        # This kills most of the "malformed diff -> no-op iteration"
+        # failures we saw on short-budget kernel runs.
+        "allow_full_rewrites": True,
         "max_code_length": 20000,
         "llm": {
             "models": [{"name": served_model, "weight": 1.0}],
@@ -338,10 +304,10 @@ def _build_config(
             "top_p": 0.95,
             # gpt-oss-20b spends a big chunk of its output budget on the
             # reasoning trace before it emits the SEARCH/REPLACE diffs, so
-            # we give it plenty of room.  max_tokens here caps the RESPONSE
-            # size; the prompt + response together must fit in
-            # --max-model-len, which we bumped to 32k above.
-            "max_tokens": 16384,
+            # we give it plenty of room.  32k matches the mlx_metal_kernel_opt
+            # example — pushes right up against --max-model-len=65536 so
+            # the prompt has 32k headroom for top-programs + artifacts.
+            "max_tokens": 32000,
             # Reasoning budget is left at gpt-oss's default ("high"). When
             # the first attempt returns empty content (all tokens spent in
             # the Harmony analysis channel, nothing emitted to the final
@@ -356,13 +322,25 @@ def _build_config(
         },
         "prompt": {
             "system_message": system_message,
-            "num_top_programs": 3,
-            "num_diverse_programs": 2,
+            # More reference programs per prompt.  The default 3+2 is sized
+            # for small search problems; for kernel writing where each
+            # "reference" is a few-KB Triton file, the base LLM benefits
+            # from seeing more correct-but-different attempts to draw from.
+            "num_top_programs": 5,
+            "num_diverse_programs": 3,
+            # Default-on; make it explicit so the OE runner doesn't fall
+            # silent on it.
+            "use_template_stochasticity": True,
             "include_artifacts": True,
             # Bump this so full Triton compile tracebacks (which can run
             # 2-3KB each) make it into the LLM's prompt instead of being
             # truncated to the first line.
-            "max_artifact_bytes": 16384,
+            "max_artifact_bytes": 32768,
+            # Default 500 makes OE inject a "simplify your code" hint into
+            # EVERY prompt for kernel programs, because every valid
+            # triton kernel is 1-3KB.  That's actively counterproductive
+            # for this task -- push the threshold way up.
+            "suggest_simplification_after_chars": 8000,
         },
         "database": {
             "in_memory": True,
@@ -377,14 +355,13 @@ def _build_config(
             "exploitation_ratio": 0.6,
         },
         "evaluator": {
-            "timeout": 300,
+            "timeout": evaluator_timeout,
             "max_retries": 2,
-            # Our kernel benchmark already consumes the whole GPU during
-            # eval — parallel evaluations would contend with vLLM and with
-            # each other.  Keep this at 1.
-            "parallel_evaluations": 1,
-            # Our evaluator doesn't define evaluate_stage1 / _stage2, so
-            # OpenEvolve's cascade system can't work here anyway.
+            # Most of our evaluators share the GPU with vLLM (kernel) or
+            # hit the same vLLM server OE is driving (prompt_opt), so
+            # parallel_evaluations=1 is the safe default.  Task specs can
+            # override it when the eval is pure CPU + cheap.
+            "parallel_evaluations": parallel_evaluations,
             "cascade_evaluation": False,
         },
         "evolution_trace": {
@@ -398,6 +375,16 @@ def _build_config(
             "compress": False,
         },
     }
+
+    preset = _REPO_PRESETS.get(task_family)
+    if preset is not None:
+        _apply_preset(cfg, preset)
+        print(
+            f"[config] applied '{task_family}' OE-repo preset "
+            f"(top-level overrides: {sorted(preset.keys())})"
+        )
+
+    return cfg
 
 
 # ---------------------------------------------------------------------------
@@ -422,17 +409,22 @@ def run_evolution(
     iterations: int = 30,
     run_name: str | None = None,
     adapter_name: str | None = None,
+    task_family: str = "kernel",
+    random_seed: int = 42,
 ) -> dict:
     import yaml
 
     sys.path.insert(0, "/atlas")
-    from benchmark.kernel.problems import KERNEL_PROBLEMS
+    from experiment.tasks import TASK_FAMILIES, get_task
 
-    assert problem_id in KERNEL_PROBLEMS, (
-        f"Unknown problem_id {problem_id!r}; choose from {sorted(KERNEL_PROBLEMS)}"
-    )
+    if task_family not in TASK_FAMILIES:
+        raise ValueError(
+            f"Unknown task_family {task_family!r}; "
+            f"choose from {sorted(TASK_FAMILIES)}"
+        )
+    spec = get_task(task_family, problem_id)
 
-    run_name = run_name or f"{problem_id}_{int(time.time())}"
+    run_name = run_name or f"{task_family}_{problem_id}_{int(time.time())}"
     output_dir = Path("/outputs") / run_name
     output_dir.mkdir(parents=True, exist_ok=True)
     oe_dir = output_dir / "oe"
@@ -440,10 +432,10 @@ def run_evolution(
     # Snapshot every input artifact into the outputs volume so a run is
     # fully reproducible from what ends up on disk.
     program_path = output_dir / "initial_program.py"
-    program_path.write_text(_build_initial_program(problem_id))
+    program_path.write_text(spec.initial_program)
 
     evaluator_path = output_dir / "evaluator.py"
-    evaluator_path.write_text(_build_evaluator(problem_id))
+    evaluator_path.write_text(spec.evaluator)
 
     # If an adapter was requested, resolve the on-volume path and pick
     # the served-model name vLLM will register it under.  Base-only
@@ -460,12 +452,22 @@ def run_evolution(
     else:
         print(f"[run] served_model={served_model} (base, no adapter)")
 
-    system_message = _build_system_message(problem_id)
-    cfg = _build_config(iterations, system_message, served_model=served_model)
+    cfg = _build_config(
+        iterations,
+        spec.system_message,
+        served_model=served_model,
+        evaluator_timeout=spec.evaluator_timeout,
+        parallel_evaluations=1,
+        task_family=task_family,
+        random_seed=random_seed,
+    )
     cfg_path = output_dir / "config.yaml"
     cfg_path.write_text(yaml.safe_dump(cfg, default_flow_style=False, sort_keys=False))
 
-    print(f"[run] problem={problem_id} iterations={iterations} run_name={run_name}")
+    print(
+        f"[run] task_family={task_family} problem={problem_id} "
+        f"iterations={iterations} run_name={run_name}"
+    )
     print(f"[run] output_dir={output_dir}")
     print(f"[run] initial_program ({program_path.stat().st_size} bytes)")
     print(f"[run] evaluator ({evaluator_path.stat().st_size} bytes)")
@@ -505,6 +507,7 @@ def run_evolution(
 
         summary = {
             "run_name": run_name,
+            "task_family": task_family,
             "problem_id": problem_id,
             "iterations": iterations,
             "adapter_name": adapter_name,
@@ -545,14 +548,19 @@ def main(
     iterations: int = 30,
     run_name: str | None = None,
     adapter_name: str | None = None,
+    task_family: str = "kernel",
+    random_seed: int = 42,
 ):
     """Kick off an OpenEvolve run on Modal and print the result summary."""
     print(
         f"[local] launching OpenEvolve: "
-        f"problem={problem_id} iterations={iterations} "
-        f"run_name={run_name} adapter={adapter_name}"
+        f"task_family={task_family} problem={problem_id} "
+        f"iterations={iterations} run_name={run_name} adapter={adapter_name} "
+        f"seed={random_seed}"
     )
-    summary = run_evolution.remote(problem_id, iterations, run_name, adapter_name)
+    summary = run_evolution.remote(
+        problem_id, iterations, run_name, adapter_name, task_family, random_seed
+    )
     print("\n=== RESULT ===")
     for k, v in summary.items():
         print(f"  {k}: {v}")
