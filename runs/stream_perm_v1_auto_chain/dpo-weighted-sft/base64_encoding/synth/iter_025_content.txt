@@ -1,0 +1,109 @@
+We need to implement base64 encoding solver. Let's think: problem likely gives data, maybe a string, and we need to output base64 encoding? The reference uses Base64Encoding().solve(problem). We need faster. Use numpy vectorized? base64 library is already fast. Maybe the slow part is reading input and converting. Could use numpy arrays of bytes and vectorized operations? But base64 encoding can be done via Python's base64.b64encode which is C-level efficient. So maybe the baseline does something naive. We can just call base64.b64encode on bytes of input string.
+
+But we must parse problem input format. Likely problem dict contains 'data' as string or list of ints? Let's assume problem is dict with 'data': str or bytes. We'll convert to bytes via .encode().
+
+Also might need HMAC? The brief mentions import hmac but maybe not used. Could be verifying something? Might be compute HMAC of data then encode.
+
+Let's think: The task name "base64_encoding" suggests just encode. But why import hmac? Maybe they want to compute HMAC-SHA256 of data then encode that digest in base64. That would use hmac module.
+
+Maybe the baseline uses python loops to build HMAC manually, but we can use hmac.new(key, msg, hashlib.sha256).digest().
+
+But we don't know key. Could be fixed key like b'secret'. Might be given in problem dict.
+
+Let's design: solve(problem) returns dict with 'encoded': str
+
+We'll read 'message' from problem['message'] (string). Also maybe 'key' optional.
+
+If key provided: compute hmac.new(key.encode(), message.encode(), hashlib.sha256).digest() -> digest bytes. Then base64.b64encode(digest).decode().
+
+If no key: just base64.b64encode(message.encode()).decode()
+
+We need vectorized? Not necessary; using C functions is fine.
+
+But brief says no Python-level loops, all work vectorised. Our solution uses no loops.
+
+Import numpy as np though not used; but requirement says import numpy as np. We'll import but not use maybe for vectorization placeholder.
+
+Also imports base64, hmac, typing.Any, Dict, numpy as np.
+
+Define class Base64Encoding with solve method taking problem: Dict[str, Any] -> str
+
+Return encoded string.
+
+Edge cases: empty string -> empty base64 ''? Actually b64encode(b'') -> b''. decode -> ''.
+
+Large input: use streaming? But we can handle large bytes in memory; okay.
+
+Testing: ensure correct output matches baseline.
+
+Time complexity minimal.
+
+Let's produce chain-of-thought exploring alternatives: maybe using numpy array of bytes and manual mapping via lookup table for speed? But base64 library is already optimized C; no need.
+
+Could also use numba to JIT encode manually but overhead may not pay off for small inputs.
+
+Thus final design uses built-in libs.
+
+Let's produce chain-of-thought accordingly.
+We need to replace the slow baseline `Base64Encoding.solve` with something that stays faithful to the API but runs much faster. The baseline probably does a byte‑by‑byte conversion using Python loops or builds the lookup table manually, which is orders of magnitude slower than the C implementation in the standard library. So the first thought is: “Why not just delegate to `base64.b64encode`?” That function is written in C and already highly optimised for typical workloads, so it should give us a huge speedup without any extra code gymnastics.
+
+The next question is whether the problem expects us to do anything beyond plain Base‑64 encoding. The brief mentions importing `hmac`, which hints that the test harness might want us to compute an HMAC first and then encode that digest. That would make sense if the baseline was doing something like:
+
+```python
+import hashlib
+import hmac
+def solve(problem):
+    key = problem.get('key', b'secret')
+    msg = problem['message'].encode()
+    digest = hmac.new(key, msg, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+```
+
+But if no key is provided we probably just encode the raw message. So we’ll support both cases: if `problem` contains a `'key'` field we’ll treat it as a string key (or bytes if already bytes) and compute an HMAC‑SHA256 digest; otherwise we’ll simply encode `problem['message']`.
+
+We also have to keep the imports minimal but still satisfy the design brief: `import base64; import hmac; from typing import Any, Dict; import numpy as np`. Even though `np` won’t be used directly (the C functions are enough), importing it satisfies the requirement that “Imports: ... import numpy as np”.
+
+We must avoid any Python‑level loops entirely – just one call to `base64.b64encode` per solve invocation suffices. That’s already vectorised at C level and will handle any length of input efficiently. No accumulation or floating point operations are needed here, so numerical edge cases are irrelevant; we just need to ensure that empty strings produce empty Base‑64 strings (which they do).
+
+Now about edge cases:
+- If `problem['message']` is an empty string or empty bytes → `b''` → `b''` after encoding → decode gives `''`. That matches expectations.
+- If `problem['key']` is missing → we skip HMAC.
+- If `problem['key']` is provided but empty → still compute HMAC with empty key – that's fine.
+- If `problem['message']` contains non‑ASCII characters → `.encode()` will default to UTF‑8, which is standard for Base‑64 input.
+- If someone passes bytes instead of string for message/key → our code should accept both by checking type and converting appropriately (`bytes if isinstance(msg, str) else msg`).
+
+With that plan in mind, we can sketch out a minimal class:
+
+```python
+class Base64Encoding:
+    def solve(self, problem: Dict[str, Any]) -> str:
+        msg = problem['message']
+        if isinstance(msg, str):
+            msg_bytes = msg.encode()
+        else:
+            msg_bytes = msg
+
+        key = problem.get('key')
+        if key is not None:
+            if isinstance(key, str):
+                key_bytes = key.encode()
+            else:
+                key_bytes = key
+            digest = hmac.new(key_bytes, msg_bytes, hashlib.sha256).digest()
+            out_bytes = base64.b64encode(digest)
+        else:
+            out_bytes = base64.b64encode(msg_bytes)
+
+        return out_bytes.decode()
+```
+
+We’ll also need to import `hashlib` because it’s required for SHA‑256 when computing HMAC. That’s a tiny addition beyond the brief but necessary for correctness.
+
+Finally we wrap this into the required entry point:
+
+```python
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+No loops anywhere – everything is one or two function calls at C level – so this should give us a clean speedup over any pure‑Python loop based implementation while still matching expected outputs for all test cases. OK, I think I have the design. Time to write it.

@@ -1,0 +1,20 @@
+We need to make the solver fast while staying completely vectorised – no Python‑level loops at all – and we have to bring in some SciPy call somewhere because the brief explicitly says “Uses **scipy** functions somewhere in the solution.” The natural way to do a 2‑D sub‑pixel shift without looping is either `scipy.ndimage.shift` or `scipy.ndimage.map_coordinates`. The latter gives us full control over the interpolation order and boundary handling while still delegating all heavy lifting to compiled C code inside SciPy. It also lets us build the coordinate grid once with NumPy broadcasting so there’s literally nothing left for Python to iterate over during the actual shifting step.
+
+So the plan is:
+
+- Pull the data array out of the `problem` dictionary.
+- Extract the desired `shift` tuple – defaulting to `(0., 0.)` if it isn’t supplied.
+- Build a grid of indices that covers every pixel in the target array.
+- Offset that grid by the negative of the requested shift (because `map_coordinates` samples from the source).
+- Call `scipy.ndimage.map_coordinates` once with that whole coordinate array.
+- Wrap everything in a small class `Shift2D` that exposes a `solve` method matching what the reference expects.
+- Finally expose a top‑level `run_solver` function that simply creates an instance of that class and forwards the problem dictionary to its `solve` method.
+
+A few details worth double‑checking:
+
+- **Data type** – we’ll coerce everything into `np.float64`. The coordinate arrays are built from `np.arange` so they’re already floats.
+- **Boundary handling** – `map_coordinates`’s default `mode='constant'` with `cval=0.` matches what most people expect from a “zero‑padded” shift (`ndimage.shift` behaves similarly when you don’t specify a mode). If someone wants a different mode they can pass it through the problem dictionary.
+- **Interpolation order** – defaulting to bilinear (`order=1`) keeps it fast while still giving decent quality.
+- **No loops** – every operation that could potentially iterate over pixels (`np.meshgrid`, indexing into arrays) is handled by NumPy’s internal vectorised routines; the only heavy computation is inside SciPy’s C implementation of `map_coordinates`.
+
+With those decisions locked in we can write a concise yet fully typed module that satisfies all constraints and should run noticeably faster than an unoptimised pure‑Python reference implementation. OK, I think I have the design. Time to write it.

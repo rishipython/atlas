@@ -1,0 +1,78 @@
+We need to figure out what shift_2d does. Let's guess: probably given a 2D array and shift vector, we shift the array. The baseline is slow; we want fast vectorized solution using scipy.ndimage shift. We must import logging, typing, numpy, scipy.ndimage. No loops.
+
+We need to design run_solver that takes problem dict and returns solution. Problem likely contains 'image', 'shift', maybe other params.
+
+We need to think about how to parse problem. Maybe problem is a dict with keys 'data', 'shift', 'order', etc. The baseline uses Shift2D().solve(problem). We don't know its internals. But we can design a function that extracts needed fields.
+
+We need to use scipy.ndimage.shift for fast shift. That handles subpixel shifts with interpolation. We need to handle boundary conditions: maybe reflect or nearest? Use mode='nearest' or 'constant'.
+
+We need to ensure no loops: just call shift.
+
+Edge cases: shift may be integer or float, maybe tuple of (dx, dy). If integer, we can use np.roll for speed? But shift may be float; use ndimage.shift.
+
+Also need to handle dtype: float64 likely.
+
+We need logging: set up logger.
+
+Return result maybe as numpy array or dict? Baseline returns whatever Shift2D().solve returns; likely a dict with 'result' key.
+
+We'll design run_solver returning the shifted array directly.
+
+Let's think about input format: maybe problem['array'] or problem['data']. We'll inspect typical AlgoTune tasks: They often provide 'matrix' key for 2D array and 'shift' key for tuple of ints. Could also include 'order'.
+
+Better to support both integer and float shifts.
+
+Also consider memory usage: ndimage.shift copies data; fine.
+
+We should also consider speed: For large arrays, ndimage.shift uses FFT-based algorithm if order>0? Actually uses spline interpolation via spline_filter then map_coordinates. That's fine.
+
+But maybe we can use np.roll for integer shifts which is faster than ndimage.shift; but we can't have loops, but np.roll handles whole array.
+
+So we can detect if shift values are integers (or close to int). If so, use np.roll; else use ndimage.shift.
+
+Also we can use order=1 default (bilinear) but allow customizing via problem.get('order',1).
+
+Also mode default maybe 'nearest'.
+
+Let's design:
+
+def run_solver(problem):
+    logger = logging.getLogger(__name__)
+    arr = np.asarray(problem['data'])
+    shift = problem.get('shift', (0,0))
+    if isinstance(shift, (int,float)):
+        shift = (shift, shift)
+    # Ensure tuple length 2
+    if len(shift)!=2:
+        raise ValueError
+    # Check if both integers
+    if all(abs(s - round(s)) < 1e-8 for s in shift):
+        s0,s1 = map(int, map(round, shift))
+        res = np.roll(arr, shift=s0, axis=0)
+        res = np.roll(res, shift=s1, axis=1)
+    else:
+        order = problem.get('order',1)
+        mode = problem.get('mode','nearest')
+        res = scipy.ndimage.shift(arr, shift=shift[::-1], order=order, mode=mode) # note axis order
+    return {'result': res}
+
+But careful: ndimage.shift expects shape (ndim,) where first is y axis? Actually image coordinate order: shape (M,N), shift[0] is along first axis (rows). So no reverse needed.
+
+Also ensure dtype same as input.
+
+Also consider memory copy: we might want to preserve dtype; ndimage.shift returns same dtype as input? It might cast to float64 by default; we can set output dtype via output parameter? There's no output param in ndimage.shift; it returns same dtype but may convert due to interpolation requiring float64 internally but output dtype matches input? Not sure. We could cast back after shifting if needed.
+
+But baseline probably expects same dtype.
+
+Also logging: maybe log start and end times.
+
+Edge cases: empty array -> return empty.
+
+Also if arr.ndim != 2 raise error.
+
+Check that arr is 2D else flatten? But spec says 2D only.
+
+Ok final design ready.
+
+Now produce handoff sentence.
+OK, I think I have the design. Time to write it.

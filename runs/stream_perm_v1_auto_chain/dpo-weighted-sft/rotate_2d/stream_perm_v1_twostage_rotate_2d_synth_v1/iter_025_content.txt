@@ -1,0 +1,217 @@
+We need to speed up a rotate_2d algorithm. The reference is slow; we must replace body with faster implementation. The design brief: imports logging, typing Any, Dict, numpy as np, scipy.ndimage. No Python-level loops; all vectorized. Use scipy functions somewhere. Final solution ~8556 chars. So we need to think about how to implement rotate_2d efficiently using scipy.ndimage.rotate or affine_transform. Let's think.
+
+The problem likely involves rotating a 2D array or image by some angle, maybe multiple angles? Let's assume input format: problem dict contains 'image', 'angle', maybe 'center'. We need to produce rotated image.
+
+We should use scipy.ndimage.rotate which is vectorized and uses interpolation. Could also use scipy.ndimage.affine_transform with matrix.
+
+We need to avoid loops over pixels; just call the function.
+
+Edge cases: negative angles, 0 angle returns same array, large arrays, preserve shape? The function may need to preserve shape or expand.
+
+Also we need logging for debug.
+
+We need type hints: def run_solver(problem: Dict[str, Any]) -> np.ndarray.
+
+We need to import logging, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+Now design: parse problem dict; get array and angle; maybe get order of interpolation; maybe output shape.
+
+Also consider that the reference might have used nested loops to compute rotation manually via matrix multiplication for each pixel. We replace with vectorized SciPy call.
+
+Potential pitfalls: SciPy rotate expects angle in degrees? It uses degrees by default. Might need to convert rad->deg if problem uses rad. We can check problem keys: maybe 'angle' in radians? We could detect type of angle and convert if needed.
+
+Also SciPy rotate can be slow for large arrays if using high-order interpolation; but it's okay.
+
+We also might want to use scipy.ndimage.affine_transform for better control over output shape and center. But rotate is simpler.
+
+Let's think about using scipy.ndimage.rotate with reshape=False to keep same shape; but then rotated corners truncated. Might be okay.
+
+Alternatively use rotate with reshape=True for full output; but we may want original shape.
+
+Let's decide: use reshape=False by default but allow optional 'reshape' key in problem dict.
+
+Also handle 'mode' parameter (constant, nearest, reflect). Provide default 'constant'.
+
+Also handle 'cval' default 0.0.
+
+Also handle 'order' interpolation order (0-5). Use 3 default (cubic).
+
+Also handle 'prefilter' flag (default True). Provide ability to set False for speed if order <=1.
+
+Edge cases: If angle is 0 or multiple of 360 -> return copy of input array unchanged.
+
+Edge case: if input array is empty or has zero dimensions -> return same array.
+
+Also ensure dtype preserved or cast appropriately? SciPy rotate returns float64 by default; we can cast back to original dtype if needed but careful with integer types causing overflow. Maybe keep dtype as original if integer and order=0 (nearest). But simpler: return result as same dtype as input after clipping if needed.
+
+But we might ignore dtype conversion for speed; just return float64 result. That might be acceptable if baseline expects float64? Not sure. But we can cast back using .astype(original_dtype) after clipping min/max of original range if integer type. That adds overhead though.
+
+Better: check original dtype; if integer, cast back after clipping min/max values from original type limits using np.iinfo or np.finfo for floats? For floats no clipping needed but preserve dtype.
+
+Ok design:
+
+```
+def run_solver(problem):
+    logger = logging.getLogger(__name__)
+    arr = problem['array']   # or problem['image']
+    angle = problem['angle']
+    # detect rad vs deg
+    if isinstance(angle, float) and abs(angle) > 360:
+        # assume rad
+        angle_deg = np.degrees(angle)
+    else:
+        angle_deg = angle
+    # options
+    reshape = problem.get('reshape', False)
+    order = problem.get('order', 3)
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0.0)
+    prefilter = problem.get('prefilter', True)
+
+    # handle trivial
+    if angle_deg % 360 == 0:
+        return arr.copy()
+
+    # perform rotation
+    rotated = scipy.ndimage.rotate(arr, angle_deg, reshape=reshape,
+                                   order=order, mode=mode,
+                                   cval=cval, prefilter=prefilter)
+
+    # cast back if integer dtype
+    if np.issubdtype(arr.dtype, np.integer):
+        info = np.iinfo(arr.dtype)
+        rotated = np.clip(rotated, info.min, info.max)
+        rotated = rotated.astype(arr.dtype)
+
+    return rotated
+```
+
+But we must avoid loops and maintain vectorization – yes SciPy does that internally.
+
+Now consider performance: calling SciPy rotate on large arrays may allocate memory; but it's okay relative to manual loops which would be slower anyway.
+
+Also consider that SciPy's rotate uses trilinear interpolation etc; it's optimized in C and Fortran via OpenBLAS/ATLAS etc.
+
+Potential improvement: Use `scipy.ndimage.affine_transform` with matrix derived from rotation matrix for speed? But rotate uses same underlying code basically; difference minimal.
+
+Alternatively use `scipy.ndimage.map_coordinates` with meshgrid of coordinates transformed by rotation matrix – this would involve generating coordinate grid which is vectorized but still overhead similar to rotate.
+
+Thus simplest is `scipy.ndimage.rotate`.
+
+Now about imports: import logging; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+Ok final file structure:
+
+```
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    ...
+```
+
+Add docstring maybe not necessary but fine.
+
+Edge cases: Problem dict may have keys 'data' instead of 'array'. We can support both by checking keys:
+
+```
+arr = problem.get('array') or problem.get('data') or problem.get('image')
+```
+
+But baseline may only provide one key; we can just expect 'array'.
+
+Also maybe the input is a list of lists; convert to np.array inside function? But likely already numpy array because baseline uses numpy operations in loops so they convert earlier. But safe to convert:
+
+```
+arr = np.asarray(arr)
+```
+
+Now about performance measurement: We should set logger level maybe at debug but not heavy overhead due to logging calls inside function? Logging only once per call fine.
+
+Now ensure no loops inside our function except potential trivial checks like `if angle_deg % 360 == 0:` – that's fine because it's constant time not loop over elements. No loops over array elements except those inside SciPy's C code which is fine.
+
+Now test edge cases:
+
+- Input array shape (N,N) or any shape.
+- Angle negative -> works.
+- Reshape True -> output bigger shape.
+- Order >5 not allowed -> raise error.
+- Mode invalid -> raise error.
+- Pre-filter flag false when order >1 leads to aliasing but okay.
+- Integer dtype casting back ensures no overflow/clipping issues.
+- If arr dtype float32 -> result float64 but we might cast back to float32? Might not be necessary but could maintain dtype:
+
+```
+if arr.dtype.kind in {'f'}:
+   rotated.astype(arr.dtype)
+```
+
+But float32 may lose precision? But we can cast back after rotation since rotation yields float64 then cast down may lose some precision but acceptable likely because baseline may expect float32? Hard guess. But better preserve dtype exactly:
+
+```
+rotated_dtype = arr.dtype
+if rotated_dtype != rotated.dtype:
+   rotated = rotated.astype(rotated_dtype)
+```
+
+But careful with integer rounding vs truncation vs rounding? Cast will round towards zero for floats->int leading possible differences compared to baseline which might use nearest integer rounding (order=0 nearest). For order=0 nearest interpolation returns nearest integer values already from input integers so casting back should preserve exactly same values because they are integers already computed by nearest neighbor algorithm implemented in C returning int values? Actually SciPy's rotate with order=0 returns nearest neighbor interpolation producing floats that equal nearest input value exactly (since all values are integers). So casting back will preserve same integer values exactly because no rounding errors occur. So safe.
+
+For higher orders producing non-integer results, casting back will truncate/different than baseline which may have used float type anyway so no issue.
+
+Thus final design stands.
+
+Now consider performance improvements further:
+
+Could use `scipy.ndimage.rotate` with `prefilter=False` when order <=1 else True default True may cause additional filter pass that costs time but necessary for higher orders anyway. So we set prefilter based on order threshold:
+
+```
+prefilter = False if order <=1 else True
+```
+
+But allow override via problem dict else default True as above but maybe adjust automatically:
+
+```
+prefilter = problem.get('prefilter')
+if prefilter is None:
+   prefilter = False if order <=1 else True
+```
+
+This reduces overhead for simple nearest neighbor rotations typical in many tests where speed matters more than accuracy beyond nearest neighbor?
+
+But baseline might have used higher orders too; not sure. We'll keep default True and allow override via dict param only for user customizing speed/accuracy tradeoff rather than automatically change based on order because that might change semantics relative baseline when user didn't specify prefilter param originally (but baseline may have used prefilter True implicitly). So keep default True unless specified otherwise in problem dict. Good enough.
+
+Now ensure no loops inside function except trivial ones like retrieving dict keys etc which are O(1).
+
+Consider using `np.mod(angle_deg, 360)` instead of `%` due to floating point angles like 360*some factor causing rounding errors leading wrong branch detection? Use `np.isclose(angle_deg % 360., 0.)` maybe better:
+
+```
+if np.isclose(angle_deg % 360., 0., atol=1e-12):
+   return arr.copy()
+```
+
+This ensures small numeric errors don't cause unnecessary rotation call which could be expensive on large arrays but negligible overhead relative to cost of rotation anyway though skip it saves time when trivial case occurs often e.g., many tests with zero rotation angles used for benchmarking speed?
+
+Ok include that check with tolerance small enough not misclassify non-zero angles near multiples of 360 due to floating point errors like 360*1e-10 difference due to rad conversion etc. We'll just check `np.isclose(angle_deg % 360., 0., atol=1e-8)` perhaps safe enough given typical angles <2π rad ~6 rad => degrees ~343°, no risk of near multiple of 360 except exactly zero or multiples of full circle like ±360°, ±720°. Those would be exactly representable as floats probably yes because rad conversion from multiples of π yields approximate numbers maybe not exact multiples of degrees though? Eg rad=2π => degrees=360 exactly representable as double because π approximated times two yields approx value not exact multiple of degree due to binary representation error ~1e-15 difference from exact 360 maybe leads modulo produce small residual ~1e-14 which close check will catch correctly as zero within tolerance small enough e.g., atol=1e-8 > residual thus treat as zero good. Good.)
+
+Thus implement trivial check accordingly.
+
+Now final code file includes imports and run_solver defined accordingly plus docstring optional plus __all__ maybe not needed.
+
+Check final size ~8556 characters - our design likely smaller but final code file will include imports plus function definition plus docstring etc maybe around <2000 chars; the brief says final solution ~8556 characters - maybe they expect many lines including docstrings etc? But our design might produce smaller file than expected but still fine since brief just says final solution should be ~8556 characters - not mandatory? It's part of brief though maybe they expect that size but can't guarantee here without writing full code length spec precisely. But we cannot produce actual code now just reasoning trace - so fine.
+
+Now consider potential alternative designs considered earlier:
+
+Alternative 1: Use numba JIT compiled loop performing manual rotation using matrix multiplication per pixel – would involve Python-level loops replaced by numba's parallel loops still compiled C code – possible speedup but more complex and risk of errors like index mapping etc. We reject because SciPy's built-in implementation already highly optimized and easier maintainable without risk of mis-indexing and numeric errors due to bilinear interpolation etc.; also avoids implementing coordinate transforms manually which could introduce bugs and slower than library call anyway due to overhead per pixel Python-level loop even JIT compiled might still slower than vectorized library calls due to memory access patterns and caching issues compared to optimized BLAS routines used internally by SciPy's ndimage functions written in C/Fortran using efficient memory access patterns possibly leveraging SIMD instructions better than custom numba loop unless heavily tuned with parallelization flags – too risky given time constraints and complexity vs straightforward library call approach which meets all constraints (no Python-level loops).
+
+Alternative 2: Use FFT-based rotation via convolution after rotating coordinate grid – too complex and unnecessary overhead compared to direct interpolation algorithm built into ndimage.rotate which uses bilinear/trilinear interpolation implemented efficiently in C without FFTs – also FFT approach would require padding and complex operations leading more memory usage and slower overall performance especially for moderate-sized images typical in tasks where speed matters more than high precision rotational blur effect etc.; thus discard this approach.
+
+Alternative 3: Use OpenCV's warpAffine via cv2.warpAffine – would require extra dependency cv2 not allowed per available packages list (cvxpy etc.), so can't rely on it unless included in environment unknown – better stick with scipy only as required by brief "Uses scipy functions somewhere".
+
+Thus choose SciPy ndimage.rotate path as described above – meets all constraints: imports include required modules; uses scipy ndimage; no Python-level loops except trivial dictionary accesses/conditionals; fully vectorized call inside SciPy library handles heavy lifting efficiently; handles edge cases properly including zero-angle skip and dtype casting/clipping for integer types ensuring correctness relative baseline likely expecting same output type/dtype semantics; logs optional debug messages minimal overhead ; design robust against missing keys by providing defaults where appropriate ; ready for integration into run_solver entry point returning result array ; done .
+We need a fast replace for the reference Rotate2D solver that currently loops over every pixel doing its own trigonometric transforms and interpolation manually. The obvious way forward is to hand off the heavy lifting entirely to a well‑tuned library routine rather than re‑implement it ourselves in Python or even Numba—SciPy’s ndimage module already contains a highly optimised rotation routine written in C/Fortran that does all the interpolation internally using SIMD where available.  
+
+Let’s sketch out what the new `run_solver` should look like while keeping the public signature identical (`def run_solver(problem):`).  
+The input dictionary will contain at least an `'array'` key holding the image data and an `'angle'` key giving the rotation amount (the reference implementation accepts radians).  
+We’ll normalise the angle into degrees because `scipy.ndimage.rotate` expects degrees by default (`axes=(1,0)` orientation matches NumPy’s row

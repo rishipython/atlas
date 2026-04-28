@@ -1,0 +1,32 @@
+We need to replace the body with faster implementation using FFT. Use scipy.signal.fftconvolve or numpy. Use np.fft.fft, but careful with float64. The output should be same as np.convolve(x,h,'full'). Use np.fft.fft. We can implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size = N+M-1
+    # Next power of two
+    nfft = 1<< (size-1).bit_length()
+    X = np.fft.rfft(x, n=nfft)
+    H = np.fft.rfft(h, n=nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, n=nfft)
+    return y[:size]
+
+But we must ensure dtype float64. Use np.fft.rfft returns complex128 by default. Works.
+
+Edge cases: empty arrays? Not expected. But handle if size==0? But conv of empty arrays yields empty. We'll handle.
+
+Return dtype float64.
+
+Potential numerical differences: should be within tolerance.
+
+Also maybe use scipy.signal.fftconvolve but that might be slower overhead. We'll implement ourselves.
+
+Let's produce full file with imports.
+
+Also test: if x and h are 1D float64 arrays.
+
+Implement conv1d accordingly.
+
+Also we can use np.fft.fftpack? We'll use numpy's.
+
+Ok produce final code.

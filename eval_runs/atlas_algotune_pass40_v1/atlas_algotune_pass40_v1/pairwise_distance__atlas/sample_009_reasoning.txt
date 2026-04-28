@@ -1,0 +1,45 @@
+We need to write efficient implementation. Standard formula: squared distances matrix = A + A.T - 2*X @ X.T, where A is diagonal vector of squared norms of rows. But careful with dtype. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist2 = sq_norms[:, None] + sq_norms[None, :] - 2*np.dot(X, X.T)
+    dist2[dist2 < 0] = 0  # due to numerical errors
+    return dist2
+
+This returns float64. Should be fine. But we need to preserve same output shape.
+
+Edge cases: negative zeros? Not important.
+
+We can also use np.einsum for dot. But dot is fine.
+
+Return dist2.
+
+We must import numpy.
+
+We need to ensure that for large arrays, memory usage is okay. But typical.
+
+Also we could use np.linalg.norm. But dot is fine.
+
+Also we can use np.dot(X, X.T). Use np.dot.
+
+Add small epsilon? Not necessary.
+
+Let's implement.
+
+Make sure to use dtype float64.
+
+Also handle X shape (N, D). For N=0? Not needed.
+
+Return as np.ndarray.
+
+Test.
+
+Also can use np.maximum(dist2, 0) to clip negative values.
+
+Ok.
+
+We need to produce a file containing imports and function.
+
+Let's produce.
+

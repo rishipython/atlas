@@ -1,0 +1,72 @@
+We need to rewrite the Shift‑two‑dimensional routine so that it runs in pure vectorised NumPy/Scipy code without any Python‑level loops and still returns the same semantics as the reference solver – an optimal integer pixel shift between two images (or equivalently the translation that best aligns them).  
+
+Let’s first think about what “shift_2d” usually means in these benchmark suites: you’re given two 0‑mean floating‑point arrays `A` and `B` of identical size (or at least similar size) and you want to find the integer translation `(dx,dy)` that maximises their cross‑correlation. The classic way is phase‑correlation via the Fourier domain – it’s O(N log N) and entirely vectorised once you hand off the work to `numpy`/`scipy`.  
+
+The baseline implementation probably does something like nested Python loops over all possible shifts or uses a naïve `scipy.signal.correlate` which is still O(N²). We’ll replace that with an FFT‑based approach so that there are no explicit loops at all beyond trivial indexing when we locate the peak of the correlation map.  
+
+**Design decisions**
+
+* **Imports** – stick with `numpy` and `scipy.ndimage`/`scipy.signal`.  
+  We’ll need `numpy as np`, `scipy.ndimage` for applying the final integer shift if required, and `scipy.signal` only if we decide to use its helper functions (but we can just call `np.fft`).  
+* **Input handling** – assume the caller passes a dictionary with keys `'A'` and `'B'`. Both are NumPy arrays of type float32/float64 but could differ slightly in shape; we’ll pad them to the same shape by zero‑padding on the right/bottom.
+* **FFT cross‑correlation** – use real‑to‑complex FFT (`np.fft.rfftn`) because inputs are real‐valued; multiply one spectrum by the complex conjugate of the other; inverse transform (`np.fft.irfftn`) gives us a real correlation map.
+* **Peak detection** – locate maximum index via `np.argmax`; convert flat index back to 2‑D coordinates with `np.unravel_index`.  
+  Because correlation wraps around due to zero‑padding, subtract half the dimensions (`shape // 2`) to get signed shifts.
+* **Return format** – match what callers expect from the baseline solver: a dictionary containing at least `'shift'`: `(dx, dy)` as integers (or floats if subpixel allowed). Optionally include `'aligned'`: the shifted version of `A` using `scipy.ndimage.shift`.  
+* **No Python loops** – everything else is vectorised except tiny list comprehensions for padding tuples – those are fine because they’re O(1).
+* **Numerical stability** – keep everything in float64 internally even if inputs were float32; cast back only if needed.
+* **Edge cases** – tiny arrays will still work because FFT handles any size (though performance degrades). If both arrays are identical zero arrays, correlation will be all zeros; choose `(0,0)` as default shift.
+* **Performance notes** – using real FFT halves memory bandwidth vs complex FFTs; zero‑padding adds at most a factor of two overhead but keeps shapes powers of two optional – not necessary unless performance profiling shows otherwise.
+* **Testing sanity** – verify that applying returned `(dx,dy)` via `ndimage.shift(A)` aligns it well with `B`; also test on synthetic translations where ground truth is known.
+  
+With these points nailed down I can now sketch out the final file structure:
+
+```python
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        A = problem["A"]
+        B = problem["B"]
+
+        # Ensure both inputs are float64 for numerical stability
+        A_f64 = A.astype(np.float64)
+        B_f64 = B.astype(np.float64)
+
+        # Pad both arrays to same shape (max dims)
+        target_shape = tuple(max(a,b) for a,b in zip(A_f64.shape,B_f64.shape))
+        pad_A = [(0,target_shape[i]-A_f64.shape[i]) for i in range(A_f64.ndim)]
+        pad_B = [(0,target_shape[i]-B_f64.shape[i]) for i in range(B_f64.ndim)]
+        A_pad = np.pad(A_f64,pad_A,"constant")
+        B_pad = np.pad(B_f64,pad_B,"constant")
+
+        # Real FFT based cross‑correlation
+        fft_A   = np.fft.rfftn(A_pad)
+        fft_B   = np.fft.rfftn(B_pad)
+        corr    = np.fft.irfftn(fft_A * np.conj(fft_B))
+
+        # Find peak location
+        idx_max   = corr.argmax()
+        peak_yx   = np.unravel_index(idx_max,corr.shape)
+        
+        # Convert wrapped index to signed shift
+        dy_shift  = peak_yx[0] - target_shape[0]//2
+        dx_shift  = peak_yx[1] - target_shape[1]//2
+
+        # Optionally align A by this integer translation
+        aligned_A  = scipy.ndimage.shift(A,factor=(dy_shift,dx_shift),
+                                         order=3,
+                                         mode="nearest")
+
+        return {"shift":(dx_shift,dy_shift),"aligned":aligned_A}
+
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+This meets all constraints: only NumPy/Scipy functions are used after imports; no explicit Python loops except trivial padding logic; everything else is vectorised; it’s concise yet clear enough for debugging or further optimisation if needed. OK, I think I have the design. Time to write it.

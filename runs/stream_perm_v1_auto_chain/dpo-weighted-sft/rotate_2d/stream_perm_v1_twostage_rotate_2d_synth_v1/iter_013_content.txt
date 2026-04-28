@@ -1,0 +1,126 @@
+We need to speed up a 2D rotation solver. The baseline uses a slow algorithm, probably naive matrix multiplication or iterative loops. We want to use numpy and scipy, no Python loops, vectorised, use BLAS.
+
+The problem likely: given a set of points in 2D, rotate them by some angle? Or find optimal rotation aligning two point sets? Maybe it's a classic Procrustes problem: find rotation that best aligns two point sets. The baseline might use iterative search over angles. We can do analytic solution: compute cross-covariance matrix and use SVD or eigen decomposition.
+
+So design: parse problem dict: maybe contains 'points1', 'points2', each Nx2 array. We need to compute optimal rotation matrix R that minimizes sum of squared distances between R*points1 and points2. That is Procrustes. The solution: compute covariance C = X^T Y, then SVD C = U Σ V^T, rotation = V U^T. Ensure determinant positive.
+
+We can use numpy.linalg.svd or scipy.linalg.svd which is BLAS-backed.
+
+We also need to produce output in same format as baseline expects. Maybe baseline returns dictionary with 'rotation': array shape (2,2). Or maybe returns rotated points.
+
+We can also use scipy.ndimage.rotate? But that's for images. But the brief says use scipy functions somewhere; we could use scipy.linalg.svd or maybe scipy.optimize? Use scipy.ndimage for something? Might not be necessary but requirement says uses scipy functions somewhere; we can call scipy.linalg.svd.
+
+Also must avoid Python loops; all vectorised.
+
+Edge cases: if covariance matrix singular? If points are identical? Then any rotation works; we can return identity.
+
+Also need logging and random import as per brief. Might be used for debugging or seeding? We'll just import random though not used.
+
+Now think about design of solve method: class Rotate2D with solve method taking problem dict; inside solve we extract arrays, compute centroids, center data, compute cross-covariance, SVD, rotation matrix, ensure det=1 by flipping sign of last column if needed. Then return dict {'rotation': R}. Might also return rotated points if needed.
+
+Alternatively baseline might expect returning rotated points; but typical Procrustes returns transformation parameters.
+
+Check baseline reference? Not provided. But we can guess typical output.
+
+Maybe baseline returns tuple (rotated_points1, rotated_points2)? But we don't know.
+
+We could inspect typical AlgoTune tasks: rotate_2d likely rotates a set of points by random angle and asks to recover it? The solver might be given original points and rotated points and must find rotation matrix.
+
+Thus output should be rotation matrix or angle. We'll return angle in radians as well maybe.
+
+Better to return both: 'rotation': R, 'angle': theta.
+
+Now implement solve using numpy vectorised operations:
+
+X = problem['X']  # shape (N,2)
+Y = problem['Y']  # shape (N,2)
+centroid_X = X.mean(axis=0)
+centroid_Y = Y.mean(axis=0)
+Xc = X - centroid_X
+Yc = Y - centroid_Y
+C = Xc.T @ Yc  # shape (2,2)
+U,S,Vt = np.linalg.svd(C)
+R = Vt.T @ U.T
+if np.linalg.det(R) < 0:
+    Vt[-1,:] *= -1
+    R = Vt.T @ U.T
+theta = np.arctan2(R[1,0], R[0,0])  # angle
+return {'rotation': R, 'angle': theta}
+
+This uses BLAS for matmul and SVD is BLAS-backed via LAPACK.
+
+No loops.
+
+Also import logging and random though unused; maybe set seed for reproducibility if needed.
+
+Add type hints: def solve(self, problem: Dict[str, Any]) -> Dict[str, Any].
+
+Also add __init__ maybe empty.
+
+Wrap in class Rotate2D with solve method.
+
+Entry function run_solver(problem) returns Rotate2D().solve(problem).
+
+Add imports: logging; random; typing.Any; typing.Dict; numpy as np; scipy.linalg
+
+But brief said import scipy.ndimage too. We can import it but not use; maybe we could apply ndimage.rotate to verify? But requirement says uses scipy functions somewhere in solution. We already use scipy.linalg.svd via numpy but maybe better to explicitly call scipy.linalg.svd to satisfy requirement. So import from scipy.linalg import svd; then use svd(C). That counts as using scipy function.
+
+Also include random usage: maybe random.seed(42) at start of solve for reproducibility of any randomness if needed (though none). Or could generate noise but not needed.
+
+Edge cases: if N<3? With 2 points still works unless collinear leading to singular covariance. If singular SVD returns zero singular values but still yields rotation via U,Vt product; det may be negative adjust accordingly.
+
+Check numeric stability: use double precision float64 by default numpy arrays are float64 unless specified otherwise. Should be fine.
+
+Return type consistent with baseline? Might expect list of floats or nested lists; but dict with numpy array fine maybe convert to list via .tolist() for JSON serialization? But baseline likely expects numpy arrays too. We'll keep numpy array but could convert to list if needed: R.tolist().
+
+Better to convert to list to avoid issues when serializing or printing in tests expecting python lists. Let's convert:
+
+R_list = R.tolist()
+return {'rotation': R_list, 'angle': float(theta)}
+
+This ensures no numpy types returned.
+
+Now consider potential requirement for performance: the heavy part is matmul and svd which are already optimized BLAS/LAPACK calls via SciPy/numpy which are fast enough for moderate N (~10k). No loops so speed good.
+
+Also include logging.debug statements optional but not necessary for speed but okay small overhead negligible.
+
+Edge case when det < 0 after SVD adjustment may still be negative due to numerical errors; check abs(det) > 1e-6 else adjust sign of last column of Vt accordingly before recomputing R.
+
+Also handle case where C is zero matrix -> all points same -> any rotation works; we can return identity matrix and angle 0. So check if np.allclose(C, 0): return identity and angle 0.
+
+Let's incorporate that check:
+
+if np.allclose(C, 0):
+    R = np.eye(2)
+    theta = 0.0
+
+Now final code design ready.
+
+Now produce handoff sentence.
+We need to replace the slow solver with a vectorised analytic solution that uses BLAS‑backed operations and a SciPy routine somewhere in the code path.  
+Let’s assume the input `problem` dictionary contains two key‑value pairs – `'X'` and `'Y'` – each an \(N\times 2\) array of coordinates that differ only by an unknown planar rotation (no scaling or reflection).  
+The classic way to recover the optimal rotation is a Procrustes alignment:
+
+1. **Center** both point sets by subtracting their centroids – this removes translation.
+2. Compute the cross‑covariance matrix  
+   \(C = X_{\text{centered}}^{\top} Y_{\text{centered}}\) – a \(2\times 2\) matrix.
+3. Perform an SVD on \(C\): \(C = U \Sigma V^{\top}\).
+4. The optimal rotation is \(R = V U^{\top}\).  
+   If \(\det(R)<0\), flip the sign of the last column of \(V\) before recomputing \(R\) so that \(\det(R)=+1\).
+5. Extract the rotation angle from \(R\) via `atan2`.
+
+All of this is one‑liner‑ish once you have the matrices ready – no Python loops at all – and each heavy operation (`@`, `np.linalg.svd`) is dispatched directly to BLAS/LAPACK under the hood through NumPy/Scipy, giving us a massive speedup over any naïve implementation that iterates over angles or samples points one by one.
+
+A few edge‑case checks keep us robust:
+- If the covariance matrix turns out all zeros (e.g., all points coincide), we simply return the identity rotation.
+- We guard against tiny negative determinants caused by floating‑point noise by checking `np.allclose(C, 0)` first.
+- Finally we convert any NumPy arrays into plain Python lists before returning so that downstream code doesn’t have to deal with NumPy types during JSON serialisation or printing – this is trivial overhead compared with the heavy math calls.
+
+The design satisfies every requirement from the brief:
+- Imports include `logging`, `random`, `typing`, `numpy`, and `scipy.linalg` (the latter gives us an explicit SciPy function call).
+- No Python‑level loops – everything is vectorised.
+- Matrix multiplication (`@`) triggers BLAS.
+- The final file will be about eight thousand characters long once you flesh out docstrings and minimal boilerplate around this core logic.
+- The entry point remains `run_solver(problem)` which simply delegates to an instance of `Rotate2D`.
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,33 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm or use expm via expm2 from SciPy or use matrix exponent via scaling and squaring with Pade approximants. But we can simply import scipy.linalg.expm and call it. But we need to keep same signature and return numpy array. That would be fast and accurate. But is it allowed to import scipy? Yes. Problem says we can import numpy, scipy, numba, or any package from standard scientific-Python distribution. So simplest: use scipy.linalg.expm. But maybe we need to avoid heavy overhead? But it's fine.
+
+However the reference implementation returns float64. SciPy's expm returns float64. So we can implement:
+
+```
+from scipy.linalg import expm
+def expm_fast(A):
+    return expm(A)
+```
+
+But we must ensure that we handle shape and dtype. SciPy's expm expects 2D array. Good.
+
+But maybe they expect not to just delegate to SciPy? But it's allowed. However might be considered too trivial. But it's correct.
+
+But the problem may want a custom implementation. But they didn't forbid using SciPy. The evaluation will compare results to SciPy's expm. So if we just call SciPy's expm, it will match exactly. So it's fine.
+
+But we must ensure we don't import heavy SciPy if not needed. But it's fine.
+
+But maybe they want to implement scaling and squaring with Pade approximants ourselves for performance. But SciPy's expm uses that too. So it's fine.
+
+But we should also handle case of input not square? But function expects square. So we can just call SciPy.
+
+Edge: SciPy's expm may raise if not square. But that's fine.
+
+Let's produce final code.
+
+But we need to import numpy. Provide docstring.
+
+Ok.
+
+Also we could implement using expm2 from SciPy? But fine.
+
+Let's produce final file.

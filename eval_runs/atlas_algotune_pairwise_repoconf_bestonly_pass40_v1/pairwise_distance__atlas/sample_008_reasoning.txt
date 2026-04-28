@@ -1,0 +1,36 @@
+We need to implement faster pairwise squared Euclidean distances. Standard approach: compute Gram matrix. D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute row norms squared, outer sum, subtract 2 dot product.
+
+Implementation: X dot X.T gives dot product matrix. Compute norms: (X**2).sum(axis=1). Then out = norms[:,None] + norms[None,:] - 2*dot.
+
+Ensure dtype float64. Use np.dot or np.matmul. Use broadcasting. Ensure no negative small due to numerical errors: set negative small values to 0. But not necessary.
+
+Edge cases: X shape (0, D). Should return empty matrix (0,0). The formula works.
+
+Implementation should be straightforward.
+
+Let's produce code: import numpy as np
+
+Define function pairwise_sq_dist(X: np.ndarray) -> np.ndarray.
+
+Check dtype: cast to float64 if not.
+
+Compute N, D = X.shape.
+
+If N==0: return np.zeros((0,0), dtype=np.float64).
+
+norms = np.sum(X*X, axis=1)  # shape (N,)
+
+dot = X @ X.T
+
+out = norms[:, None] + norms[None, :] - 2 * dot
+
+# due to floating errors, set small negative to 0
+out = np.maximum(out, 0.0)
+
+Return out.
+
+This is fast.
+
+Potential memory: For large N, dot may be big. But that's expected.
+
+Ok produce final code.

@@ -1,0 +1,69 @@
+We need to produce a faster implementation of conv1d. Use numpy FFT: np.fft.fft to compute convolution. For real-valued arrays, we can use np.fft.rfft and irfft. But we need full convolution length N+M-1. So we can compute next power-of-two size or use rfft with appropriate length. Implementation:
+
+def conv1d(x,h):
+    N = x.shape[0]; M = h.shape[0]
+    size = N + M - 1
+    # Next power of two for speed? Not necessary but good.
+    # Use rfft: length L = size; but rfft expects real input length L. Use np.fft.rfft(x, n=L) where n is size.
+    L = size
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X*H
+    y = np.fft.irfft(Y, n=L)
+    return y
+
+But we need dtype float64. np.fft.rfft returns complex64? Actually returns complex128 if input float64. Good.
+
+Edge cases: if either array empty? Probably not. But we can handle length zero: return empty array.
+
+Also we can use np.fft.fft (complex). Use np.fft.fft(x, n=size) etc. But rfft is faster.
+
+We also need to keep same function signature.
+
+Also we can optionally use scipy.signal.fftconvolve if available. But we can implement ourselves.
+
+We should also consider potential numeric difference: rfft uses complex numbers; but result should be same.
+
+Also we need to import numpy.
+
+Make sure to use np.fft.irfft which returns real array.
+
+We might need to cast to np.float64.
+
+Let's implement.
+
+Also we might want to compute size as next power of two for speed: L = 1 << (size-1).bit_length() but maybe not necessary.
+
+But we can just use size.
+
+Implementation:
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    N = x.shape[0]
+    M = h.shape[0]
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    size = N + M - 1
+    # Compute FFTs
+    X = np.fft.rfft(x, n=size)
+    H = np.fft.rfft(h, n=size)
+    Y = X * H
+    y = np.fft.irfft(Y, n=size)
+    return y
+
+Testing: We should test with small arrays.
+
+Edge: if arrays are complex? Problem states float64 arrays. So fine.
+
+Also we need to ensure output dtype float64; irfft returns float64.
+
+Also we may need to cast to float64 to guarantee.
+
+Return y.astype(np.float64).
+
+We also might want to use np.fft.fft for general but rfft is fine.
+
+Time complexity: O(n log n).
+
+Let's produce final code.
+

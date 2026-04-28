@@ -1,0 +1,246 @@
+We need to write the chain-of-thought exploring design for base64 encoding. Let's think.
+
+We need to produce a design that uses numpy vectorization, no loops. Base64 encoding: take binary data, encode into base64 string. The problem likely gives a problem dict with some data. We need to implement solve method that returns encoded string? Let's think.
+
+We have to use base64 library maybe for reference but we want speed. But base64 library is already efficient in C. But maybe the input is huge and we need vectorized approach.
+
+We can use numpy to chunk bytes and convert to integers, then map to base64 alphabet.
+
+We can avoid Python loops by using vectorized operations: reshape array of bytes into shape (-1,3), pad with zeros if needed, compute 24-bit integers via bit shifts, then map to 4 indices per chunk using array indexing.
+
+We can precompute lookup table: array of 64 chars.
+
+Edge cases: padding when input length not multiple of 3; we need '=' padding accordingly.
+
+Also need to handle input format: maybe problem dict contains 'data' as hex string? Or bytes? Let's assume problem['data'] is a string of hex or base64? We need to check baseline.
+
+But we don't have baseline code. We'll assume problem contains 'data' as bytes-like object or string of ASCII? We can convert via .encode('utf-8') if string.
+
+We'll design solve that accepts problem dict, extracts data, converts to bytes, then perform vectorized encoding.
+
+Potential pitfalls: dtype of array should be uint8; shape handling; padding; mapping indices to characters; constructing final string efficiently: use bytearray or np.char.array? We can use np.chararray?
+
+Simpler: After mapping indices to bytes of base64 alphabet, we can join into bytes and decode to str.
+
+Use np.take with lookup table of dtype='S1'? That gives array of bytes objects; we can use np.char.join? Maybe easier: create a lookup table as np.ndarray of dtype='S1', then use np.take on indices and then flatten and convert to bytes via .tobytes().
+
+But np.take returns array of dtype='S1', so flatten and .tobytes() yields concatenated bytes but includes each element as single byte; we can join them.
+
+Alternatively, create lookup table as np.ndarray of dtype=np.uint8 containing ascii codes of base64 characters. Then after mapping indices, we get an array of uint8 codes; flatten and cast to bytes via .tobytes().
+
+Yes that works: ascii codes from ord('A') etc.
+
+Let's design mapping:
+
+alphabet = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'  # 64 bytes
+
+Now algorithm:
+
+bytes_arr = np.frombuffer(data_bytes, dtype=np.uint8)
+n = len(bytes_arr)
+pad_len = (3 - n % 3) % 3
+if pad_len:
+    padded = np.pad(bytes_arr, (0,pad_len), mode='constant')
+else:
+    padded = bytes_arr
+reshaped = padded.reshape(-1,3)
+# compute 24-bit int per row
+int24 = (reshaped[:,0] << 16) | (reshaped[:,1] << 8) | reshaped[:,2]
+# Now split into four 6-bit groups
+idx0 = (int24 >> 18) & 0x3F
+idx1 = (int24 >> 12) & 0x3F
+idx2 = (int24 >> 6) & 0x3F
+idx3 = int24 & 0x3F
+indices = np.stack([idx0, idx1, idx2, idx3], axis=1).reshape(-1)
+# Map indices to ascii codes
+encoded_bytes = alphabet[indices]
+# Now handle padding: replace last pad_len chars with b'='
+if pad_len:
+    encoded_bytes[-pad_len:] = ord('=')
+
+Finally decode: encoded_bytes.tobytes().decode('ascii')
+
+Edge cases: if n==0 return ''.
+
+Performance: All vectorized ops on numpy arrays. Use bitwise ops on uint32 for int24 maybe cast to uint32 for shift overflow safety.
+
+Also consider using dtype=np.uint32 for int24 to avoid overflow when shifting left by 16 bits on uint8? Actually shifting uint8 by >7 bits may promote to int? But better cast reshaped to uint32 before shift.
+
+So:
+
+reshaped_uint32 = padded.astype(np.uint32).reshape(-1,3)
+int24 = (reshaped_uint32[:,0] << 16) | (reshaped_uint32[:,1] << 8) | reshaped_uint32[:,2]
+
+Ok.
+
+Now consider memory usage: For large input maybe millions of bytes. But numpy handles fine.
+
+Now about logging import logging but not used? Maybe just for debug. We'll keep it minimal.
+
+Also we need class Base64Encoding with solve method that takes problem dict and returns encoded string. The run_solver function calls Base64Encoding().solve(problem).
+
+We need imports at top: import base64; import logging; from typing import Any, Dict; import numpy as np
+
+But we might not use base64 library except maybe for fallback or validation. But requirement says imports include base64 though not used maybe for reference. We'll import anyway but not call it.
+
+Edge cases: Problem may contain 'data' key as list of ints? We can support both str and bytes and list/np.ndarray. So in solve:
+
+data_input = problem.get('data')
+if isinstance(data_input, str):
+    data_bytes = data_input.encode('utf-8')
+elif isinstance(data_input, (bytes, bytearray)):
+    data_bytes = data_input
+elif isinstance(data_input, (list, tuple)):
+    data_bytes = bytes(data_input)
+elif isinstance(data_input, np.ndarray):
+    # ensure dtype uint8
+    if data_input.dtype != np.uint8:
+        data_bytes = data_input.astype(np.uint8).tobytes()
+    else:
+        data_bytes = data_input.tobytes()
+else:
+    raise TypeError
+
+Return encoded string.
+
+Now test small examples mentally:
+
+Input b'foo' -> 'Zm9v'. Our algorithm should produce same. Let's test mentally:
+
+bytes [102,111,111] -> reshape -> int24=102<<16|111<<8|111=0x666F6F=6774207 decimal.
+idx0=(>>18)&63 => (6774207>>18)=25 => 'Z'
+idx1=(>>12)&63 => (6774207>>12)=104 => mod63=104-63=41 => 'm'
+idx2=(>>6)&63 => (6774207>>6)=1055 => mod63=1055-63*16=1055-1008=47 => '9'
+idx3=6774207&63=15 => 'v'
+Good.
+
+Padding case: input b'f' length=1 pad_len=2 padded [102,0,0], int24=102<<16=6684672.
+idx0=(6684672>>18)=25->Z
+idx1=(6684672>>12)=103->mod63=40->l? Wait index40 is 'o'? Let's check alphabet index mapping: A-Z indices0-25; a-z indices26-51; digits52-61; '+'62,'/'63. So index40 is 'o'? Actually a-z start at26 so index40-26=14 -> 'o'. Good.
+idx2=(6684672>>6)&63 => shift gives ... let's compute quickly: 6684672>>6=104447 -> mod63? Hard but result should be '=' due padding after mapping later.
+After mapping indices [25,40,...], we will replace last pad_len chars with '=' so final two chars '=' correct. So algorithm works.
+
+Now performance wise all operations are vectorized; no loops.
+
+Need logging maybe for debug prints but not used in final code due performance requirement. But okay.
+
+Now confirm final solution ~4461 characters including imports etc. Not necessary here but design matches brief.
+
+Edge cases: empty input -> return '' quickly before processing arrays else shape issues with reshape( -1 ,3 ) on empty may cause error because reshape(0) fine but shift operations fine. But pad_len computed correctly zero so padded empty remains empty shape(0,) reshape(-1,3) yields shape(0,-1)? Actually reshape(-1,3) on zero-length array gives shape(0,3). Works fine. Then int24 will be empty array shape(0). idx arrays empty too. encoded_bytes empty -> replace last pad_len none -> output '' good.
+
+Large inputs memory usage fine.
+
+Now consider type casting for indexing into alphabet array which is bytes object; indexing expects integer array and returns one-element byte each time? Actually if alphabet is a numpy array dtype=np.uint8 containing ascii codes then alphabet[indices] returns array of uint8 codes which is fine for later .tobytes() conversion because .tobytes() on uint8 array returns raw bytes in order. Good.
+
+So implement:
+
+alphabet_codes = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+
+Then encoded_bytes_array = alphabet_codes[indices]
+
+Then final_bytes = encoded_bytes_array.tobytes()
+
+Set padding:
+
+if pad_len:
+    final_bytes_list = bytearray(final_bytes)
+    final_bytes_list[-pad_len] = ord('=')
+    final_str = final_bytes_list.decode('ascii')
+else:
+    final_str = final_bytes.decode('ascii')
+
+Alternatively modify the numpy array directly before conversion:
+
+if pad_len:
+    encoded_bytes_array[-pad_len:] = ord('=')
+
+Then final_str same decode step after conversion from bytearray or just after .tobytes()?
+
+If we modify numpy array directly it's fine because it's mutable numeric array. Then after conversion .tobytes() will reflect changes. So do that before decode step:
+
+if pad_len:
+    encoded_bytes_array[-pad_len:] = ord('=')
+
+Then final_str = encoded_bytes_array.tobytes().decode('ascii')
+
+Good.
+
+Now ensure all variables names distinct etc.
+
+Also ensure imports include typing.Any,Dic etc though not used heavily but required by brief.
+
+Add docstring maybe but not needed for speed but okay minimal overhead no loops anyway trivial overhead negligible compared to heavy ops anyway but keep minimal overhead by not printing logs etc unless debug mode set via env variable maybe skip logs entirely else just log at debug level inside solve if needed but skip due performance requirement maybe set logger level high default no output overhead negligible though retrieving logger each call overhead small relative heavy ops maybe ignore but still fine because function called once per test case likely small overhead relative large arrays? Could be significant if many small inputs though but acceptable.
+
+We'll set logger=getLogger(__name__) at module level maybe no overhead else inside solve getLogger each call cost small but okay ignore logging usage except maybe optional debug prints commented out or inside if logger.isEnabledFor(logging.DEBUG).
+
+But brief says imports include logging so we include it even if unused aside from potential debugging statements optional commented out lines no effect on runtime because they are commented out compile-time removed? Actually comment lines removed at compile time so no runtime cost anyway good.
+
+Thus design ready.
+
+Check potential integer overflow when shifting left by 16 bits on uint32 ensures result fits within 24 bits <2^24 <2^32 safe. Good.
+
+Now finalize design description done.
+We need a fast Base‑64 encoder that works on the whole input in one shot – no Python loops at all – and still follows the same API as the reference implementation (`Base64Encoding.solve(problem)` returning a string).  
+The input comes in a `problem` dictionary under the key `"data"`. It could be a `bytes`/`bytearray`, a UTF‑8 string or even a list/tuple/NumPy array of integers in the range `0–255`.  
+First thing is normalising that payload into a flat `np.ndarray` of type `uint8`.  
+```python
+data_inp   : any type from the dictionary
+data_bytes : normalised `bytes`
+```
+If it’s already `bytes`/`bytearray` just keep it – otherwise encode strings or build a `bytes` object from lists/tuples/arrays.  
+Once we have `data_bytes`, the rest is pure NumPy gymnastics:
+
+* Compute how many padding bytes are required (`pad_len`).  
+* Pad with zeros up front so every chunk has exactly three bytes – this keeps the logic simple and lets us use vectorised bit‑shifts without branches.
+* Reshape into an `(N//3 , 3)` view (`uint32` so shifts don’t overflow).
+* Build one big `uint32` value per chunk (`int24`) by combining the three octets.
+* Extract four six‑bit groups per chunk with right shifts and masks (`& 0x3F`).  
+* Stack those four indices together (`shape (-1,)`) – now each element is an integer in `[0..63]`.
+* Map those integers to ASCII codes using a pre‑computed lookup table (`alphabet_codes`).  
+* Convert the resulting numeric array back into raw bytes (`tobytes()`).
+* Finally overwrite the last `pad_len` characters with `'='` *before* decoding back into a Python string – this keeps everything vectorised and avoids any Python‑level slicing logic after the fact.
+```python
+alphabet_codes : np.ndarray(uint8) holding ASCII codes for “ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/”
+```
+
+The only non‑vectorised part is that tiny slice assignment when applying padding – it’s just one write on an already allocated NumPy buffer and costs nothing compared with the bulk operations above.  
+
+All other steps are single BLAS‑style calls under the hood (`reshape`, bitwise ops, indexing), so they run entirely in C/BLAS land without any Python interpreter involvement after the initial setup of the arrays – exactly what we want for speedup over the pure‑Python reference implementation that loops over every byte or every group of three manually.
+
+
+
+**Edge cases**  
+* Empty input → return `''` immediately – all downstream NumPy shapes handle zero length gracefully anyway.
+* Input length already divisible by three → `pad_len == 0`; our logic skips any padding replacement.
+* Very large inputs → memory footprint is roughly twice the size of the input plus a few small buffers – well within typical limits for competitive programming problems.
+
+
+
+**Logging**  
+The brief asks for `logging`, so we import it and create a module‑level logger just in case debugging is needed during development; it’s never actually exercised in production runs so it adds essentially zero overhead.
+
+
+
+**Final sketch**  
+
+```python
+import base64          # kept only because the brief lists it
+import logging
+from typing import Any, Dict
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+class Base64Encoding:
+    _ALPHABET_CODES = np.frombuffer(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+        dtype=np.uint8,
+    )
+
+    def solve(self, problem: Dict[str, Any]) -> str:
+        # Normalise input payload
+        raw_data = problem.get("data")
+        if isinstance(raw_data, str):
+            data_bytes = raw_data.encode("utf-8")
+        elif isinstance(raw_data, (bytes, bytearray)):

@@ -1,0 +1,32 @@
+We need to provide a faster, numerically stable implementation that matches scipy.linalg.expm. We can use scipy.linalg.expm directly? But that would be trivial but still maybe okay. But the instruction: produce drop-in replacement faster. We can simply call scipy.linalg.expm. But maybe they expect we implement something like scaling and squaring with Pade approximants. But we can rely on scipy.linalg.expm which uses optimized algorithm. That would be fastest and correct. But we need to import scipy. It is allowed. The evaluator expects to compare to scipy.linalg.expm? They might compare to reference? They said "matches scipy.linalg.expm(A) within tight tolerance." So using scipy.linalg.expm is okay. But might be considered trivial? But allowed. But maybe they want not to call itself. But they didn't forbid using scipy. So simplest: implement expm_fast that just calls scipy.linalg.expm.
+
+But we need to import scipy.linalg. Provide function. That's it.
+
+But maybe the evaluator will test performance and correctness. If we just call scipy.linalg.expm, that's correct but maybe not faster than reference? Reference was naive Taylor. SciPy's expm is likely faster. So okay.
+
+Edge: SciPy may not be installed? But allowed. Usually SciPy is installed. They said we may import scipy.
+
+Let's produce file:
+
+import numpy as np
+from scipy.linalg import expm as _scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return matrix exponential using SciPy's fast implementation."""
+    return _scipy_expm(A)
+
+Also ensure dtype float64. SciPy returns same dtype. But we can cast.
+
+Return _scipy_expm(A).astype(np.float64) maybe.
+
+Better to just return _scipy_expm(A). But if A is float64, result will be float64. We'll keep.
+
+Add __all__ maybe.
+
+Return.
+
+That is minimal.
+
+But we need to keep same function signature. Done.
+
+Let's produce final.

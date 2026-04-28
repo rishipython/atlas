@@ -1,0 +1,28 @@
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return the full linear convolution of x and h using FFT."""
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+
+    # If one of the inputs is empty, return an empty array
+    if N == 0 or M == 0:
+        return np.empty(0, dtype=np.float64)
+
+    # Next power of two for efficient FFT
+    K = 1 << (L - 1).bit_length()
+
+    # Compute FFTs
+    X = np.fft.fft(x, K)
+    H = np.fft.fft(h, K)
+
+    # Pointwise multiplication and inverse FFT
+    Y = X * H
+    y = np.fft.ifft(Y).real
+
+    # Trim to the required length
+    return y[:L]

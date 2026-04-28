@@ -1,0 +1,91 @@
+We need to speed up the affine transform. The reference uses scipy.ndimage.affine_transform which is already pretty fast but maybe we can reduce interpolation order or use a different routine. But the brief says we must use scipy somewhere. So we can still use affine_transform but maybe change order to 1 for speed? But the output must match reference? Actually is_solution compares with reference using same order and mode. So if we change order, verification will fail. So we must keep order=3. But maybe we can compute the transformation ourselves using vectorized interpolation? That would be slower.
+
+Maybe use scipy's map_coordinates with precomputed coordinates? That also uses interpolation. But still likely slower.
+
+Alternatively, we could use numpy's built-in interpolation via griddata? Not as fast.
+
+Maybe the bottleneck is that scipy.ndimage.affine_transform internally constructs an output array and loops in C, so it's fast. The overhead of Python is minimal. So maybe the slow part is the conversion of input dict to numpy arrays, or converting output to list? But verification expects array shape equal to input shape, so we need to return numpy array or list? In solve, they return solution dict with transformed_image as numpy array; is_solution will convert if it's a list but if it's numpy array fine.
+
+So speed improvement might come from ensuring dtype float32 to reduce memory traffic. But affine_transform expects float64 by default; passing float32 might cast internally.
+
+We could cast image to float32 before calling affine_transform; it may still compute in float64 though.
+
+Another idea: Use JIT with numba for computing coordinates and applying interpolation manually but that's heavy.
+
+Perhaps the main bottleneck is that scipy.ndimage.affine_transform uses a full matrix of shape (2,3). We can convert to inverse matrix once and pass to affine_transform with prefilter=False? But default prefilter=True for order>1; that adds a filter step which is expensive. We could set prefilter=False but then accuracy suffers? For cubic interpolation, prefiltering is recommended but maybe acceptable? But verification may fail due to difference > tolerance.
+
+Alternatively, use scipy.ndimage.affine_transform with mode='constant', cval=0.0, and set output_shape same as input. That's what they do.
+
+Maybe we can avoid repeated conversion by caching matrix inverse? Not needed.
+
+Could we use scipy.ndimage.map_coordinates with explicit coordinate grid computed once per call? That might be similar speed.
+
+We might try using numba to compile a loop over output pixels and compute interpolated values using cubic B-spline weights manually; that could be faster if vectorized within numba. But that's complex.
+
+Given constraints, simplest improvement: Use scipy.ndimage.affine_transform but ensure input image is np.float32 and matrix np.float32; also set prefilter=False to skip filter step; verify tolerance maybe okay because difference small. Let's test mentally: For cubic interpolation, prefiltering smooths data; skipping may cause error > 1e-5? Might exceed tolerance.
+
+Maybe better: Use SciPy's ndimage.shift or rotate functions? No.
+
+Alternatively, use OpenCV cv2.warpAffine which is very fast C++ implementation; but not allowed because not in allowed packages list (opencv not listed). So cannot.
+
+Could use skimage.transform.warp which uses skimage library but not allowed unless included in dependencies; scikit-learn available but not skimage.
+
+Thus likely best approach: Use scipy.ndimage.affine_transform as before but reduce overhead by avoiding conversion of lists to arrays inside solve: problem["image"] may be nested lists; converting to np.array each time costs time. We can convert once at start and reuse across calls? Not possible across calls because each solve gets new problem dict.
+
+But we can convert using np.asarray(problem["image"], dtype=np.float32) which is fast.
+
+Also avoid try/except overhead by assuming success; just call directly.
+
+Thus design: In solve, get image = np.asarray(problem["image"], dtype=np.float32); matrix = np.asarray(problem["matrix"], dtype=np.float32); call affine_transform(image, matrix, order=3, mode='constant', cval=0.0); return {"transformed_image": transformed_image}. Keep everything vectorized; no loops.
+
+Also set prefilter=False? Might speed up a bit but risk accuracy. We could test tolerance 1e-5; difference might be small enough maybe <1e-5? Hard guess.
+
+Better keep prefilter=True default for safety.
+
+Thus final design basically same as reference but simpler and no try/except overhead; also convert dtype float32 for speed. That should give some speedup due to less memory copy?
+
+Also ensure logging minimal overhead: remove logging statements inside solve except maybe error handling not needed because trust input valid. That reduces overhead too.
+
+Thus final code will import logging only if needed; keep minimal imports: logging, typing.Dict, typing.Any, numpy as np, scipy.ndimage
+
+Define class AffineTransform2D with __init__ setting order=3 mode='constant'; solve method as described above without try/except; return dict.
+
+Also implement run_solver that creates solver and returns solver.solve(problem).
+
+Edge cases: If problem contains non-list image or matrix shape wrong -> will raise error automatically; acceptable since tests probably give valid inputs.
+
+Check shape equality: Since output shape same as input by default, fine.
+
+Return type: transformed_image will be numpy array dtype float32 maybe; verification expects shape equal and values close within tolerance; if dtype float32 vs reference float64 may cause small difference but within tolerance likely fine since rounding differences small <1e-5 relative error? Might be okay because values are up to 255 so relative error small enough?
+
+Better cast result back to float64 before returning? That would increase memory copy again though. But maybe necessary for accuracy check? The reference uses float64 so difference due to dtype might exceed tolerance at high values because rounding differences could be ~1e-7 absolute maybe okay. So keep as float64 by letting affine_transform produce float64 anyway since image dtype float32 may cast back to float64 internally for computation then result dtype float64 by default? Actually ndimage.affine_transform preserves input dtype if possible? It returns same dtype as input unless prefiltering changes it. For order>0 it casts to float64 internally then casts back? Not sure. To be safe, cast result back to np.float64 before returning: transformed_image = transformed_image.astype(np.float64). That adds copy though but ensures comparison passes.
+
+But performance penalty small relative to overall cost?
+
+Better avoid extra copy by keeping image dtype float64 from start: np.asarray(..., dtype=np.float64). That's what reference did implicitly converting list of floats -> default dtype float64 anyway. So keep default dtype no need cast result back.
+
+Thus final design: convert image and matrix with np.asarray without specifying dtype (float64). Remove try/except blocks entirely except maybe catch generic exception at outer level in run_solver if any crash?
+
+But run_solver just calls solver.solve(problem). If exception occurs test fails anyway.
+
+Thus final code minimal overhead.
+
+Edge cases: If image empty or zero-size -> affine_transform will produce empty array; fine.
+
+Return dictionary with key "transformed_image": numpy array of shape (n,n).
+
+Ok finalize design.
+We need a leaner `solve` that still calls `scipy.ndimage.affine_transform` but trims all the Python‑level noise that slows things down—no nested `try/except`, no intermediate list conversions, no extra logging inside the hot path.  
+The plan:
+
+1. **Input conversion** – turn the nested lists into `np.ndarray` once with `np.asarray`.  
+   Using `dtype=None` keeps the natural NumPy type (`float64` for floats), which matches what SciPy expects for cubic interpolation.
+2. **Direct call** – call `affine_transform` straight away with our stored `order` (3) and `mode` (“constant”, `cval=0`).  
+   No extra arguments like `output_shape`; the default keeps the output size equal to the input.
+3. **Return** – wrap the resulting NumPy array in the required dictionary without touching it further.
+4. **No loops** – everything stays vectorised inside SciPy’s C implementation.
+5. **Minimal imports** – only what’s needed (`logging`, `typing`, `numpy`, `scipy.ndimage`).
+6. **Edge‑case safety** – let any bad input raise naturally; the evaluator’s wrapper will catch it if necessary.
+7. **Testing** – since we’re still using SciPy’s routine with identical parameters, numerical results stay within the tight tolerances used by `is_solution`.
+
+This strips away all unnecessary Python overhead while keeping full fidelity to the reference behaviour—exactly what the brief asks for while staying fully vectorised and fast enough for evaluation. OK, I think I have the design. Time to write it.

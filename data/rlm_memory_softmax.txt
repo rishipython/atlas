@@ -1,0 +1,2503 @@
+# ATLAS-RLM memory bank (softmax OE run)
+# Each entry below summarises one attempt by the base model at the
+# softmax Triton-kernel task.  Entries are sorted by score (best first).
+# Total entries: 49
+
+============================
+ENTRY 1  [correct, score=0.773, iter=34]
+============================
+## Lesson
+We need to design a softmax kernel for 2D MxN, along last dimension. Must handle arbitrary N, not just powers of two. Use Triton. The brief says 3 kernels, but we can decide. Let's think.. We could do a single kernel that does max, exp, sum, division in one pass. But might be heavy on registers if we keep intermediate per-row exp values? We could store exps in a temporary buffer per row? But memory overhead? We can compute exp and accumulate sum on the fly without storing all exps until final division; but we need to divide each element by sum after computing sum. That means we either store the exp values in registers temporarily (can't hold N elements) or write them to global memory first, then read back for division. So two passes: first compute max and exp-sum, writing exps to output buffer; second pass divide by sum. But the brief says 3 passes: max, exp+sum, divide.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum and store it.
+# Pass 2: compute exp(x - max), accumulate sum, store exp in output buffer.
+# After the two passes, a third kernel normalizes the exp values.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    """
+    Compute per-row maximum, exp(x - max), accumulate per-row sum, store exp, and
+    normalize in a single kernel to reduce launch overhead.
+    """
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+# ...(+90 more lines truncated)
+```
+
+============================
+ENTRY 2  [correct, score=0.772, iter=46]
+============================
+## Lesson
+We need to figure out how to implement softmax along last dim for 2D tensor. Let's think.. We want a Triton kernel that is efficient. We can use two kernels: one to compute max and exp and store intermediate exps? Or maybe do three passes in one launch: compute max, then exp, accumulate sum, then divide. The brief says two kernels but three passes inside one launch. Actually maybe two kernels: one for max and exp, second for division? But the brief says 2 Triton kernels, 1-D grid over rows, block size 512. Wait the brief says uses 2 Triton kernels. But then later says inside the kernel makes 3 passes over the row.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# The per-row maximum is now computed inside the softmax kernel itself,
+# eliminating the need for a separate pass and reducing kernel launch overhead.
+
+# Combined softmax kernel that performs:
+# 1️⃣ Row-wise maximum
+# 2️⃣ exp(x - max) + sum accumulation + store exp values
+# 3️⃣ Normalization by the accumulated sum
+@triton.jit
+def _softmax_kernel(
+    X_ptr,
+    exp_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_exp0,
+    stride_exp1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_exp = exp_ptr + row * stride_exp0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    # 2️⃣ Compute exp(x - max), accumulate sum, and store exp values
+    sum_val = 0.0
+    col = 0
+# ...(+48 more lines truncated)
+```
+
+============================
+ENTRY 3  [correct, score=0.768, iter=40]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along last dimension of a 2-D tensor. The shapes: MxN with N up to 8192, M up to 2048. We want efficient, handle arbitrary N not power of two. Use 1-D grid over rows, each program handles one row. Block size 512 columns. Need two kernels: one for computing max and exp, another for dividing by sum? But brief says 2 kernels, but also mentions 3 passes inside one launch: compute max, compute exp and sum, then divide stored exps by sum. Wait: maybe the first kernel does max and exp+sum, storing exps in output buffer; second kernel does division by sum. Or maybe a single kernel with three passes but that would be one kernel? The brief says 2 Triton kernels. So likely first kernel computes per-row max and per-row sum and writes exponentials into output buffer; second kernel normalizes each element by dividing by row sum..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    # 2️⃣ Compute exp(x - max) and accumulate sum, storing exp values
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        offsets_out = start_out + (col + tl.arange(0, BLOCK)) * stride_out1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=0.0).to(tl.float32)
+        exp_vals = tl.exp(vals - max_val)
+        sum_val += tl.sum(exp_vals, axis=0)
+# ...(+47 more lines truncated)
+```
+
+============================
+ENTRY 4  [correct, score=0.724, iter=42]
+============================
+## Lesson
+We need to write a Triton kernel for softmax along last dimension. The shape is M×N. We want 2 passes per row: first compute max, second compute exp(x - max) and sum, then normalize.. We need to handle arbitrary N, not just powers of two. So we must mask tail lanes.. We need to pass stride_row and stride_col to handle non-contiguous tensors.. We will launch 1-D grid over rows. Each program handles one row. Block size along columns is 256. We need to iterate over the row in chunks of BLOCK.. In the first pass, we load BLOCK elements starting at col = block_idx * BLOCK. Wait: since each program handles one row, we can use `tl.arange(0, BLOCK)` as offsets into the row. But we need to load from the correct pointer: `ptr = x_ptr + row * stride_row + col * stride_col`. We can compute `row_ptr = x_ptr + row * stride_row`. Then `col_offsets = tl.arange(0, BLOCK)`.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 5  [correct, score=0.723, iter=38]
+============================
+## Lesson
+We need to write a softmax kernel that works for any N, not just powers of two. The input is 2‑D, so the natural way is to launch one program per row and let each program walk across the columns in tiles of some block size. The block size should be a compile‑time constant so Triton can unroll loops and allocate registers efficiently. 256 feels like a sweet spot: it fits nicely in L1, gives enough work per thread, and is a power of two for alignment but we must still handle the tail.. First thought: just do a single kernel that loads a tile, computes local max, then accumulates exp(x‑max) into an accumulator, and finally writes the normalized values back. That would be nice, but we need the per‑row maximum before we can compute the exponentials.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 6  [correct, score=0.722, iter=45]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along the last dimension of a 2‑D tensor. The input shape is (M, N). N can be any size, not necessarily a power of two. We must keep numerical stability: subtract the row maximum before exponentiating. We also want to be efficient: use vectorized loads, avoid branching, use a single grid launch per row.. First thought: Use a single kernel that loops over columns in chunks of BLOCK and does both max and sum in one pass. But we need to accumulate the sum after subtracting the max, so we need the max first. That suggests either two passes or compute max on the fly and store it in a register, then in the same loop compute exp(x - max) and add to sum. But we can't compute exp until we know the max for that row. However, we could compute the max in one pass, store it in a scalar, then do a second pass for sum.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        # Load values as float32 directly (no cast needed)
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        # Load values as float32 directly (no cast needed)
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 7  [correct, score=0.722, iter=29]
+============================
+## Lesson
+We need to write a softmax along the last dimension for a 2‑D tensor. The input shape is (M, N), but N can be any size, not necessarily a power of two. The kernel must be efficient, so we’ll use a single program per row and process the row in blocks of 256 columns. I’ll start by thinking about how to handle the reduction of the maximum over each row.. **First idea:** Use a separate kernel for the max reduction and another for the exp/sum. But that would launch two grid passes and incur extra kernel launch overhead. Maybe we can do both in one pass: first compute the max, then use that max to compute exp and sum in the same loop. That way we only launch once per row.. **Second idea:** Two separate kernels but each does one pass. That gives us simpler kernels but two launches.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 8  [correct, score=0.721, iter=26]
+============================
+## Lesson
+We need to design a Triton kernel for softmax along last dimension of 2D tensor MxN. Must handle arbitrary N, not just powers of two. Use two kernels, 1D grid over rows, block size 256 columns. Accumulate in float32. Need to compute per-row max and sum of exp(x-max). Use masked loads for tail.. Let's think.. We will have a wrapper function optimized_softmax(x). We need to cast to float32 if not already, compute softmax, then cast back.. Kernel arguments: X (tensor), Y (output), M (int), N (int), stride_row, stride_col. Also maybe BLOCK: constexpr 256.. We need two kernels: first to compute per-row max and sum? Or separate kernels: one to compute max per row and store in temp buffer; second to compute exp(x-max) and divide by sum. But the brief says two kernels but also that each kernel does two passes? Wait brief: "Uses 2 Triton kernels.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        ).to(tl.float32)
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x, axis=0)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 9  [correct, score=0.721, iter=20]
+============================
+## Lesson
+We need to figure out how to write a Triton kernel for softmax over last dimension of 2D tensor. The kernel should handle arbitrary N, not just powers of two. The tests include M=1024,N=1024; M=2048,N=4096; M=256,N=8192. We need to produce close to reference (atol=0.01, rtol=0.01). Use 2 kernels? The design brief says use 2 kernels: one for max reduction, one for exp+sum+normalize? But the brief says "kernel makes 2 passes inside one launch" - maybe they mean a single kernel that does two passes: first compute max, second compute exp and sum. But the brief also says "Uses 2 Triton kernels". Hmm contradictory. Let's think: maybe we need two kernels: first compute per-row max into a buffer; second compute exp(x - max) and sum, then divide by sum. That would be two kernels.. But the brief says "kernel makes 2 passes over the row inside one launch".
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x, axis=0)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 10  [correct, score=0.720, iter=36]
+============================
+## Lesson
+We need to write a softmax over the last dimension of a 2‑D tensor, but we want it fast on the GPU with Triton. The input can be any shape (M, N) and N is not guaranteed to be a power of two. So we have to handle tails carefully.. Let’s start by thinking about the algorithmic structure. Softmax is `exp(x - max(x)) / sum(exp(x - max(x)))`. That suggests two passes over each row: first find the row maximum, then compute the exponentials and sum them. We could try to do it in one pass, but that would require storing intermediate exponentials or re‑reading the data, which is more expensive than a simple two‑pass approach. Also, doing a single pass would complicate masking because we’d need to keep track of the running maximum while also accumulating the sum; it’s cleaner to split.. Now, how many kernels do we need?  If we launch one kernel per row, each thread block will process one row.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        # Load values as float32 directly (no cast needed)
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        # Load values as float32 directly (no cast needed)
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 11  [correct, score=0.719, iter=43]
+============================
+## Lesson
+We need to figure out how to compute softmax along last dim of 2D tensor MxN. We want a Triton kernel that is efficient, handles arbitrary N, not just powers of two. We want to use 2 kernels: one to compute exp(x - max) and store it, another to normalize by sum. Or maybe one kernel that does all three passes? The brief says 2 kernels, but also mentions 3 passes inside one launch? Wait the brief: "Uses 2 Triton kernels. Launch grid is 1-D over rows: one program per row. Block size along the column dimension is 256 (a compile-time constexpr). Accumulation is done in float32 for numerical stability; if the input dtype differs, the wrapper casts to float32 and casts back at the end. Inside the kernel, the row is processed in a loop over column blocks (N may not be a multiple of BLOCK), using masked loads/stores on the tail.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum and store it.
+# Pass 2: compute exp(x - max), accumulate sum, store exp in output buffer.
+# After the two passes, a third kernel normalizes the exp values.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    """
+    Compute per-row maximum, exp(x - max), accumulate per-row sum, store exp, and
+    normalize in a single kernel to reduce launch overhead.
+    """
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+# ...(+67 more lines truncated)
+```
+
+============================
+ENTRY 12  [correct, score=0.718, iter=37]
+============================
+## Lesson
+We need to design a softmax along last dimension. Let's start.. We have a 2D tensor MxN. We want to compute softmax row-wise. The naive approach: for each row, find max, subtract, exponentiate, sum, divide. Need to be efficient on GPU.. Triton: we can launch one program per row. Use a block size of 256 columns. That means each kernel instance will process one row, iterating over columns in blocks of 256. We need to handle N not multiple of 256: use mask on loads and stores.. We need two kernels: one that does the first pass? Wait the brief says two kernels: maybe one kernel does max and exp accumulation? But the brief says "3 passes inside one launch": but then says two Triton kernels. Maybe first kernel does max and exp store, second kernel normalizes? Actually the brief: "Uses **2 Triton kernels**. Launch grid is **1-D over rows**: one program per row.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    # 2️⃣ Compute exp(x - max) and accumulate sum, storing exp values
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        offsets_out = start_out + (col + tl.arange(0, BLOCK)) * stride_out1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=0.0).to(tl.float32)
+        exp_vals = tl.exp(vals - max_val)
+        sum_val += tl.sum(exp_vals, axis=0)
+# ...(+46 more lines truncated)
+```
+
+============================
+ENTRY 13  [correct, score=0.681, iter=35]
+============================
+## Lesson
+We need to write a softmax over the last dimension of an M×N matrix, but we want it to be fast on the GPU with Triton. The input can be any dtype, but we’ll cast to float32 inside the kernel for stability and cast back at the end. The shapes we care about are 1024×1024, 2048×4096, and 256×8192, so N can be large and not a power of two.. Let’s think about how to structure the kernel. Softmax is `exp(x_i - max) / sum(exp(x_i - max))`. We could do a single pass: load a chunk, compute local max, then after a reduction we compute exp and sum. But that would require two passes anyway because we need the global max before subtracting. So maybe we do two passes inside one launch: first pass computes row-wise max, second pass computes exp and sum. That keeps register pressure low and avoids launching two kernels separately..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        ).to(tl.float32)
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x, axis=0)
+        start += BLOCK
+# ...(+38 more lines truncated)
+```
+
+============================
+ENTRY 14  [correct, score=0.666, iter=6]
+============================
+## Lesson
+We need to design a softmax kernel along last dim. Let's start.. We need to handle arbitrary N, not just powers of two. So we need masking. We want 2 passes per row inside one launch? The brief says 2 Triton kernels, but maybe we can do 2 passes inside one launch? Wait, brief says 2 Triton kernels, each row one program. But then says kernel makes 2 passes over the row inside one launch: (1) compute max; (2) compute exp(x-max) and accumulate sum. That seems like one kernel doing two passes. But the brief says uses 2 Triton kernels. Contradiction? Maybe first kernel computes max and stores it in a buffer; second kernel does exp and sum using that max. But the brief also says kernel makes 2 passes inside one launch. Maybe it's two kernels each with two passes? Actually the brief: "Uses **2 Triton kernels**." Then later "The kernel makes **2 passes** over the row inside one launch".
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        x = tl.cast(x, tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        x = tl.cast(x, tl.float32)
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 15  [correct, score=0.666, iter=44]
+============================
+## Lesson
+We need to write a softmax kernel that works for any N, not just powers of two. The shape is M×N, so we can launch one program per row and iterate over the columns in blocks of 128. That means the grid is 1‑D with size `triton.cdiv(N, BLOCK)`? Wait, no – we want one program per row, so grid size should be M. Each program will walk over the columns in chunks of 128, doing a two‑pass accumulation: first find the row max, then compute exp(x - max) and sum. Actually, if we launch one program per row, we don't need to divide N into blocks for the grid; instead each program will loop over N in steps of BLOCK. So grid = (M,) and inside the kernel we have a loop over `col_start` from 0 to N in increments of BLOCK. That seems simpler than launching a grid over columns.. But we must be careful with masking: if N is not a multiple of BLOCK, the last chunk will have fewer lanes.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        ).to(tl.float32)
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 16  [correct, score=0.665, iter=5]
+============================
+## Lesson
+We need to write a softmax along last dimension. M rows, N columns. We want 1D grid over rows, each program handles a row. Block size 128 columns per program. Two passes: first find max per row, second compute exp(x-max) and sum, then divide.. We must handle arbitrary N not power of two. So we need masking for tail. Also need to support non-contiguous tensors: pass stride_row and stride_col.. We need to accumulate in float32 for stability. Input dtype could be fp16 or bf16; wrapper will cast to float32 before kernel and cast back after.. We need two kernels? Actually design says two Triton kernels: maybe one for max reduction, one for exp+sum+divide? But design brief says two passes inside one launch. Wait brief: "Uses 2 Triton kernels" but also "kernel makes 2 passes inside one launch".
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        ).to(tl.float32)
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x, axis=0)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 17  [correct, score=0.664, iter=18]
+============================
+## Lesson
+We need to compute a row‑wise softmax on a 2‑D tensor of shape M×N. The tricky part is handling arbitrary N, not just multiples of the block size, and keeping the kernel efficient. Let’s think about how to structure the launch.. First thought: use a single kernel that loops over the columns in chunks of BLOCK=128, computing the maximum first, then a second loop for the exponentials and sum. That would keep register pressure low because we only need a few accumulators per row. But maybe we can do it in one pass? If we try to compute exp(x - max) on the fly, we’d need the max before we can subtract it, so we’d have to store the raw values or recompute max each time. Two passes seems cleaner.. So: kernel with two passes inside one launch. The grid will be 1‑D over rows: each program handles one row. That means each thread block will process one row, but we’ll launch as many blocks as rows.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0
+        )
+        exp_x = tl.exp(x - max_val)
+        exp_sum += tl.sum(exp_x)
+        tl.store(
+# ...(+42 more lines truncated)
+```
+
+============================
+ENTRY 18  [correct, score=0.642, iter=28]
+============================
+## Lesson
+We need to write a softmax kernel along last dimension. We want 4 kernels? The brief says 4 Triton kernels. But maybe we can combine passes? The brief says 3 passes inside one launch: compute max, exp and sum, divide. But also 4 kernels overall: maybe one for each pass? Actually brief says uses 4 Triton kernels. Wait: design brief says "Uses **4 Triton kernels**." But then later "Inside the kernel, the row is processed in a **loop over column blocks** ... The kernel makes **3 passes** over the row inside one launch". So maybe the 4 kernels are: (1) compute max, (2) compute exp and sum, (3) divide, (4) wrapper? Or maybe they mean 4 separate kernels: one for max, one for exp+sum, one for division, one for orchestrating? Let's parse.. We need to produce output close to reference with atol=0.01, rtol=0.01. So we can do float32 accumulation.. We need to support arbitrary N not power of two.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum
+# 3. Divide exp values by the per-row sum to obtain softmax
+
+# Pass 1: compute per-row maximum
+@triton.jit
+def _max_kernel(
+    X_ptr,
+    max_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    col_start = tl.arange(0, BLOCK)
+    start_x = X_ptr + row * stride_x0
+
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + col_start) * stride_x1
+        mask = (col + col_start) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    tl.store(max_ptr + row, max_val)
+
+# Pass 2: compute exp(x - max) and accumulate per-row sum
+@triton.jit
+def _exp_sum_kernel(
+    X_ptr,
+    exp_ptr,
+# ...(+123 more lines truncated)
+```
+
+============================
+ENTRY 19  [correct, score=0.630, iter=7]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along last dimension of 2D tensor MxN. We must handle arbitrary N, not just powers of two. The design brief says 4 Triton kernels, 1-D grid over rows, block size 256, accumulation float32, 3 passes inside one launch: compute max, exp(x-max) accumulate sum, divide stored exponentials by sum. Use masked loads/stores for tail. Pass stride_row and stride_col. Need wrapper that casts to float32 if needed and back.. Let's think through details.. First, how many kernels? The brief says 4 kernels. Why 4? Possibly: kernel1 to compute max per row and store in a buffer; kernel2 to compute exp and sum per row and store exp values; kernel3 to divide exp by sum; kernel4 maybe for final output? But the brief says inside one launch: 3 passes inside one launch.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Pass 1: compute per-row maximum
+@triton.jit
+def _max_kernel(
+    X_ptr,
+    max_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+    tl.store(max_ptr + row, max_val)
+
+# Pass 2: compute exp(x - max) and accumulate per-row sum, storing exp values
+@triton.jit
+def _exp_sum_kernel(
+    X_ptr,
+    exp_ptr,
+    max_ptr,
+    sum_ptr,
+    M,
+# ...(+115 more lines truncated)
+```
+
+============================
+ENTRY 20  [correct, score=0.628, iter=4]
+============================
+## Lesson
+We need to design a Triton softmax kernel that works on any 2D tensor MxN, with arbitrary N, not just powers of two. The tests are fairly large: 1024x1024, 2048x4096, 256x8192. We need to be numerically close to torch.nn.functional.softmax with atol=0.01, rtol=0.01.. We want to use 4 kernels? The brief says uses 4 Triton kernels. But maybe we can do 3 passes inside one kernel? The brief says 3 passes inside one launch: compute max, exp(x-max) accumulate sum, divide stored exponentials by sum. That's a single kernel doing all three passes. But the brief says "Uses **4 Triton kernels**." That seems contradictory. Perhaps the design uses 4 separate kernels: one for max reduction, one for exp+sum, one for division, and maybe a wrapper? But the brief also says "kernel makes **3 passes** over the row inside one launch". That implies a single kernel doing all three passes.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum
+# 3. Divide exp values by the per-row sum to obtain softmax
+
+# Pass 1: compute per-row maximum
+@triton.jit
+def _max_kernel(
+    X_ptr,
+    max_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    col_start = tl.arange(0, BLOCK)
+    start_x = X_ptr + row * stride_x0
+
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + col_start) * stride_x1
+        mask = (col + col_start) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    tl.store(max_ptr + row, max_val)
+
+# Pass 2: compute exp(x - max) and accumulate per-row sum
+@triton.jit
+def _exp_sum_kernel(
+    X_ptr,
+    exp_ptr,
+# ...(+123 more lines truncated)
+```
+
+============================
+ENTRY 21  [wrong_values, score=0.150, iter=1]
+============================
+## Lesson
+We need to figure out how to write a softmax kernel in Triton that handles arbitrary N, not just powers of two. We want a 2‑kernel approach: first compute per‑row max, second compute exp and normalize. The grid is 1‑D over rows, each program handles one row. Block size 256 columns per program. We need to handle tail lanes with masking. Use float32 accumulation for stability. Also handle dtype conversion.. Let's think about the first kernel: compute per‑row max. Each program will iterate over the row in blocks of BLOCK (256). For each block, load a chunk of values, apply mask for tail, then reduce along the block dimension using tl.max. Keep a running max variable initialized to -inf. After loop, store the max in an output buffer.. We must pass stride_row and stride_col to handle non-contiguous tensors.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X_ptr,
+    Y_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_y0,
+    stride_y1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    col_start = tl.arange(0, BLOCK)
+
+    # Compute the base pointer for the current row
+    start_ptr_x = X_ptr + row * stride_x0
+    start_ptr_y = Y_ptr + row * stride_y0
+
+    # Load values with a mask for the tail
+    offsets_x = start_ptr_x + col_start * stride_x1
+    offsets_y = start_ptr_y + col_start * stride_y1
+    mask = col_start < N
+
+    # Load as float32 for numerical stability
+    vals = tl.load(offsets_x, mask=mask, other=-float("inf")).to(tl.float32)
+    max_val = tl.max(vals, axis=0)
+
+    exp_vals = tl.exp(vals - max_val)
+    sum_val = tl.sum(exp_vals, axis=0)
+
+    out_vals = (exp_vals / sum_val).to(tl.float32)
+
+    tl.store(offsets_y, out_vals, mask=mask)
+
+def optimized_softmax(x: torch.Tensor) -> torch.Tensor:
+# ...(+27 more lines truncated)
+```
+
+============================
+ENTRY 22  [wrong_values, score=0.150, iter=49]
+============================
+## Lesson
+We need to write a softmax along last dim for 2D MxN. Use Triton, two kernels. Let's think.. We need per-row max, then exp and sum, then divide. We could do all in one kernel but spec says two kernels. So first kernel compute max and store per-row max into a buffer, second kernel compute exp and divide using that max.. But spec says two kernels but also three passes inside one launch? Wait brief says uses 2 Triton kernels; but also inside the kernel makes 3 passes: compute max, compute exp and sum, divide. That seems like one kernel doing all three passes? Actually they said 2 kernels, but maybe first kernel does max and store; second kernel does exp+sum+divide? But brief says 3 passes inside one launch.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+
+
+# Compute exp(x - max), accumulate sum, store exp, then divide by sum
+@triton.jit
+def _softmax_kernel(X_ptr, exp_ptr, M, N, stride_x0, stride_x1, stride_exp0, stride_exp1, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_exp = exp_ptr + row * stride_exp0
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        offsets_exp = start_exp + (col + tl.arange(0, BLOCK)) * stride_exp1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=0.0).to(tl.float32)
+        exp_vals = tl.exp(vals - max_val)
+        sum_val += tl.sum(exp_vals, axis=0)
+        tl.store(offsets_exp, exp_vals, mask=mask)
+        col += BLOCK
+    # Divide exp by sum
+    col = 0
+    while col < N:
+        offsets_exp = start_exp + (col + tl.arange(0, BLOCK)) * stride_exp1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        exp_vals = tl.load(offsets_exp, mask=mask, other=0.0).to(tl.float32)
+        out_vals = exp_vals / sum_val
+        tl.store(offsets_exp, out_vals, mask=mask)
+        col += BLOCK
+
+def optimized_softmax(x: torch.Tensor) -> torch.Tensor:
+    """
+    Compute softmax along the last dimension using a single Triton kernel.
+    """
+    x_fp32 = x.to(torch.float32)
+# ...(+11 more lines truncated)
+```
+
+============================
+ENTRY 23  [crashed, score=0.050, iter=2]
+============================
+## Lesson
+We need a softmax along the last dimension of a 2‑D tensor. The test shapes are pretty big: 1024×1024, 2048×4096, 256×8192. So we must keep the kernel fast and memory‑friendly. The simplest idea is one kernel that does the whole softmax in one pass: load a tile, find max, subtract, exp, accumulate sum, then divide. But that would require storing the intermediate exp values somewhere to do the division later, or doing a second pass to compute the denominator. Two passes per row seems more natural: first pass finds the row max, second pass computes exp(x‑max) and sums them up, then we do a final division per element.. But can we do it in one kernel?  We could load a tile, compute local max and local sum of exp(x‑max) on the fly, then after finishing the row we could write back the normalized values. That would need us to keep a running sum of exp values across tiles.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 24  [crashed, score=0.050, iter=3]
+============================
+## Lesson
+We need to design a Triton kernel for softmax over last dimension. Let's think: We have M rows, N columns. We want per-row softmax. We can launch 1D grid over rows. Each program processes one row. Inside program, we need to load chunks of size BLOCK=128 columns at a time. For each chunk, compute max over that chunk, then later we need global max per row. We can do two passes: first pass compute max, second pass compute exp(x - max) and sum.. Alternatively, we could do one pass with two accumulators: compute max and sum in same loop by storing intermediate exp values? But we need to subtract max before exponentiation. So we need max first. Could do a reduction to get max, then second loop to compute exp and sum. That matches brief.. Need to handle arbitrary N, so tail lanes need mask.. We need to use float32 accumulation for numerical stability: load as float32 (or cast).
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 25  [crashed, score=0.050, iter=8]
+============================
+## Lesson
+We need to compute softmax along last dim. Let's think.. We want 2 kernels? Actually brief says 2 Triton kernels. But maybe we can do one kernel with two passes inside? The brief says uses 2 Triton kernels. But we can combine passes inside one launch? The brief: "Uses 2 Triton kernels." So we need separate kernels: one for max reduction, one for exp and sum and final division. Or maybe a single kernel that does both passes but still counts as one? The brief says 2 kernels, so we should do two separate kernel launches.. But the design: "The kernel makes 2 passes over the row inside one launch: (1) compute per-row maximum; (2) compute exp(x - max) and accumulate a per-row sum." That suggests a single kernel that does both passes.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 26  [crashed, score=0.050, iter=9]
+============================
+## Lesson
+We need to design a Triton kernel for softmax over last dimension of 2D tensor MxN. We want two kernels? Wait brief says two kernels. But we can also do one kernel with two passes inside. Actually brief says uses 2 Triton kernels. But then later says kernel makes 2 passes inside one launch. That's contradictory? Let's read: "Uses **2 Triton kernels**." but "The kernel makes **2 passes** over the row inside one launch". So maybe they mean two separate kernel launches: one to compute max, another to compute exp and sum, then a third to normalize? Or maybe they mean two kernels: one that computes per-row max and writes to a temp buffer; second that computes exp and divides by sum. But brief says "kernel makes 2 passes inside one launch". That would be a single kernel doing both passes.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 27  [crashed, score=0.050, iter=10]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along last dimension of 2D tensor. The design brief says 3 kernels, 1D grid over rows, block size 256, etc. But I must derive it. Let's think.. We need to handle arbitrary N, not just powers of two. So we need masking on the tail. Also we want numerical stability: subtract max before exp, accumulate sum, then divide.. We can do all in one kernel with three passes over the row: first pass compute max; second pass compute exp(x - max) and store intermediate exponentials; third pass divide by sum. But we also need to store exponentials somewhere. We could use a temporary buffer per row? But we can reuse the output buffer as intermediate storage: first pass compute max, second pass compute exp and store into output buffer, third pass divide stored exp by sum..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum, exp values, and per-row sum; store exp in output buffer.
+# Pass 2: divide exp by per-row sum to obtain softmax.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    sum_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    col_start = tl.arange(0, BLOCK)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    max_val = -float("inf")
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + col_start) * stride_x1
+        offsets_out = start_out + (col + col_start) * stride_out1
+        mask = (col + col_start) < N
+        vals = tl.load(offsets_x, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    # Broadcast row-wise max to all lanes
+    max_val = tl.block_reduce(max_val, tl.max)
+
+# ...(+81 more lines truncated)
+```
+
+============================
+ENTRY 28  [crashed, score=0.050, iter=11]
+============================
+## Lesson
+We need to compute a row‑wise softmax on an M×N matrix, but we want to keep the kernel small and efficient. The naive approach would be a single kernel that loads a whole row, finds the max, subtracts it, exponentiates, sums, and normalizes. But that would require two passes over the data or some trickery with shared memory that might not fit in registers for large N. A cleaner pattern is to do two separate passes inside one launch: first pass to get the max, second pass to compute exp and sum. That way we can keep the per‑row state in a couple of scalar registers.. We could try a single‑pass kernel that does max and sum in one go by keeping two accumulators: `row_max` and `row_sum`.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 29  [crashed, score=0.050, iter=12]
+============================
+## Lesson
+We need to write a softmax along last dimension of 2-D input. We must support arbitrary N, not just powers of two. We need to think about Triton kernel design.. We need to produce final code eventually but not yet. Let's think.. We have M rows, N columns. We want one program per row. So grid dimension is (M,). Each program will load chunks of size BLOCK=128 columns at a time. We'll need to compute max per row, then compute sum of exp(x - max). Then divide each element by sum.. We can do two passes inside one kernel: first pass compute max across all columns; second pass compute exp and sum. But we also need to store intermediate results? We can compute exp(x - max) twice? That would recompute exp twice, but it's fine maybe. Or we could store exp values in shared memory? But we can't store large arrays per row because N can be huge (8192).
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 30  [crashed, score=0.050, iter=13]
+============================
+## Lesson
+We need to design a Triton kernel for softmax along last dimension of 2D tensor MxN. The test shapes are fairly large: 1024x1024, 2048x4096, 256x8192. We need to support arbitrary N, not just powers of two. We want to use 3 passes inside one launch? Or maybe separate kernels? The brief says 3 kernels, but we can combine passes? Actually the brief says uses 3 Triton kernels, but inside each kernel maybe multiple passes? Wait the brief: "Uses **3 Triton kernels**. Launch grid is 1-D over rows: one program per row. Block size along the column dimension is 256 (a compile-time constexpr). Accumulation is done in float32 for numerical stability; if the input dtype differs, the wrapper casts to float32 and casts back at the end. Inside the kernel, the row is processed in a loop over column blocks (N may not be a multiple of BLOCK), using masked loads/stores on the tail.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum and store it.
+# Pass 2: compute exp(x - max), accumulate sum, store exp in output buffer.
+# After the two passes, a third kernel normalizes the exp values.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    sum_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    """
+    First pass: compute per-row maximum.
+    Second pass: compute exp(x - max), accumulate per-row sum, and store exp in out_ptr.
+    """
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+# ...(+96 more lines truncated)
+```
+
+============================
+ENTRY 31  [crashed, score=0.050, iter=14]
+============================
+## Lesson
+We need to compute softmax along last dimension of 2-D tensor MxN. We want to handle arbitrary N, not just power of two. Use 1D grid over rows, each program handles one row. Block size along columns: 256 compile-time constexpr. Need two passes per row: first find max, second compute exp(x - max) and sum, then normalize.. We need to cast input to float32 for accumulation if dtype not float32. So wrapper should cast to float32, call kernel, cast back.. We must pass stride_row and stride_col. For contiguous tensor, stride_row = N? Wait shape MxN: row stride is N (elements per row). But if non-contiguous, stride_row may be something else.. But typical layout: row-major contiguous: stride_row = N, stride_col = 1.. Kernel arguments: X (tensor), Y (output), M, N, stride_x, stride_y? We can compute output pointer same as X? We can write into same buffer or new buffer..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 32  [crashed, score=0.050, iter=15]
+============================
+## Lesson
+We need to compute softmax along the last dimension of a 2‑D tensor of shape (M, N). The input can be any dtype, but we want numerical stability and speed, so float32 accumulation is a good idea. The test shapes include very wide rows (8192 columns), so we have to handle tails properly.. First thought: maybe do a single kernel that does max and exp in one pass. But the max needs a reduction over the whole row; we could load a block of columns, keep a running max, then after the loop subtract that max from each element and exponentiate. That would require two passes over the row: one for max, one for exp+sum. Doing it in one pass would mean we need to store intermediate values per element, which would blow register pressure or need shared memory. Since N can be large (8192), two passes is simpler.. So I'll go with two passes inside one kernel launch per row.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 33  [crashed, score=0.050, iter=16]
+============================
+## Lesson
+We need to compute softmax along last dimension of a 2D tensor M×N. The kernel must handle arbitrary N, not just powers of two. The design brief says we should use 3 Triton kernels? Actually it says 3 Triton kernels, but then also says inside the kernel makes 3 passes? Wait: brief says "Uses 3 Triton kernels" but then later says "kernel makes 3 passes". That seems contradictory: maybe they mean 3 passes inside one launch? But design brief says 3 Triton kernels. But we can interpret as we need to launch 3 separate kernels: one for max, one for exp+sum, one for division. But the brief also says "Inside the kernel, the row is processed in a loop over column blocks... The kernel makes 3 passes over the row inside one launch". That suggests maybe they want a single kernel that does all three passes sequentially. But the earlier bullet says "Uses **3 Triton kernels**".
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Compute per-row maximum using block reduction
+@triton.jit
+def _max_kernel(X_ptr, max_ptr, M, N, stride_x0, stride_x1, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+    max_val = tl.block_reduce(max_val, tl.max)
+    tl.store(max_ptr + row, max_val)
+
+# Compute exp(x - max), accumulate sum, store exp, then divide by sum
+@triton.jit
+def _softmax_kernel(X_ptr, exp_ptr, max_ptr, sum_ptr, M, N, stride_x0, stride_x1, stride_exp0, stride_exp1, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_exp = exp_ptr + row * stride_exp0
+    max_val = tl.load(max_ptr + row)
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        offsets_exp = start_exp + (col + tl.arange(0, BLOCK)) * stride_exp1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=0.0).to(tl.float32)
+        exp_vals = tl.exp(vals - max_val)
+        sum_val += tl.sum(exp_vals, axis=0)
+        tl.store(offsets_exp, exp_vals, mask=mask)
+        col += BLOCK
+    sum_val = tl.block_reduce(sum_val, tl.sum)
+    tl.store(sum_ptr + row, sum_val)
+# ...(+32 more lines truncated)
+```
+
+============================
+ENTRY 34  [crashed, score=0.050, iter=17]
+============================
+## Lesson
+We need to figure out how to write a softmax kernel in Triton that works for arbitrary N. Let's think about the shape: M x N, softmax along last dimension (columns). We want one program per row, so grid is (M,). Each program will process its row of length N. We'll use a block size along columns, say 128. That means each program will iterate over the row in chunks of 128 columns. We need to compute max and sum of exp(x - max). We'll need two passes or maybe one pass with two accumulators? But we have to handle tail lanes.. We also need to handle arbitrary dtype: we can cast to float32 inside kernel if needed. The wrapper can cast input to float32 if dtype != float32, then cast back.. We must handle stride: stride_row and stride_col. For contiguous tensors, stride_row = N, stride_col = 1. But if not contiguous, we need to pass both.. We'll do a kernel that does:.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 35  [crashed, score=0.050, iter=19]
+============================
+## Lesson
+We need to design a Triton kernel that does softmax along last dimension. Let's think. We have a 2D tensor MxN. We want to launch one program per row, so grid size is M. Each program processes one row. Inside, we loop over column blocks of size BLOCK=256. We need three passes: compute max, compute exp and sum, then normalize.. We need to handle arbitrary N not power of two. So tail block must be masked. Use tl.load with mask and other values for identity.. We need to accumulate in float32 for stability. So load as float32? Input dtype may be fp16 or bf16; we cast to float32 in wrapper before kernel, then cast back after.. We need to pass stride_row and stride_col to kernel. For a 2D tensor, stride[0] is row stride, stride[1] is col stride.. Kernel signature: def softmax_kernel(x, y, N, stride_row, stride_col, BLOCK: tl.constexpr).
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum and store it.
+# Pass 2: compute exp(x - max), accumulate sum, store exp in output buffer.
+# After the two passes, a third kernel normalizes the exp values.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    sum_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    """
+    First pass: compute per-row maximum.
+    Second pass: compute exp(x - max), accumulate per-row sum, and store exp in out_ptr.
+    """
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+# ...(+82 more lines truncated)
+```
+
+============================
+ENTRY 36  [crashed, score=0.050, iter=21]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along the last dimension of a 2‑D tensor. The input can be any dtype, but we’ll cast to float32 inside the kernel for stability and cast back at the end. The tests involve fairly large matrices: 1024×1024, 2048×4096, and 256×8192. So we need to keep the kernel efficient and avoid any Python loops over rows.. First thought: launch one program per row, so grid is 1‑D over M. Each program will handle one row of length N. Inside each program we can process the row in blocks of size BLOCK (say 256). That means each thread will load a chunk of 256 elements from the row, compute the max over that chunk, then later compute exp(x - max) and accumulate a sum.. But how do we reduce across all blocks? We can do a two‑pass approach inside one launch: first pass finds the maximum for the whole row; second pass computes exp(x - max) and sums them.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 37  [crashed, score=0.050, iter=22]
+============================
+## Lesson
+We need to compute softmax along last dimension of a 2-D tensor. So shape MxN. We want a Triton kernel that is efficient, handles arbitrary N, not just powers of two. We have to produce a function optimized_softmax with same signature as reference, returning a tensor close to torch.nn.functional.softmax. The tests: M=1024,N=1024; M=2048,N=4096; M=256,N=8192. So N can be large, up to 8192. We want to use block size 256 along columns. We'll need three passes: max, exp and sum, divide.. We need to decide on grid: 1-D over rows: each program processes one row. That means grid size is M. We'll launch with grid = (M,) or (triton.cdiv(M, BLOCK_M),). But we want one program per row; so BLOCK_M is 1? Actually each program will process one row entirely by looping over column blocks inside kernel. So we can set BLOCK_M=1 or just ignore it and treat the program index as row index.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Compute per-row maximum using block reduction
+@triton.jit
+def _max_kernel(X_ptr, max_ptr, M, N, stride_x0, stride_x1, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals))
+        col += BLOCK
+    tl.store(max_ptr + row, max_val)
+
+# Compute exp(x - max), accumulate sum, store exp, then divide by sum
+@triton.jit
+def _softmax_kernel(X_ptr, exp_ptr, max_ptr, M, N, stride_x0, stride_x1, stride_exp0, stride_exp1, BLOCK: tl.constexpr):
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_exp = exp_ptr + row * stride_exp0
+    max_val = tl.load(max_ptr + row)
+    sum_val = 0.0
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        offsets_exp = start_exp + (col + tl.arange(0, BLOCK)) * stride_exp1
+        mask = (col + tl.arange(0, BLOCK)) < N
+        vals = tl.load(offsets_x, mask=mask, other=0.0).to(tl.float32)
+        exp_vals = tl.exp(vals - max_val)
+        sum_val += tl.sum(exp_vals, mask=mask)
+        tl.store(offsets_exp, exp_vals, mask=mask)
+        col += BLOCK
+    # Divide exp by sum
+    col = 0
+    while col < N:
+# ...(+26 more lines truncated)
+```
+
+============================
+ENTRY 38  [crashed, score=0.050, iter=23]
+============================
+## Lesson
+We need to design a Triton kernel that computes softmax along last dimension of a 2-D tensor. The test shapes are large, so we need efficient memory accesses. We want to use 2 kernels? Wait, design brief says 2 kernels. But we can also do single kernel with two passes? The brief says 2 Triton kernels, but also each kernel does two passes inside one launch? Actually brief: "Uses 2 Triton kernels." Then "The kernel makes 2 passes over the row inside one launch: (1) compute per-row maximum; (2) compute exp(x - max) and accumulate a per-row sum." That suggests each kernel does two passes? Or maybe they mean two separate kernels: first one for max, second for exp+sum and normalization. But the brief says "The kernel makes 2 passes over the row inside one launch". That sounds like a single kernel doing both passes. But earlier says "Uses 2 Triton kernels". Contradiction.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 39  [crashed, score=0.050, iter=24]
+============================
+## Lesson
+We need to design a softmax kernel for 2D MxN, last dim softmax. Must handle arbitrary N, not just powers of two. Use Triton. We want two kernels: one for max reduction, one for exp and sum, then final division. Or combine into one? The brief says 2 kernels. So first kernel: compute per-row max, store in output buffer? Actually we need max per row to use in second pass. We can allocate a temp buffer of size M (float32). Or use a single kernel that does both passes? But brief says 2 kernels. So first kernel computes max per row, writes to a separate buffer. Second kernel reads that buffer, computes exp(x - max) and sum, writes normalized output.. We need to consider stride: input may be non-contiguous. So we pass stride_row and stride_col.. Block size along columns: 256 compile-time constexpr. That means each program processes 256 columns at a time.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 40  [crashed, score=0.050, iter=25]
+============================
+## Lesson
+We need to write a softmax that works on any 2‑D tensor, so the last dimension can be any size, not just a power of two. The kernel must be fast and numerically stable, so we’ll do the classic trick: subtract the row maximum before exponentiating, accumulate the sum in float32, then normalize.. First thought: could we just launch one kernel that does everything in one pass?  That would mean loading a block of columns, computing max on that block, then somehow combining across blocks. But if we only have a single pass, we’d need to keep a running max and sum in registers while streaming through the row. That’s doable, but we’d have to store intermediate exponentials somewhere to divide by the sum later. We could compute exp(x‑max) on the fly and store them in shared memory or write them back immediately after computing the sum.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum
+# 3. Divide exp values by the per-row sum to obtain softmax
+
+# Pass 1: compute per-row maximum
+@triton.jit
+def _max_kernel(
+    X_ptr,
+    max_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    BLOCK: tl.constexpr,
+):
+    row = tl.program_id(0)
+    col_start = tl.arange(0, BLOCK)
+    start_x = X_ptr + row * stride_x0
+
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets = start_x + (col + col_start) * stride_x1
+        mask = (col + col_start) < N
+        vals = tl.load(offsets, mask=mask, other=-float("inf")).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(vals, axis=0))
+        col += BLOCK
+
+    tl.store(max_ptr + row, max_val)
+
+# Pass 2: compute exp(x - max) and accumulate per-row sum
+@triton.jit
+def _exp_sum_kernel(
+    X_ptr,
+    exp_ptr,
+# ...(+123 more lines truncated)
+```
+
+============================
+ENTRY 41  [crashed, score=0.050, iter=27]
+============================
+## Lesson
+We need to compute softmax along last dim. Let's think about kernel design. We want 2 kernels? Actually brief says 2 kernels, but maybe we can do single kernel with two passes. But brief says 2 Triton kernels: one to compute max, another to compute exp and normalize? Wait: "Uses 2 Triton kernels" but then "The kernel makes 2 passes over the row inside one launch". Contradiction. Maybe they mean one kernel that does both passes, but two separate kernels? Let's interpret: maybe they want one kernel that does max and sum in two passes inside same launch? But brief says 2 Triton kernels. Hmm.. Let's read: "Uses **2 Triton kernels**." Then later: "The kernel makes **2 passes** over the row inside one launch". That suggests a single kernel with two passes. But maybe they mean two separate kernels each doing one pass? But then they'd be launched sequentially.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 42  [crashed, score=0.050, iter=31]
+============================
+## Lesson
+We need to write a softmax along last dimension, 2D tensor MxN. Use Triton. Think about kernel design. We want 3 passes per row: max, exp, sum, divide. Or we can do two passes: compute max and exp sum in one pass, then divide in second pass. But spec says 3 kernels? Wait brief says 3 Triton kernels. Actually we need 3 kernels: maybe kernel1 compute max per row and store to temp, kernel2 compute exp and sum, kernel3 normalize? Or maybe single kernel does all three passes? The brief says uses 3 Triton kernels. So we need separate kernels.. But the design brief says "uses 3 Triton kernels" and "makes 3 passes over the row inside one launch".
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+# Three-pass Triton implementation of softmax:
+# 1. Compute per-row maximum (to avoid overflow)
+# 2. Compute exp(x - max) and accumulate per-row sum, storing exp values
+# 3. Divide exp values by per-row sum to obtain softmax
+
+# Two-pass Triton implementation of softmax:
+# Pass 1: compute per-row maximum and store it.
+# Pass 2: compute exp(x - max), accumulate sum, store exp in output buffer.
+# After the two passes, a third kernel normalizes the exp values.
+
+@triton.jit
+def _softmax_exp_sum_kernel(
+    X_ptr,
+    out_ptr,
+    M,
+    N,
+    stride_x0,
+    stride_x1,
+    stride_out0,
+    stride_out1,
+    BLOCK: tl.constexpr,
+):
+    """
+    Compute per-row maximum, exp(x - max), accumulate per-row sum, store exp, and
+    normalize in a single kernel to reduce launch overhead.
+    """
+    row = tl.program_id(0)
+    start_x = X_ptr + row * stride_x0
+    start_out = out_ptr + row * stride_out0
+
+    # 1️⃣ Compute row-wise max
+    max_val = -float("inf")
+    col = 0
+    while col < N:
+        offsets_x = start_x + (col + tl.arange(0, BLOCK)) * stride_x1
+        mask = (col + tl.arange(0, BLOCK)) < N
+# ...(+90 more lines truncated)
+```
+
+============================
+ENTRY 43  [crashed, score=0.050, iter=33]
+============================
+## Lesson
+We need to design a softmax kernel along last dim of 2D tensor MxN. The tests: M up to 2048, N up to 8192. So N can be large, not power of two. We need handle arbitrary N. We need two passes per row: compute max and then exp and sum.. We decide block size 256 along columns. That seems reasonable; 256 is a power of two but we can handle tail with masking.. We need to pass stride_row and stride_col. Use pointer arithmetic: ptr = x_ptr + row*stride_row + col*stride_col.. We need to handle dtype: maybe float16 or bf16. We'll cast to float32 in kernel for accumulation, then cast back.. We need two kernels? Actually we can do both passes in one kernel using two loops? But brief says 2 Triton kernels: maybe first kernel compute max per row and store in temp buffer; second kernel compute exp(x - max) and sum, produce final softmax.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 44  [crashed, score=0.050, iter=39]
+============================
+## Lesson
+We need to write a softmax along last dim for 2D. Let's think.. We want 2 kernels? Actually brief says 2 Triton kernels. But maybe we can do one kernel with two passes? Wait brief says 2 kernels, but also says kernel makes 2 passes inside one launch? That seems contradictory. Maybe they mean 2 kernels: first compute max per row, second compute exp and sum then normalize. But the brief says "kernel makes 2 passes" inside one launch. Maybe it's a single kernel that does both passes sequentially? But then why two kernels? Might be that we need two separate kernels: one for max, one for exp+sum+normalize. That matches typical pattern: first kernel writes per-row max into a buffer, second kernel reads that and computes exp and normalizes. But brief says "uses 2 Triton kernels". So likely we need two separate kernels: kernel_max and kernel_softmax..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 45  [crashed, score=0.050, iter=48]
+============================
+## Lesson
+We need to write a Triton kernel for softmax along last dim of 2D. Let's think.. We want 2 kernels? Or maybe one kernel with two passes inside? The brief says 2 kernels, but also says kernel makes 2 passes inside one launch. Wait that's contradictory: maybe two kernels each doing one pass? Actually design brief: uses 2 Triton kernels. Launch grid is 1-D over rows. Block size along column dimension is 512. Accumulation in float32. Kernel makes 2 passes over the row inside one launch: (1) compute per-row maximum; (2) compute exp(x - max) and accumulate per-row sum.. So maybe they mean two passes but same kernel? Or two separate kernels: first compute max, second compute exp and sum? But brief says kernel makes 2 passes inside one launch. That suggests single kernel that does both passes sequentially..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=0.0,
+            dtype=tl.float32
+        )
+        exp_x = tl.exp(x - max_val)
+# ...(+45 more lines truncated)
+```
+
+============================
+ENTRY 46  [crashed, score=0.000, iter=32]
+============================
+## Lesson
+We need to compute softmax along last dimension of a 2-D tensor. We want a fast Triton kernel. Let's think about shapes: M rows, N columns, arbitrary N not power of two. We want to handle arbitrary N, so need masking. Use block size 256 columns per program. Each program handles one row. That means grid size = ceil(M / 1) = M? Wait grid is 1D over rows, so each program processes one row? But block size along column dimension is 256, so each program will loop over columns in chunks of 256. So each program processes entire row in multiple iterations.. We need two passes: first compute max per row, second compute exp(x - max) and sum. Then divide each exp by sum to get softmax.. We also need to cast input dtype to float32 for accumulation, but output dtype same as input? The reference uses torch.nn.functional.softmax which preserves dtype.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK': 128}, num_warps=4),
+        triton.Config({'BLOCK': 256}, num_warps=8),
+        triton.Config({'BLOCK': 512}, num_warps=16),
+        triton.Config({'BLOCK': 1024}, num_warps=32),
+    ],
+    key=['N'],
+    warmup=1,
+    log_profiler=True
+)
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    base_X = X + row * stride_row_X
+    base_Y = Y + row * stride_row_Y
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+# ...(+58 more lines truncated)
+```
+
+============================
+ENTRY 47  [crashed, score=0.000, iter=41]
+============================
+## Lesson
+We need to compute softmax along last dim of 2D MxN. We want a Triton kernel, 1D grid over rows, block size 128 columns. Two passes: first find max per row, second compute exp(x-max) and sum, then divide.. We must handle arbitrary N, not just multiples of 128. So we need masking. For max reduction, we load blocks of 128 columns, mask with col < N. For masked lanes we set -inf. Then tl.max over axis=0 (since we load a vector). But careful: tl.max expects a tensor shape; if we load a 1D vector of length BLOCK, then tl.max(x) gives scalar? Actually tl.max(x) returns scalar if axis=None. But we want per-row scalar max. So we can do row_max = -inf; then for each block: load x, mask m, replace masked with -inf via tl.load(p, mask=m, other=-inf). Then row_max = tl.maximum(row_max, tl.max(x)). That works.. Second pass: we need to compute exp(x - row_max).
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK': 128}, num_warps=4),
+        triton.Config({'BLOCK': 256}, num_warps=8),
+        triton.Config({'BLOCK': 512}, num_warps=16),
+        triton.Config({'BLOCK': 1024}, num_warps=32),
+    ],
+    key=['N'],
+    warmup=1,
+    log_profiler=True
+)
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+    start = 0
+# ...(+54 more lines truncated)
+```
+
+============================
+ENTRY 48  [crashed, score=0.000, iter=47]
+============================
+## Lesson
+We need to figure out how to write a softmax kernel. Let's start.. We need a 2-D input M×N. We want softmax along last dimension, i.e., each row independently. We need to support arbitrary N, not just powers of two. So we need masking on tail. We want to use Triton. We want 1D grid over rows: each program handles one row. So grid size = M (ceil division). Each program will process the entire row in chunks of BLOCK columns, say BLOCK=256. We can do two passes: first compute max, second compute exp(x-max) and sum, then final division.. Alternatively we could do three passes: one for max, one for exp and sum, one for division. But we can combine division into same pass? We can accumulate sum in second pass, then after loop we need to compute reciprocal and multiply with each exp element? But we can't store all exp values per row unless we recompute them.
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK': 128}, num_warps=4),
+        triton.Config({'BLOCK': 256}, num_warps=8),
+        triton.Config({'BLOCK': 512}, num_warps=16),
+        triton.Config({'BLOCK': 1024}, num_warps=32),
+    ],
+    key=['N'],
+    warmup=1,
+    log_profiler=False
+)
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf'),
+            dtype=tl.float32
+        )
+        max_val = tl.maximum(max_val, tl.max(x))
+        start += BLOCK
+    # Compute exponentials and sum
+    exp_sum = 0.0
+# ...(+56 more lines truncated)
+```
+
+============================
+ENTRY 49  [crashed, score=0.000, iter=50]
+============================
+## Lesson
+We need to write a Triton kernel that does softmax along last dim of 2D tensor. Must handle arbitrary N, not just powers of two. We want high performance, so use block size 256 columns per program. Each program processes one row. Two passes: first compute max, second compute exp and sum. Use float32 accumulation for stability. Need to cast input dtype to float32 if not already. Also cast back.. We need to consider pointer arithmetic with strides, masking for tail columns.. We need to decide between one kernel with two passes or two separate kernels? The brief says two Triton kernels. So we will launch first kernel to compute max per row, store into a temp buffer of shape M (float32). Then launch second kernel to compute exp(x - max) and sum per row, then normalize.. Alternatively we could do both in one kernel but brief says two kernels..
+
+## Code excerpt
+```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK': 128}, num_warps=4),
+        triton.Config({'BLOCK': 256}, num_warps=8),
+        triton.Config({'BLOCK': 512}, num_warps=16),
+    ],
+    key=['N'],
+    warmup=1,
+    log_profiler=False
+)
+@triton.jit
+def _softmax_kernel(
+    X, Y,
+    stride_row_X, stride_col_X,
+    stride_row_Y, stride_col_Y,
+    N,
+    BLOCK: tl.constexpr
+):
+    row = tl.program_id(0)
+    start = 0
+    max_val = -float('inf')
+    # Find max per row
+    while start < N:
+        offset = start + tl.arange(0, BLOCK)
+        mask = offset < N
+        x = tl.load(
+            X + row * stride_row_X + offset * stride_col_X,
+            mask=mask,
+            other=-float('inf')
+        ).to(tl.float32)
+        max_val = tl.maximum(max_val, tl.max(x, axis=0))
+        start += BLOCK
+    # Compute exponentials and sum, store intermediate exp
+    exp_sum = 0.0
+    start = 0
+    while start < N:
+# ...(+52 more lines truncated)
+```

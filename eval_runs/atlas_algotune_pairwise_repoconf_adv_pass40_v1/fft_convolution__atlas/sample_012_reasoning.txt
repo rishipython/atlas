@@ -1,0 +1,23 @@
+We need to replace conv1d body with faster implementation. Use numpy. Need to handle float64. Use np.fft.fft with proper length. We need to compute convolution full: length N+M-1. For real signals we can use rfft. But simpler: use np.fft.fft on padded arrays. But we need to return float64. Use np.fft.fft with dtype complex128. Then multiply, inverse. Need to round? For numeric closeness we can use np.allclose with default rtol? They will compare. Use np.fft.ifft. After inverse, take real part. Use np.fft.ifftshift? Wait: For convolution, we just need product of FFTs of padded arrays. Use length L = N+M-1. Use np.fft.rfft? But rfft gives half. But simpler: Lpad = 1 << ceil_pow2(N+M-1). But we can just use L = N+M-1. Use np.fft.fft of length L. But if we use length L, we need zero-padding. That gives linear convolution. So:
+
+L = N+M-1
+X = np.fft.fft(x, n=L)
+H = np.fft.fft(h, n=L)
+Y = np.fft.ifft(X*H).real
+Return Y
+
+But we must ensure dtype float64. The output of ifft is complex128; .real gives float64. Should be fine.
+
+However, for large arrays, using np.fft.fft on length L may be slower than using rfft. But we can use np.fft.fft, which is fine.
+
+Edge cases: x or h empty? Probably not. But we can handle.
+
+Also we should use np.fft.fft for real input; but we can use np.fft.rfft and irfft: L = N+M-1; X = np.fft.rfft(x, n=L); H = np.fft.rfft(h, n=L); Y = np.fft.irfft(X*H, n=L). That uses real FFT and is faster.
+
+Let's implement that. Ensure dtype float64.
+
+Also we should import numpy.
+
+Return Y.
+
+Ok. Provide code.

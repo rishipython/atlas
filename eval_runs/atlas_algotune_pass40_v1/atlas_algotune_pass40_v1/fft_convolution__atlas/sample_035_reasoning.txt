@@ -1,0 +1,42 @@
+We need to produce faster implementation of 1D convolution. The reference uses direct loops. We can use numpy's FFT or scipy.signal.fftconvolve. But need to ensure numerical close. Use np.fft.fft? For real signals, we can use np.fft.rfft? But easiest: use scipy.signal.fftconvolve. But to avoid dependency on SciPy? Problem says may import scipy. Let's use scipy.signal.fftconvolve which is fast and handles real arrays. Return dtype float64. Ensure same output shape.
+
+Also we can implement with numpy's fft: next power of two length L >= N+M-1. Compute fft of both arrays padded to L, multiply, inverse fft, take real part, round to float64. Use np.fft.rfft for speed? rfft returns length L/2+1. But for simplicity, use np.fft.fft.
+
+Potential pitfalls: input arrays may not be float64? but dtype float64. We'll cast to float64.
+
+Return result as np.float64 array.
+
+Edge cases: small arrays; but algorithm works.
+
+Let's implement conv1d using numpy.fft.fft. But careful about rounding errors. Use np.rint? But not necessary; just cast to float64.
+
+Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    n_out = N + M -1
+    L = 1 << (n_out-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:n_out]
+
+But we need to ensure dtype float64; rfft returns float64.
+
+We also need to import numpy.
+
+Check that for large arrays, performance is good.
+
+Alternatively use np.fft.fft with n=L, but rfft is faster.
+
+Edge: if L==0? Not possible since n_out>=1.
+
+Return y as float64.
+
+Ok.
+
+Let's produce final code.

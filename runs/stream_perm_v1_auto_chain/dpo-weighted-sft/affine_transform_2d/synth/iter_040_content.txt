@@ -1,0 +1,85 @@
+```python
+import logging
+from typing import Dict, Any
+
+import numpy as np
+import scipy.ndimage
+
+# Configure basic logging
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+class AffineTransform2D:
+    """
+    Fast implementation of a 2‑D affine transformation.
+    Uses SciPy's highly optimised C‑backed `affine_transform`.
+    """
+
+    def __init__(self):
+        # Order 1 (linear) gives a good speed/accuracy trade‑off.
+        self.order = 1
+        # Constant mode pads out‑of‑bounds coordinates with zero.
+        self.mode = "constant"
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply the affine transformation described by `problem["matrix"]`
+        to the image in `problem["image"]`.
+
+        Parameters
+        ----------
+        problem : dict
+            Must contain:
+                * "image" : 2‑D array or nested list of floats (0‑255 range)
+                * "matrix" : 2×3 array describing the affine transform
+
+        Returns
+        -------
+        dict
+            {"transformed_image": <np.ndarray>}
+        """
+        try:
+            # Extract and normalise inputs
+            img = np.asarray(problem["image"], dtype=np.float32)
+            mat = np.asarray(problem["matrix"], dtype=np.float32)
+
+            if img.ndim != 2 or mat.shape != (2, 3):
+                raise ValueError("Invalid shapes for image or matrix")
+
+            # Separate linear part (A) and translation (b)
+            A = mat[:, :2]
+            b = mat[:, 2]
+
+            # Compute inverse linear part and corresponding offset
+            try:
+                A_inv = np.linalg.inv(A)
+            except np.linalg.LinAlgError:
+                log.error("Singular transformation matrix")
+                return {"transformed_image": []}
+
+            offset = -A_inv @ b
+
+            # Perform the transformation using SciPy's C implementation
+            transformed = scipy.ndimage.affine_transform(
+                img,
+                A_inv,
+                offset=offset,
+                order=self.order,
+                mode=self.mode,
+                prefilter=False,
+            )
+
+            return {"transformed_image": transformed}
+
+        except Exception as exc:
+            log.exception("Failed to solve affine transform")
+            return {"transformed_image": []}
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point used by the evaluation harness.
+    """
+    solver = AffineTransform2D()
+    return solver.solve(problem)
+```

@@ -1,0 +1,165 @@
+We need to rewrite rotate_2d solver fast. Let's think.
+
+We know problem: rotate 2D array? Probably rotate image? The baseline uses some slow method. We want to use scipy.ndimage.rotate or similar. But need matrix multiplication? Maybe use affine transform via matrix multiplication on coordinates.
+
+We need vectorized, no loops. Use np.einsum or @.
+
+Also need to use scipy functions somewhere. Could use scipy.ndimage.affine_transform.
+
+But must keep same signature: run_solver(problem) returns solution.
+
+We don't know problem format. Likely dict with 'image' key? Let's assume problem dict contains 'matrix': 2D array, 'angle': float degrees. The solver returns rotated matrix.
+
+We can design: get array, angle, compute rotation matrix R = [[cos,-sin],[sin,cos]]. Compute grid coordinates using np.indices, shift center, apply R via matrix multiplication: coords_flat = np.vstack((x_flat - cx, y_flat - cy)); new_coords = R @ coords_flat + [cx,cy]. Then sample via interpolation: use scipy.ndimage.map_coordinates or affine_transform.
+
+Better to use scipy.ndimage.affine_transform which takes matrix and offset. Provide matrix = R.T? Need check orientation. Use order=1 bilinear.
+
+No loops: just call function.
+
+Edge cases: negative angle, large arrays. Ensure dtype float64 for accuracy.
+
+Also we need to use BLAS via np.dot or @ for matrix multiplication of large arrays? But rotation only 2x2 times 2xN maybe small; but we can use np.einsum for vectorized.
+
+But requirement says "Makes use of matrix multiplication (BLAS-backed)." So we can compute rotated coordinates with einsum or matmul.
+
+Let's design:
+
+def rotate_2d(matrix: np.ndarray, angle_deg: float) -> np.ndarray:
+    theta = np.deg2rad(angle_deg)
+    c,s = np.cos(theta), np.sin(theta)
+    R = np.array([[c,-s],[s,c]], dtype=matrix.dtype)
+    # compute coordinates
+    h,w = matrix.shape
+    y,x = np.indices((h,w))
+    cy,cx = (h-1)/2,(w-1)/2
+    coords = np.vstack((x - cx, y - cy))  # shape 2,N
+    new_coords = R @ coords
+    x_new = new_coords[0,:] + cx
+    y_new = new_coords[1,:] + cy
+    # stack and map
+    rotated = scipy.ndimage.map_coordinates(matrix, [y_new.ravel(), x_new.ravel()], order=1, mode='constant', cval=0).reshape(matrix.shape)
+    return rotated
+
+This uses BLAS for matmul of 2xN with 2x2; but that's small overhead but still BLAS.
+
+Alternatively use affine_transform: scipy.ndimage.affine_transform(matrix, R, offset=[-cx,-cy], output_shape=matrix.shape). Wait offset? For center pivot.
+
+affine_transform expects inverse mapping? Actually it applies inverse of given matrix to input coordinates. So we can pass R.T? Might be simpler to compute manually as above.
+
+We also need to avoid loops; we used vectorized ops only.
+
+Also we should import logging and set up logger maybe for debug.
+
+Let's consider performance: map_coordinates might be slower than affine_transform; but still okay.
+
+We can also use scipy.ndimage.rotate which handles center and mode; but it uses interpolation internally maybe slower but simpler. But requirement says must use matrix multiplication; so manual approach fits.
+
+Edge cases: if angle is multiple of 90 degrees, we could just use numpy.rot90 for speed but not necessary.
+
+Let's think about dtype: if input is int, output will be float due to interpolation; maybe cast back to same dtype? baseline may preserve dtype. We'll keep float64 and let caller decide.
+
+Also ensure we don't allocate huge intermediate arrays unnecessarily; but we need coords arrays size 2*N where N=h*w; that's okay for moderate sizes.
+
+Could optimize by using broadcasting: new_x = c*(x-cx)-s*(y-cy)+cx etc directly without matmul; that eliminates matmul overhead but still uses vectorized ops. But requirement says must use BLAS-backed multiplication; so we should keep the matmul call even if not necessary. So we keep the R @ coords step using @ which uses BLAS for 2xN multiply (though small). That satisfies requirement.
+
+Now final code structure:
+
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+logger = logging.getLogger(__name__)
+
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> Any:
+        # extract
+        image = problem['matrix']
+        angle_deg = problem.get('angle', 0)
+        return self._rotate(image, angle_deg)
+
+    def _rotate(self, arr: np.ndarray, angle_deg: float) -> np.ndarray:
+        theta = np.deg2rad(angle_deg)
+        c,s = np.cos(theta), np.sin(theta)
+        R = np.array([[c,-s],[s,c]], dtype=arr.dtype)
+        h,w = arr.shape
+        y,x = np.indices((h,w))
+        cy,cx = (h-1)/2,(w-1)/2
+        coords = np.vstack((x - cx, y - cy))
+        new_coords = R @ coords
+        x_new = new_coords[0,:] + cx
+        y_new = new_coords[1,:] + cy
+        rotated = scipy.ndimage.map_coordinates(arr, [y_new.ravel(), x_new.ravel()], order=1,
+                                                mode='constant', cval=0).reshape(arr.shape)
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+
+This uses all imports required and no loops. Good.
+
+Edge cases: if arr has more than 2 dims? Problem likely 2D only. If arr is empty shape? handle gracefully by returning arr copy maybe. But not needed.
+
+Also ensure that map_coordinates expects coordinates in order of axes; we passed [y,x] correct because first axis row index then col index.
+
+Check memory usage: coords shape (2,N). For large N like 10000x10000 ~100M elements -> too big memory (~800MB). Might be problematic. We could avoid storing full coords by computing new_x,y via formulas directly without stacking full arrays:
+
+new_x_flat = c*(x_flat - cx) - s*(y_flat - cy) + cx etc using broadcasting on flattened arrays separately; that would avoid big intermediate but still vectorized and uses BLAS? Not exactly BLAS because no matmul. But requirement says must use matrix multiplication somewhere; we already used it though it's small overhead relative to big memory usage but still present. However the memory overhead might be high for huge images; but typical test sizes maybe moderate (<2000x2000). Acceptable.
+
+Alternatively we could compute using einsum on the fly without building full coords array: new_x_flat = (c * (x_flat - cx) - s * (y_flat - cy)) etc. That eliminates memory but loses BLAS call; but requirement may not enforce strict count of BLAS usage across entire function? It says "Makes use of matrix multiplication (BLAS-backed)." So having at least one matmul suffices even if not used heavily. So keep current design with matmul on small arrays acceptable.
+
+We also have imports from __future__ annotations etc as required by brief.
+
+Now final step is sanity check edge cases:
+
+- angle zero -> identity rotation -> should return same array (maybe slight interpolation error). Map_coordinates with order=1 may produce slight differences due to rounding at edges; could set mode='nearest' or 'constant' cval=0 gives zeros outside boundaries leading to slight differences near edges when rotating zero degrees due to rounding errors? Actually mapping coordinates exactly same yields identical values because interpolation at integer points returns exact value if order>=1? For integer coordinates mapping exactly should give exact value because linear interpolation between identical points returns same value. So fine.
+
+- Negative angles handled fine due to sin sign change.
+
+- Very large angles >360 reduce mod 360 automatically due to trig functions periodicity; fine.
+
+- Non-square images fine because separate cx,cx computed separately.
+
+- Input dtype int -> cast to float in R due to dtype same as arr so int? Wait arr.dtype int => R dtype int leads cos/sin truncated to int -> zero! So must cast arr dtype to float before building R or cast R to float explicitly. So better set dtype=np.float64 for R regardless of arr dtype else rotation fails for ints. Also map_coordinates will output float64 anyway. So modify R creation accordingly:
+
+R = np.array([[c,-s],[s,c]], dtype=np.float64)
+
+And cast arr to float when needed? map_coordinates works with any numeric type and returns float64 by default I think. So fine.
+
+Thus adjust code accordingly: create R with float64 regardless of arr dtype; no issue with int input causing zero rotation matrix earlier bug discovered earlier "Wait — that won't work because int truncation".
+
+Also ensure that when arr is uint8 image typical pixel values 0-255 then output will be float64 maybe okay else cast back if needed by caller not our concern.
+
+So final design ready.
+We need a fast `run_solver` that rotates a 2‑D array given an angle in degrees while staying fully vectorised and using a BLAS‑backed matrix multiply somewhere in the routine – the baseline does it in a slow Python loop so we’ll replace it with a single `@` call plus a single SciPy interpolation call.  
+
+Let’s sketch the steps first:
+
+* Pull out the matrix and the angle from the problem dictionary.
+* Build the usual rotation matrix  
+  `R = [[cosθ , –sinθ], [sinθ , cosθ]]`.  
+  We’ll force it to `float64` – otherwise an integer input would truncate everything.
+* Compute a grid of pixel indices (`np.indices`) and shift it so the centre is at `(0,0)`.  
+* Apply `R` via a single `@` operation (`new_coords = R @ coords`).  
+* Shift back by adding the centre offsets.
+* Feed those floating‑point coordinates into `scipy.ndimage.map_coordinates` with bilinear interpolation (`order=1`).  
+* Return the reshaped result – this keeps everything in one shot with no Python loops.
+* Wrap this logic in a tiny class `Rotate2D` so it matches the original API and add a logger just in case someone wants diagnostics.
+* Finally expose `run_solver(problem)` that constructs the class and calls its `solve`.
+
+The imports are straightforward – `__future__` for annotations (nice style), `logging`, `typing`, `numpy`, and `scipy.ndimage`.  
+No other libraries are touched because all heavy lifting is done by NumPy’s BLAS backend (`@`) and SciPy’s C‑accelerated interpolation routine – both are fast enough for even large images while keeping the code cleanly vectorised.
+
+Edge cases checked while designing:
+
+* **Zero or multiples of 90 degrees** – trigonometric functions give exact values so the grid maps back onto itself; bilinear interpolation on integer coordinates reproduces the original values.
+* **Negative angles** – handled automatically by sine sign change.
+* **Non‑square images** – centre offsets are computed separately per axis.
+* **Integer input matrices** – converting `R` to `float64` avoids truncation; `map_coordinates` will emit floats which is acceptable for most downstream consumers.
+* **Very large images** – memory footprint dominated by the coordinate arrays (`coords` is size `(2,N)`); still manageable up to ~10k×10k on modern hardware (~800 MB). If needed one could replace this with element‑wise formulas but that would drop the required BLAS call.
+* **Interpolation mode** – using `'constant'` with `cval=0` keeps behaviour deterministic at borders without extra padding logic.
+
+With this plan in place I’m ready to write the actual file – all requirements satisfied and ready for benchmarking against the reference implementation.  
+
+OK, I think I have the design. Time to write it.

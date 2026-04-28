@@ -1,0 +1,19 @@
+We need to provide faster implementation. Use numpy FFT. Need to consider input arrays of float64. Use np.fft.fft. For linear convolution, zero-pad to length L = N + M - 1. Choose FFT size as next power of two? Could use np.fft.rfft for real inputs, then inverse. Use np.fft.fft for complex. For speed, rfft is efficient. Approach: compute len_out = N+M-1. NFFT = 1 << (len_out-1).bit_length() (next power of two). Then use rfft: X = np.fft.rfft(x, n=NFFT); H = np.fft.rfft(h, n=NFFT); Y = X * H; y = np.fft.irfft(Y, n=NFFT); then slice [:len_out]. Ensure dtype float64.
+
+Potential numeric differences small. Use float64. Should be fine.
+
+Edge cases: empty arrays? Not likely. But we can handle if len(x)==0 or len(h)==0: return empty array? np.convolve returns empty array of length 0? np.convolve([], []) returns array([], dtype=float). So we can handle.
+
+Implementation: define conv1d.
+
+We need to import numpy as np. Provide docstring.
+
+Let's produce code.
+
+Also consider using np.fft.fft if rfft not available? It's available.
+
+Also we can use np.fft.ifft. But rfft better.
+
+Ok.
+
+Let's produce final code.

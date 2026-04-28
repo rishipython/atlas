@@ -1,0 +1,24 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    N = x.shape[0]
+    M = h.shape[0]
+    size = N + M - 1
+    if size == 0:
+        return np.array([], dtype=np.float64)
+
+    # Choose an FFT length that is a fast size for the underlying FFT implementation
+    nfft = np.fft.next_fast_len(size)
+
+    # Compute the FFTs of the padded input signals
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+
+    # Element‑wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse FFT to get the convolution result, then trim to the desired length
+    y = np.fft.irfft(Y, nfft)[:size]
+    return y.astype(np.float64)

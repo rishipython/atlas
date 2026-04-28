@@ -1,0 +1,112 @@
+We need to speed up affine_transform_2d. The baseline uses scipy.ndimage.affine_transform with order=3. That is probably fine but maybe slow for large images. We can try lower order, maybe order=1, but must keep correctness? The verification uses reference with order=3, so we must produce same output. So we can't change order unless we adjust tolerance? But is_solution compares with reference using np.allclose with rtol=1e-5, atol=1e-7. So we need to match exactly or within that tolerance. Lower order would produce different values, so not acceptable.
+
+So we must compute cubic interpolation ourselves or use scipy's function but maybe faster? Perhaps use scipy.ndimage.map_coordinates? But that also uses same underlying algorithm.
+
+Could we use numba JIT to compute mapping and interpolation manually? That might be faster if we vectorize properly.
+
+But maybe the main bottleneck is computing coordinates and applying interpolation. We can precompute inverse matrix and use broadcasting to generate grid coordinates for output shape. Then map to input coordinates. Use scipy.ndimage.map_coordinates with order=3 and mode='constant', cval=0.0. That might be similar speed.
+
+But maybe using SciPy's affine_transform is already highly optimized in C, so maybe not much gain.
+
+However, the spec says no Python-level loops; all work vectorised. We can use numpy broadcasting to compute coordinates and then call scipy.ndimage.map_coordinates which will do interpolation in C.
+
+So design: compute output grid indices via np.indices, shape (n,n). Flatten to 2D arrays of x,y coords. Append ones for homogeneous coordinates, multiply by inverse of matrix (or transform matrix?). Actually affine_transform expects matrix that maps output coords to input coords? In scipy.ndimage.affine_transform, the matrix argument is the inverse of the transformation matrix? Let's recall: affine_transform(image, matrix) applies linear transformation defined by matrix to the input image; matrix is applied to output coordinates to get input coordinates. So we need to pass inverse of given matrix? The given matrix is 2x3: [ [a,b,c], [d,e,f] ]. This transforms input coords (x,y) -> (a*x + b*y + c, d*x + e*y + f). For output image, we want for each output coordinate (x',y') find corresponding input coordinate (x,y) = M^{-1} * [x',y',1]^T? Actually M maps input to output; so inverse needed for mapping output->input.
+
+So compute inv_matrix 2x3: first 2x2 invertible part; translation part adjusted accordingly.
+
+Compute inv_mat = np.linalg.inv([[a,b],[d,e]]). Then inv_translation = -inv_mat @ [c,f].
+
+Then for each output index (i,j) (row,col), compute input coords: x_in = inv_mat[0,:] @ [i,j] + inv_translation[0], y_in = inv_mat[1,:] @ [i,j] + inv_translation[1].
+
+We can vectorize: create grid arrays X,Y via np.meshgrid(np.arange(n), np.arange(n), indexing='ij'). Flatten them into arrays of shape (n*n). Then compute in_coords = inv_mat @ [X_flat, Y_flat] + inv_translation[:,None]. That yields shape (2,n*n). Reshape back to (2,n,n). Then feed into map_coordinates: scipy.ndimage.map_coordinates(image, in_coords, order=3, mode='constant', cval=0.0). That returns flattened array; reshape to n,n.
+
+This should be vectorized and maybe faster due to less overhead than calling affine_transform for each pixel? Not sure but likely similar.
+
+We also need to ensure dtype float32 vs float64? Input image floats 0-255; using float32 may reduce memory and speed. But map_coordinates expects float64 by default? It accepts float32 as well but may cast internally. We can cast image to float32 before passing.
+
+Also note that map_coordinates expects coordinates in order of axes: first axis index corresponds to axis 0 of image (row), second axis index corresponds to axis 1 (col). Our X,Y correspond accordingly.
+
+Edge cases: if image not square? Problem says n x n but could be rectangular; but we assume square.
+
+Also need to handle potential memory usage: flattening n*n arrays okay up to few thousands.
+
+We also need logging maybe minimal.
+
+Now consider alternative: Use JAX JIT on custom interpolation loop? Might be slower due to overhead of compiling per call.
+
+Numba approach: Write a function that loops over pixels in C style but JIT compiled; that could be faster than SciPy's C code because we avoid overhead of calling map_coordinates per pixel? But map_coordinates uses C loops anyway; likely similar performance.
+
+Given constraints: no Python loops; all vectorized. So stick with map_coordinates approach.
+
+Check numeric accuracy: Using map_coordinates with order=3 should produce same result as affine_transform? I think yes because both use spline interpolation. Might have slight differences due to implementation differences but likely within tolerance.
+
+We need final solution dict with "transformed_image" key containing array converted back to list or keep numpy array? In solve method earlier they returned numpy array directly; is_solution accepts numpy array too after conversion. So okay return numpy array.
+
+Now code structure:
+
+class AffineTransform2D:
+    def __init__(self):
+        self.order = 3
+        self.mode = 'constant'
+        self.cval = 0.0
+
+    def solve(self, problem):
+        try:
+            image = np.asarray(problem["image"], dtype=np.float32)
+            matrix = np.asarray(problem["matrix"], dtype=np.float32)
+            # compute inverse
+            A = matrix[:,:2]
+            t = matrix[:,2]
+            try:
+                invA = np.linalg.inv(A)
+            except np.linalg.LinAlgError:
+                # fallback
+                return {"transformed_image": []}
+            invt = -invA @ t
+            # grid
+            n_rows, n_cols = image.shape
+            # assume square
+            Y, X = np.meshgrid(np.arange(n_rows), np.arange(n_cols), indexing='ij')
+            # flatten
+            X_flat = X.ravel()
+            Y_flat = Y.ravel()
+            coords_in_flat = invA @ np.vstack((X_flat, Y_flat)) + invt[:,None]
+            # map_coordinates expects shape (ndim, npoints)
+            transformed_flat = scipy.ndimage.map_coordinates(
+                image,
+                coords_in_flat,
+                order=self.order,
+                mode=self.mode,
+                cval=self.cval,
+                prefilter=True
+            )
+            transformed_image = transformed_flat.reshape(image.shape)
+            return {"transformed_image": transformed_image}
+        except Exception as e:
+            logging.error(...)
+            return {"transformed_image": []}
+
+Need logging imports etc.
+
+Also ensure that if image not square we still work: just use shape dims accordingly.
+
+Edge case: if A singular -> return empty list or raise error; is_solution will compare against reference which may also fail or produce error; but okay.
+
+Testing numeric tolerance: Use same parameters as reference: order=3 mode='constant' cval=0.0 prefilter=True default used by affine_transform? It uses prefilter=True by default for spline >1 I think yes. So match that.
+
+Now final code file includes imports at top and run_solver function returning solver.solve(problem).
+
+Check length ~6859 chars requirement - not necessary here just design reasoning.
+
+Also ensure no Python loops - only vectorized operations and single call to map_coordinates.
+
+Let's consider alternative design: using scipy.ndimage.affine_transform directly might be simpler but might be slower due to computing coordinate mapping internally each time? But it's also vectorized C code; difference small. But our design uses map_coordinates which may also be efficient; plus we explicitly compute inverse which might add overhead but negligible relative cost of interpolation on large images.
+
+Could also use SciPy's ndimage.affine_transform with 'output_shape' same as input and 'offset' computed from translation part? But computing offset easier using 'offset' param instead of full inverse mapping maybe simpler: According to docs, affine_transform takes a matrix and offset separately; offset is shift applied after linear transform before interpolation. We could compute offset directly from given matrix and use it instead of manual mapping. The function signature: affine_transform(input, matrix, offset=0). The matrix transforms output coordinates into input coordinates after subtracting offset? Actually offset is added after multiplication by inverse of matrix? Let's check docs quickly mentally: The transformation applied is output_coord -> sum(matrix[i,j]*output_coord[j]) + offset[i]. So if we want input_coord = A * output_coord + t where A is given transformation from input->output? Wait confusion again. Might be easier just use map_coordinates as above.
+
+Thus final design ready.
+
+Edge cases: Very large images may cause memory issues when flattening arrays size N*N > millions; still okay up to few thousand dims (~10k^2 ~100M floats ~800MB). Acceptable?
+
+Ok final handoff sentence now.
+OK, I think I have the design. Time to write it.

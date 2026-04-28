@@ -1,0 +1,28 @@
+We need to implement conv1d faster. Use FFT-based convolution: use np.fft.fft, or scipy.signal.fftconvolve. Must return same result as np.convolve with mode='full'. Use np.fft.rfft? But input are real. Use np.fft.fft for general. Ensure dtype float64. Use np.fft.fft length = next power of two >= N+M-1. Or use np.fft.rfft length = N+M-1? For speed, use rfft. But careful about round-off. Use np.fft.fft with real input then compute product. Use np.fft.ifft. Use np.fft.rfft to get real-only transform, then multiply, then irfft.
+
+Implementation:
+
+def conv1d(x,h):
+    N=x.size; M=h.size
+    size = N+M-1
+    # next power of two for speed? Might be optional. But can use size directly.
+    # For real inputs, rfft length size -> rfft returns length size//2+1.
+    # Compute rfft of zero-padded to size
+    X = np.fft.rfft(x, n=size)
+    H = np.fft.rfft(h, n=size)
+    y = np.fft.irfft(X*H, n=size)
+    return y
+
+Need to ensure dtype float64. np.fft.rfft returns float64 if input float64. Good.
+
+Edge cases: if size==0? But N+M-1 >=1. If one array length zero? Not allowed? But could handle. If size==0, return empty array. But conv1d with zero-length arrays not typical. But safe.
+
+Return np.array of dtype float64. Use np.asarray.
+
+We can also use scipy.signal.fftconvolve which handles shape. But we can implement ourselves.
+
+Return y as float64.
+
+Let's produce file. Also include imports.
+
+Ok.

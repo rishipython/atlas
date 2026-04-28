@@ -1,0 +1,38 @@
+We need to write faster conv1d using FFT. Use numpy. We can use np.fft.fft, but for real arrays we can use rfft. But easiest: use np.fft.fft of appropriate size, multiply, ifft, real part. We need to return real values. Use np.fft.fft2? Actually 1-D.
+
+Implementation: n = len(x), m = len(h). size = n+m-1. Next pow2 >= size for efficient FFT. Or we can use np.fft.fft directly with size. np.fft.fft returns complex. Use ifft. Then round? Use real.
+
+Edge cases: maybe zeros? Should handle. Use dtype float64.
+
+Also we can use scipy.signal.fftconvolve but we can't rely on SciPy? Allowed. But we can implement ourselves.
+
+Implementation:
+
+```
+import numpy as np
+
+def conv1d(x,h):
+    n=len(x); m=len(h)
+    size=n+m-1
+    # choose fft size: next power of two for speed
+    fft_size = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, fft_size)
+    H = np.fft.rfft(h, fft_size)
+    Y = X*H
+    y = np.fft.irfft(Y, fft_size)
+    return y[:size]
+```
+
+This returns real array. Should be numerically close. For small sizes, overhead may be larger but still fine.
+
+Edge: if x or h empty? But not used.
+
+Return dtype float64.
+
+Make sure to cast to np.float64. We can ensure using dtype.
+
+Testing: Should match np.convolve.
+
+Also we need to keep imports at top. Provide full file.
+
+Let's produce final code.

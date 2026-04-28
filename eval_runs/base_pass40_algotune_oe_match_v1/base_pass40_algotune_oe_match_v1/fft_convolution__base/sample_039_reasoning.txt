@@ -1,0 +1,43 @@
+We need to optimize FFT convolution. The reference uses scipy.signal.fftconvolve which is efficient but maybe not fastest. We can implement own FFT using numpy. Use rfft for real signals. Use numpy.fft.rfft and irfft. For length n = len(x)+len(y)-1. Use next power of 2 or next odd? But rfft uses real FFT. Let's compute size = len_x + len_y -1. Pad to next power of 2 or next multiple of 2? Using numpy's FFT, size can be arbitrary but slower for non-power-of-2. We can use np.fft.fft which can handle arbitrary length. But rfft may be faster.
+
+We need to support modes full, same, valid. For same: output length = max(len_x, len_y). Usually same length as x if x longer than y? Actually numpy's convolve same gives output length = len(x). In reference, they use scipy.signal.fftconvolve which returns full by default, but mode same returns length of x. For valid: length = max(len_x, len_y) - min(len_x, len_y) + 1? Wait formula: len_x + len_y - 1 - (len_x - 1) - (len_y - 1) = len_x + len_y - 1 - len_x + 1 - len_y + 1 = 1? That seems wrong. Actually convolution valid length = len_x - len_y + 1 if len_x >= len_y. In general: max(0, len_x - len_y + 1, len_y - len_x + 1). Equivalent to max(0, len_x - len_y + 1, len_y - len_x + 1). So formula: max(0, len_x - len_y + 1, len_y - len_x + 1). But in description they use max(len_x - len_y + 1, 0). Wait they used max(len_x, len_y) - min(len_x, len_y) + 1. That equals abs(len_x - len_y) + 1. That's correct. So same.
+
+We'll implement compute_full = ifft(fft(x_padded)*fft(y_padded)). For real signals, use rfft to reduce size: rfft(x, n) and rfft(y, n) where n = len_x + len_y -1. Multiply elementwise and irfft. Use numpy.fft.rfft and irfft. That should be fast.
+
+Edge cases: empty signals: return empty array.
+
+We need to output list? The reference returns list but in is_solution they expect list. They read solution["convolution"] list. Our solution should produce list. But we can output numpy array as list.
+
+But run_solver returns solution dict with key "convolution". They expect list. We'll produce list.
+
+We need to ensure we use float64. Use np.asarray.
+
+Also ensure we handle mode same, valid. For same: we need to slice from full result: start = (len_y -1)//2? Actually for same, we need central part of length len_x. For convolution of length n_full = len_x + len_y -1. The central part starting at floor((n_full - len_x)/2). For odd or even? For even length signals, same length as x. In numpy's convolve, same picks center. We can compute start = (len_y -1)//2. Wait typical formula: start = (len_y -1)//2; end = start + len_x. For even len_y, (len_y-1)//2 gives floor. Example: x len4, y len3: len_y=3, start=1, end=5 -> indices 1..4 inclusive? Actually slice [1:5] yields 4 elements indices 1,2,3,4. Works. For len_y=4, start=1, end=5 gives 4 elements indices 1..4. But typical same for x=4 y=4? Let's test: convolution of length 7, same length 4. start = (4-1)//2 =1, end=5. Works. For len_y=5, start=2, end=6. Works. So use that.
+
+For valid: start = len_y -1; end = start + len_valid. But if len_y > len_x, we need to reverse? For valid, length = abs(len_x - len_y)+1. Start = min(len_x, len_y) -1? Actually for len_x>=len_y: start = len_y-1, length = len_x - len_y +1. For len_y>len_x: start = len_x-1, length = len_y - len_x +1. So we can compute start = min(len_x, len_y)-1.
+
+So implement.
+
+Edge: if either empty, return empty.
+
+Performance: use rfft.
+
+Implementation:
+
+def fft_convolve(x, y, mode='full'): compute full via rfft.
+
+Return list.
+
+We also need to handle dtype: use float64.
+
+Let's write code.
+
+Also we can include optional JIT via numba? But rfft is efficient. Let's keep simple.
+
+Also we need to import numpy as np.
+
+Testing: We'll run sample.
+
+We also need to ensure memory: we can reuse arrays? Not necessary.
+
+Let's produce code.

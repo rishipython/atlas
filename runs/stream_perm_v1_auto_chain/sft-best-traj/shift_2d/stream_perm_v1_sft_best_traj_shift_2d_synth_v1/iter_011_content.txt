@@ -1,0 +1,172 @@
+We need to figure out what this shift_2d problem actually is. The name suggests we are shifting a 2‑D array or image by some amount, maybe optimizing something. Let's look at the reference implementation: `Shift2D().solve(problem)` – so there's a class that takes a problem dict and returns something. We don't have that class, but we can infer the expected input format from typical AlgoTune tasks. Usually the problem dict contains keys like `"image"`, `"shift"` or `"target"`, maybe a cost function. The goal is to find a shift that maximizes correlation or minimizes error.
+
+Given the design brief says we must use scipy functions somewhere, no Python loops, vectorised only, and final code about 6733 characters, we should aim for a fairly compact but efficient implementation.
+
+First thought: maybe the problem is to find the best integer shift of an image that aligns it with a reference image. So the input could be two images: `source` and `reference`. The solver should return the shift (dx, dy). The baseline might brute‑force all possible shifts within some range, computing sum of squared differences for each shift – that's O(N^2 * M^2) where N,M are image dims. We can accelerate with FFT cross‑correlation: compute 2‑D FFT of both images, multiply one by conjugate of other, inverse FFT gives correlation map. Then argmax gives best shift. That's classic.
+
+But maybe the problem is different: perhaps we need to shift an array in 2D by fractional amounts using interpolation. The baseline might use nested loops and bilinear interpolation; we can use scipy.ndimage.shift which handles sub‑pixel shifts efficiently in C.
+
+Let's inspect typical AlgoTune tasks: they often involve optimizing some parameter via gradient descent or brute force search. But here "shift_2d" likely refers to shifting an array.
+
+We must keep function signature `run_solver(problem)` returning whatever Shift2D().solve returns. Let's assume it returns a tuple (dx, dy) or maybe a dictionary with keys "dx", "dy". We'll design to output something simple.
+
+We need to decide on data types: use numpy float64 arrays.
+
+We should import logging for debug, random for random seed maybe, typing.Any etc as per brief.
+
+Now think about algorithmic choices:
+
+Option 1: Use scipy.ndimage.shift on each possible integer shift? That would still be loops.
+
+Option 2: Use FFT cross-correlation: compute correlation matrix quickly; then find peak; that's vectorised and fast.
+
+Option 3: Use scipy.signal.correlate2d which does direct convolution; but that might be slower than FFT for large arrays.
+
+Given we want speed and no loops, FFT approach is best.
+
+Edge cases: images may not be same shape? Usually they are same shape. If not, we could pad smaller one to match size before FFT.
+
+Also we need to consider periodic boundary conditions vs zero padding. For cross-correlation via FFT, periodic assumption is natural; if images are not periodic, results may wrap around incorrectly. But baseline likely uses zero padding or direct correlation with zero padding? Hard to know.
+
+Better approach: use scipy.signal.correlate2d with mode='same', boundary='fill', fillvalue=0; but that still uses loops internally but in C optimized code. Might be fine.
+
+But requirement: "Uses scipy functions somewhere in the solution." So either FFT or correlate2d qualifies.
+
+Let's decide on using `scipy.signal.correlate2d` because it's straightforward and no manual FFT needed; it's already vectorised and C-optimized. It will compute cross-correlation over all shifts automatically. Then we find argmax of resulting matrix -> shift indices relative to center offset.
+
+But careful: correlate2d returns array of shape (M+N-1, P+Q-1) if mode='full'; with mode='same', shape same as input; but we want all possible shifts within range? If we use 'full', then we get all shifts from -(M-1) to +(M-1). Good.
+
+So algorithm:
+
+```
+from scipy.signal import correlate2d
+
+def solve(problem):
+    src = np.array(problem['source'])
+    tgt = np.array(problem['target'])
+    corr = correlate2d(tgt, src, mode='full', boundary='fill', fillvalue=0)
+    idx = np.unravel_index(np.argmax(corr), corr.shape)
+    # compute shift relative to center
+    center = (np.array(corr.shape) - 1) // 2
+    shift = idx - center
+    return {'dx': int(shift[1]), 'dy': int(shift[0])}
+```
+
+Wait indexing: In 2D arrays, first index is row (y), second is column (x). So dx corresponds to columns shift (x), dy corresponds to rows shift (y). But depends on convention used by baseline; might be reversed. We'll assume dx = columns difference between target and source such that shifting source by dx aligns with target.
+
+Edge cases: if multiple peaks equal? Use first argmax which is fine.
+
+Also need to handle dtype conversion; ensure float64 for accuracy.
+
+Now performance wise: correlate2d uses BLAS under hood? Actually it's implemented in C using convolution via direct method; for large arrays it might still be okay but not as fast as FFT for very large arrays (>512). But given constraints unknown size maybe moderate (~256x256). Should be fine.
+
+Alternatively use FFT:
+
+```
+from numpy.fft import fft2, ifft2
+
+def solve_fft(src,tgt):
+    f_src = fft2(src)
+    f_tgt = fft2(tgt)
+    corr = ifft2(f_src * np.conj(f_tgt)).real
+    # shift zero freq component to center
+    corr = np.roll(corr, -src.shape[0]//2+1, axis=0)
+    corr = np.roll(corr, -src.shape[1]//2+1, axis=1)
+```
+
+But that's more complex; also need careful handling of shapes and padding. Might be overkill given requirement minimal code length ~6733 chars which includes imports etc; simpler solution likely accepted.
+
+Now think about logging and random import usage: We can set seed for reproducibility if needed? Not required but okay.
+
+Add docstring? Not necessary but fine.
+
+Edge case: If problem dict contains only one image? Then cannot compute shift; maybe return zeros. But baseline likely expects both images present.
+
+Also consider memory usage: For large images correlate2d returns full correlation matrix of size (M+N-1)^2 ~ 4 times original area; could be memory heavy but acceptable for moderate sizes.
+
+Let's think about potential pitfalls:
+
+- Using `mode='full'` yields shape (M+N-1,N+P-1). For square images M=N=P=Q=256 => shape 511x511 ~ 260k elements -> fine.
+- If images differ in shape drastically e.g., source 100x100 target 200x200 -> correlation shape 299x299 -> fine.
+- If input arrays are integer type -> convert to float64 before correlation else overflow? Correlate handles ints but may overflow if large values >255? Use float64 anyway.
+- Need to cast result of np.argmax to int explicitly when returning dict values.
+- Return type expected by baseline? Might be list [dx,dy] or tuple; uncertain. We can return list [dx,dy] which is simpler.
+- Logging could log shapes and time taken using time module inside solve for debugging but not necessary for speed.
+- Avoid any Python-level loops anywhere else in code except maybe building output dict/list; that's trivial overhead negligible.
+- Use numpy operations only inside correlation call and argmax etc – all vectorised.
+- Ensure imports include logging even if unused – requirement says import logging.
+- Random import maybe used just for seeding random number generator used somewhere else? Could ignore or set seed for reproducibility if needed.
+- Type hints required from typing import Any, Dict.
+- Ensure final file has run_solver function defined exactly as required by tests.
+- Provide minimal main guard if needed but not necessary.
+
+Now think about potential alternative design choices:
+
+Alternative A: Use scipy.ndimage.shift inside a grid search over candidate shifts within some small range (e.g., ±5 pixels) using nested loops – would involve Python loop over range which violates no loops rule. So reject.
+
+Alternative B: Use numba JIT compiled function performing convolution manually – would require loops inside numba function compiled at runtime but still counts as Python-level loop? It's inside JIT compiled code so acceptable? But simpler solution with scipy already satisfies requirement so no need.
+
+Alternative C: Use JAX jitted function performing convolution via jax.numpy.correlate – but JAX may not be available or heavy overhead; also requirement explicitly mentions scipy functions must be used somewhere so JAX alone insufficient unless combined with scipy – but simpler solution already uses scipy so good.
+
+Edge case handling of negative shifts: After computing idx-center gives negative numbers when target shifted left/up relative to source – correct sign convention depends on baseline expectation. Might need invert sign depending on orientation of correlation operation order. In cross-correlation corr(y,x)=sum_{i,j} tgt[i,j]*src[i-y,j-x]; So argmax index gives offset where src should be shifted by +offset relative to tgt? Actually cross-correlation peaks when src aligns with tgt after shifting src by offset negative of index difference? Let's test mentally with simple example:
+
+Let src = [[1]] at position (0,0), tgt = [[1]] at position (5,5) offset down-right relative to src. Cross-correlation corr(tgt,sr) will have peak at index corresponding to shift aligning sr into tgt's location relative to origin at top-left of tgt? For full mode correlation size M+N-1 etc... Honestly easier approach: use `scipy.signal.correlate` from SciPy which returns correlation such that peak at index where first argument shifted right/down matches second argument's position relative origin at top-left of second argument?? Might get confusing. But baseline likely expects dx positive meaning target shifted right relative source? Hard guess but we can provide comment explaining assumption and let tests verify correctness; if wrong sign we can adjust later by negating shift values before returning.
+
+Thus final design:
+
+```
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+from scipy.signal import correlate
+
+def run_solver(problem):
+    src = np.asarray(problem['source'], dtype=np.float64)
+    tgt = np.asarray(problem['target'], dtype=np.float64)
+    corr = correlate(tgt, src, mode='full', method='auto')
+    idx_yx = np.unravel_index(np.argmax(corr), corr.shape)
+    center_yx = ((np.array(corr.shape)-1)//2).astype(int)
+    shift_yx = np.array(idx_yx) - center_yx
+    # Convert back to dx (col), dy(row)
+    return {'dx': int(shift_yx[1]), 'dy': int(shift_yx[0])}
+```
+
+Check imports include logging random etc even though unused except random seed maybe set at start:
+
+```
+random.seed(42)
+```
+
+Add optional logging debug prints:
+
+```
+logging.debug(f"Source shape {src.shape}, target shape {tgt.shape}")
+logging.debug(f"Correlation peak at {idx_yx}, shift {shift_yx}")
+```
+
+This satisfies no loops aside from trivial ones inside numpy functions which are vectorised internally.
+
+Now sanity check edge cases:
+
+- Empty arrays -> error; assume never empty.
+- Different shapes -> correlation works fine as long as both have >=1 element.
+- Large arrays -> memory usage okay up until ~10k x10k maybe heavy but acceptable.
+- Negative values allowed -> correlation handles them fine.
+- If multiple equal peaks -> argmax picks first index in flattened order – acceptable given tolerance small rtol/atol probably not strict on exact shift if tie occurs rarely.
+- If input types not numeric -> conversion fails -> raise error – acceptable because baseline expects numeric arrays.
+- Logging level default WARNING so debug logs suppressed unless user sets level lower – fine.
+- Random seed set ensures reproducibility for any random usage inside algorithm though none used currently – harmless.
+
+Thus design seems solid and meets brief constraints:
+
+* imports specified,
+* uses scipy,
+* no Python-level loops,
+* vectorised operations only,
+* final file length around few thousand chars including imports etc,
+* run_solver defined correctly,
+* includes logging/random/typing imports even if not heavily used,
+* minimal complexity yet efficient cross-correlation approach.*
+
+OK, I think I have the design. Time to write it.

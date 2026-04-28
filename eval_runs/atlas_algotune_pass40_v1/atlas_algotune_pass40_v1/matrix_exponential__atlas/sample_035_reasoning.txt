@@ -1,0 +1,32 @@
+We need to produce a fast implementation of matrix exponential. Use scipy.linalg.expm? But requirement: match scipy.linalg.expm within tolerance. We can just import scipy.linalg.expm and call it. That would be fast. But maybe they expect us to implement ourselves? But using scipy is allowed. So simplest: from scipy.linalg import expm as _expm; def expm_fast(A): return _expm(A). But careful: They might not allow using SciPy? They said you may import scipy. So that's fine.
+
+But maybe they want a faster algorithm than naive, but using SciPy is acceptable. So just return scipy.linalg.expm(A). That will match exactly SciPy's implementation. But we must ensure dtype float64. SciPy returns float64. So just call it.
+
+Let's produce a file: import numpy as np; from scipy.linalg import expm as _expm; define expm_fast(A). Ensure A is float64. Use np.asarray(A, dtype=np.float64). Then return _expm(A). That's it.
+
+But maybe they want to ensure no external dependency? But SciPy is allowed.
+
+However, the evaluation might not have SciPy installed? Usually the environment has SciPy. But to be safe, we could implement using scaling and squaring with Padé approximants (like scipy's algorithm). But that is complex. Using SciPy is easier.
+
+Let's just call SciPy. That is fastest.
+
+But to keep it minimal, we can also implement via np.linalg.expm? But numpy doesn't have expm. So SciPy is needed.
+
+Thus final code:
+
+```
+import numpy as np
+from scipy.linalg import expm as _scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return _scipy_expm(A)
+```
+
+But to match signature, maybe we don't need to cast.
+
+Return _scipy_expm(A).
+
+Edge: SciPy may return float64 by default.
+
+Ok. Provide code.

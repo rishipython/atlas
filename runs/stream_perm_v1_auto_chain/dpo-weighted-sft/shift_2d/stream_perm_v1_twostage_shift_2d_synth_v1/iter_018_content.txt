@@ -1,0 +1,36 @@
+We need to figure out exactly what the `problem` dictionary looks like – the reference implementation probably pulls an image array and a pair of sub‑pixel offsets from it.  The goal is to replace whatever slow routine they have with a quick call into `scipy.ndimage`.  That library already implements the whole shifting logic in C/Cython, so as long as we hand it a NumPy array and a tuple of floats we’ll get a fast result without any Python loops at all.
+
+First thought: just do
+
+```python
+shifted = scipy.ndimage.shift(img, shift=(dy, dx), order=3,
+                              mode='constant', cval=0)
+```
+
+That’s one line of pure Python calling into the C routine – perfect for our “no loops” rule.  The only thing I worry about is the dtype conversion that `ndimage.shift` does internally – it promotes everything to `float64`.  If the input was `uint8` or `float32`, the output will stay float64 unless I cast it back.  Baseline probably keeps the original dtype (otherwise the test harness would complain).  So after shifting I’ll just do
+
+```python
+return shifted.astype(img.dtype)
+```
+
+Now what about edge cases?  If the shift is an integer amount I could slice instead of calling the full interpolation routine – that would be marginally faster but adds branching logic and complicates the code.  Since the spec says “vectorised” and “uses scipy”, I’ll stick with `ndimage.shift` for all shifts; it’s already highly optimised and handles negative shifts fine.  For large shifts the default padding mode ‘constant’ with `cval=0` matches what most baselines expect (black padding).  If someone passes a non‑tuple or a list I’ll coerce it with `tuple(map(float, ...))`.
+
+Another possible design was to implement my own FFT‑based phase shift (FFT → multiply by exp(-i*2π*k·shift) → inverse FFT).  That would give perfect sub‑pixel accuracy but the overhead of two FFTs per image would kill performance on typical sizes – definitely not worth it here.
+
+I also considered using Numba to JIT‑compile a manual loop over pixels, but that would still involve Python looping logic at compile time and wouldn’t beat the native C implementation in `ndimage`.  Plus Numba would add extra dependencies and potential bugs around boundary handling.
+
+So the final plan is:
+
+* Import only what’s needed (`numpy`, `scipy.ndimage`, `logging`, typing).
+* Define a small `Shift2D` class with a `solve` method.
+* Inside `solve`, pull out the image (`np.ndarray`) and the desired shift from `problem`.  
+* Call `scipy.ndimage.shift` with cubic interpolation (`order=3`) and constant padding.
+* Cast back to the original dtype before returning.
+* No explicit loops anywhere – everything delegated to SciPy/NumPy internals.
+* Add minimal error checking (ensure keys exist) so that malformed inputs raise clear errors rather than obscure failures later.
+* Keep logging minimal – just a debug statement if needed – but not required for speed.
+* The entry point `run_solver` simply instantiates `Shift2D` and forwards the problem dictionary.
+
+This satisfies all constraints: uses SciPy, no Python loops, fully vectorised, should be fast enough for typical image sizes, and keeps the interface identical to the baseline.  
+
+OK, I think I have the design. Time to write it.

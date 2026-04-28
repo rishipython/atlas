@@ -1,0 +1,45 @@
+We need to write a fast implementation of matrix exponential, matching scipy.linalg.expm. Use scipy.linalg.expm or implement Pade approximation. The simplest: import scipy.linalg.expm and just call it. But the function signature expects same name. That would be acceptable. But might be disallowed? The problem likely expects to use a faster algorithm, but calling scipy.linalg.expm is acceptable as it's fast. But we need to ensure it's same output as reference. The reference uses Taylor series truncated 40 terms. For small matrices, that approximates expm. But SciPy's expm uses Pade with scaling and squaring. So should produce same within tolerance. Use np.asarray check. So implement:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return expm(A)
+```
+
+But we might need to ensure shape is square. Optionally check. The function expects float64. So we can cast. That is fine.
+
+Alternatively, implement Pade ourselves. But using scipy is easiest.
+
+However, maybe the evaluator might not have scipy installed? But they said we can import scipy. So it's fine.
+
+But they might want to test speed. Using scipy's expm is fast. So output should be correct. The reference implementation is naive but correct. So our output must match SciPy's within tolerance. Use SciPy's expm. That should produce same results as SciPy's own, and likely within tolerance. But we need to confirm that SciPy's expm returns exactly same as reference? The reference uses 40 terms, which might produce some small error relative to exact expm. But the problem says "matches scipy.linalg.expm(A) within tight tolerance." So we need to match SciPy's output. So using SciPy's expm is fine.
+
+But to be safe, we can implement the scaling and squaring with Pade. But using SciPy's expm is simpler. So implement:
+
+```
+def expm_fast(A):
+    return expm(A)
+```
+
+But we need to import SciPy.
+
+Also we need to ensure that if A is not float64, cast. Use np.asarray. Also shape.
+
+Return result as np.ndarray float64.
+
+Ok.
+
+Edge: input could be 1D? But problem states square array. So fine.
+
+Let's produce final code.
+
+But we might need to include __all__? Not necessary.
+
+Add docstring.
+
+Ok.
+
+Let's produce final answer.

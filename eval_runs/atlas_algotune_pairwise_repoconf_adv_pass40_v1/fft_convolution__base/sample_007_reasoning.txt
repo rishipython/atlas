@@ -1,0 +1,24 @@
+We need to produce a fast implementation. Use numpy. Use np.fft.fftconvolve? But we can implement ourselves: use np.fft.fft with appropriate size. The result must be same as np.convolve(x,h,'full'). Use np.fft.fft with next power of two? We can use np.fft.rfft for real? But simpler: use np.fft.fft of size L = N+M-1 maybe padded to next power of two for speed? But correctness: use L = N+M-1, but for convolution using FFT we need size >= N+M-1. If we use L = N+M-1, but we need to pad both arrays to length L, compute fft, multiply, ifft, take real part. That yields exact convolution for real arrays. But due to floating errors, but np.allclose will accept. So implement conv1d as:
+
+def conv1d(x, h):
+    N = x.size; M = h.size
+    L = N + M - 1
+    # compute next power of two for speed? optional
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+But we need to ensure dtype float64. Use np.fft.rfft returns float64 by default if inputs are float64. So fine.
+
+Edge cases: if one array is empty? Problem likely not. But we can handle: if N==0 or M==0 return empty array? But np.convolve with empty returns empty? Let's test: np.convolve([], [1,2]) returns array([], dtype=float64). So we can handle. But if one is zero-length, L=0, nfft=1? bit_length of -1? Actually L=0 -> L-1 = -1 -> bit_length not defined. So handle separately: if L==0: return np.array([], dtype=np.float64). So add guard.
+
+Also we must import numpy as np. That's all.
+
+Also we might want to use np.fft.fft which works on complex. But rfft is faster for real. We'll use rfft.
+
+Test: conv1d(np.array([1,2,3]), np.array([0,1,0.5])) produce same as np.convolve.
+
+Let's produce final code.
+

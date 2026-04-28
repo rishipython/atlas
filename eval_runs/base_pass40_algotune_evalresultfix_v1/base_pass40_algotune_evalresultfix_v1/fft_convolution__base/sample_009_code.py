@@ -1,0 +1,127 @@
+import numpy as np
+import logging
+from typing import Dict, Any
+
+# --------------------------------------------------------------------------- #
+# FFT Convolution implementation
+# --------------------------------------------------------------------------- #
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    Uses real‑valued FFTs (rfft/irfft) and minimal zero‑padding for speed.
+    Handles the three standard convolution modes: 'full', 'same', 'valid'.
+    """
+
+    @staticmethod
+    def _next_power_of_two(n: int) -> int:
+        """Return the next power of two >= n."""
+        return 1 << (n - 1).bit_length()
+
+    @staticmethod
+    def _convolve_fft(x: np.ndarray, y: np.ndarray, mode: str) -> np.ndarray:
+        """
+        Compute linear convolution of real signals x and y using FFT.
+        Parameters
+        ----------
+        x, y : np.ndarray
+            Real‑valued input signals.
+        mode : str
+            One of 'full', 'same', 'valid'.
+        Returns
+        -------
+        np.ndarray
+            Convolution result in the requested mode.
+        """
+        # Handle empty inputs early
+        if x.size == 0 or y.size == 0:
+            return np.array([], dtype=np.float64)
+
+        # Length of the full linear convolution
+        n_full = x.size + y.size - 1
+
+        # Pad to the next power of two for efficient FFT
+        n_fft = FFTConvolution._next_power_of_two(n_full)
+
+        # Compute FFTs
+        X = np.fft.rfft(x, n_fft)
+        Y = np.fft.rfft(y, n_fft)
+        # Element‑wise multiplication
+        Z = X * Y
+        # Inverse FFT to get linear convolution
+        full = np.fft.irfft(Z, n_fft)[:n_full]
+
+        # Slice according to mode
+        if mode == "full":
+            return full
+
+        max_len = max(x.size, y.size)
+
+        if mode == "same":
+            # Center the result: length = max_len
+            start = (n_full - max_len) // 2
+            return full[start : start + max_len]
+
+        if mode == "valid":
+            # Indices where the two signals fully overlap
+            if x.size >= y.size:
+                start = y.size - 1
+                end = x.size - 1
+            else:
+                start = x.size - 1
+                end = y.size - 1
+            return full[start : end + 1]
+
+        raise ValueError(f"Unsupported mode: {mode}")
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Solve the FFT convolution problem.
+        Parameters
+        ----------
+        problem : dict
+            Dictionary containing 'signal_x', 'signal_y', and 'mode'.
+        Returns
+        -------
+        dict
+            Dictionary with key 'convolution' containing the result list.
+        """
+        try:
+            # Extract and convert to float64 NumPy arrays
+            x = np.asarray(problem.get("signal_x", []), dtype=np.float64)
+            y = np.asarray(problem.get("signal_y", []), dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Validate mode
+            if mode not in {"full", "same", "valid"}:
+                raise ValueError(f"Invalid mode: {mode}")
+
+            # Compute convolution
+            result = self._convolve_fft(x, y, mode)
+
+            # Return as list
+            return {"convolution": result.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve: {e}")
+            raise
+
+# --------------------------------------------------------------------------- #
+# Entry point used by the evaluation harness
+# --------------------------------------------------------------------------- #
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Main function to run the solver.
+    This function is used by the evaluator to test the evolved solution.
+    Parameters
+    ----------
+    problem : dict
+        The problem to solve.
+    Returns
+    -------
+    dict
+        The solution dictionary.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)

@@ -1,0 +1,13 @@
+We need to replace triple loops with efficient numpy vectorization or use scipy.spatial.distance.pdist or cdist. For pairwise squared Euclidean distances, we can compute via broadcasting: compute dot products: sum(x^2) + sum(y^2) - 2 x·y. We need symmetric matrix. Use np.dot(X, X.T). Compute squared norms: sq_norms = np.sum(X**2, axis=1). Then distances = sq_norms[:,None] + sq_norms[None,:] - 2*dot. Ensure dtype float64. Also maybe use np.maximum(dist, 0) to avoid small negative due to numerical error. Ensure non-negative.
+
+Return result.
+
+Edge cases: shape (N,D). Works.
+
+Also need to import numpy. Should handle large N maybe memory heavy but fine.
+
+Return as float64.
+
+We'll produce file with function pairwise_sq_dist. We'll also include __name__ guard maybe not necessary.
+
+Let's produce final code.

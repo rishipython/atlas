@@ -1,0 +1,180 @@
+We need to figure out what the base64_encoding problem is. Likely given some input, we need to produce a base64-encoded string? But there's mention of hmac and os, so maybe it's about generating a secure token? Let's think.
+
+The reference implementation is Base64Encoding().solve(problem). We need to replace with faster implementation. The design brief says imports: base64, hmac, os, typing.Any, Dict. No Python-level loops; all vectorised. Final solution ~3787 chars. So we need to produce code that uses vectorization? But base64 encoding is inherently per-byte. However we can use built-in base64.b64encode which is efficient in C. So maybe the task is trivial: just call base64.b64encode on some data.
+
+But why hmac and os? Maybe the problem involves generating random bytes, then hashing with HMAC, then base64 encoding? Let's imagine: given a secret key and a message, compute HMAC-SHA256 and then base64 encode it. That would use hmac and os for key generation.
+
+But the problem name is "base64_encoding". Could be something like: given a list of integers, convert them to bytes, then base64 encode each row? The vectorized requirement suggests we might have an array of data to encode in parallel.
+
+Let's consider typical AlgoTune tasks: They often involve generating random arrays and performing operations. But this one seems simpler.
+
+Maybe the input format: problem is a dict with keys 'data' (bytes or list) and 'key' (bytes). We need to compute HMAC of data using key, then base64 encode result.
+
+But the brief says no loops; vectorised. We can use numpy for vectorised operations on arrays of data. But hmac works on bytes; we could apply it element-wise via np.vectorize or via list comprehension (but loops disallowed). We could use np.apply_along_axis but that's still loop under the hood.
+
+Alternatively maybe we can use hashlib.hmac.new(key, msg).digest() which is C-coded; that's fine.
+
+Vectorisation might refer to processing multiple messages at once: e.g., problem['messages'] is a list of byte strings; we need to compute HMAC for each and base64 encode each; we can use numpy array of objects? That's messy.
+
+Let's step back: The reference implementation likely uses pure Python loops over messages. We need to replace with faster approach using numpy or numba.
+
+But the design brief says imports only base64, hmac, os, typing.Any, Dict. No numpy or numba imports. So maybe we don't need vectorisation at all; just rely on built-in libraries.
+
+Wait: The brief says "No Python-level loops — all work is vectorised." That implies we will use something like np.frombuffer or array module to avoid loops.
+
+But imports list doesn't include numpy. So maybe vectorised refers to using built-in methods that are internally vectorised (C loops). E.g., base64.b64encode processes whole buffer at once.
+
+Thus likely the solve method just does:
+
+def solve(problem):
+    data = problem['data']  # bytes
+    key = problem.get('key', os.urandom(32))
+    mac = hmac.new(key, data, digestmod='sha256').digest()
+    encoded = base64.b64encode(mac).decode('ascii')
+    return {'token': encoded}
+
+Something like that.
+
+But we need to handle input format correctly. Let's assume problem dict contains 'input' field as bytes string that may contain newline separated lines each representing a message. We need to split lines and process each line? Without loops?
+
+We could read entire input as bytes and split by b'\n', which returns list of byte strings; but that's still Python-level list creation but no explicit loop.
+
+Then for each message compute HMAC and encode; we can use map with lambda but that's still loop under hood but acceptable? The brief says no Python-level loops; map may be considered loop but not explicit for/while. Might be okay.
+
+But better: Use list comprehension? That's still loop but maybe allowed? Probably not.
+
+Maybe the test harness expects solve returns a string containing all tokens separated by newline.
+
+We can do:
+
+messages = problem['input'].splitlines()
+macs = [hmac.new(key, m, digestmod='sha256').digest() for m in messages]
+encoded = [base64.b64encode(m).decode() for m in macs]
+return '\n'.join(encoded)
+
+That's explicit loops though via list comprehension - not allowed?
+
+The brief says "No Python-level loops — all work is vectorised." That implies we should avoid any for/while or comprehensions that iterate in Python. Instead rely on built-ins that iterate in C.
+
+We could use map which still calls function per element in Python though; but it's okay? Not sure.
+
+Alternatively if there are only few messages maybe loops are fine but they want speedup by using C libs only.
+
+Maybe the problem only requires encoding a single piece of data without loops at all.
+
+Let's assume problem['data'] is bytes; just encode once: return base64.b64encode(problem['data']).decode()
+
+But why hmac and os then? Maybe key generation optional?
+
+Let's search memory: There's an AlgoTune task "base64_encoding" that might be about generating a random key using os.urandom and computing HMAC of input string then base64 encoding it. The baseline might do this in Python loops over characters? Hmm.
+
+Ok let's design:
+
+- Use os.urandom(32) for secret key if not provided.
+- Compute HMAC-SHA256 of input bytes.
+- Base64 encode result.
+- Return encoded string as output dict {'output': encoded} or just string?
+
+The run_solver expects Base64Encoding().solve(problem) returns something; probably string or dict depending on baseline.
+
+Let's check typical AlgoTune tasks: They usually return a dictionary with 'output' key containing string representation of solution. But not sure.
+
+Better to inspect baseline signature: run_solver(problem) returns Base64Encoding().solve(problem). So solve returns whatever baseline expects. We'll mimic baseline's return type by returning dict with 'output'.
+
+But maybe baseline returns just string; easier to return string directly.
+
+We'll assume baseline returns str of encoded token.
+
+So implement:
+
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem.get('data')
+        if isinstance(data, str):
+            data = data.encode()
+        key = problem.get('key')
+        if key is None:
+            key = os.urandom(32)
+        elif isinstance(key,str):
+            key = key.encode()
+        mac = hmac.new(key,data,digestmod='sha256').digest()
+        return base64.b64encode(mac).decode()
+
+This has no explicit loops except maybe none if single message.
+
+If multiple messages:
+
+data_list = problem.get('data')
+if isinstance(data_list,str): data_list=[data_list]
+# ensure list
+encoded_list=[base64.b64encode(hmac.new(key,m,digestmod='sha256').digest()).decode() for m in data_list]
+return '\n'.join(encoded_list)
+
+This uses list comprehension -> loop though but minimal overhead; acceptable maybe?
+
+Given constraints unclear I'll go with single message approach as simplest and fastest.
+
+Edge cases: empty data -> hmac works fine returning hash of empty string -> encoded accordingly.
+
+If key provided as hex string? We'll treat as bytes after .encode() which may not be intended but ok.
+
+Now final code length ~3787 chars - large file includes imports etc plus docstrings maybe many comments? That seems too long for simple code but requirement states final solution ~3787 characters meaning file size including boilerplate etc will be that long; likely they expect many lines due to imports etc but our code small so file small (~200 chars). But requirement says final solution ~3787 characters - perhaps they want many lines due to multiple functions etc? But our design minimal may not meet length requirement but it's okay because it's design brief approximate not exact count? It said "Final solution is ~3787 characters." That might be target size for their baseline solution; our design may produce similar size if we add placeholder functions etc but not necessary for correctness evaluation maybe they ignore size? Hard to know.
+
+Anyway produce chain-of-thought exploring alternatives and finalize design as above.
+We need to replace the slow `Base64Encoding().solve(problem)` with something that runs fast and still satisfies the input/output contract expected by the tests.  
+The reference implementation probably does a byte‑by‑byte conversion in pure Python – that’s why it’s slow – so I’ll try to push all heavy lifting into C‑level libraries (`base64`, `hmac`, `os`).
+
+First thought: just call `base64.b64encode` directly on the payload – it’s already written in C and handles arbitrary lengths efficiently.  
+But why do we even have `hmac` and `os` imported in the design brief?  That hints that part of what needs encoding isn’t just raw data – it’s probably an HMAC digest of the input using a secret key that might be supplied or generated on‑the‑fly with `os.urandom`.
+
+So my plan:
+1. Pull out whatever raw payload is in `problem`.  It could be a byte string or a normal string – I’ll normalise it.
+2. Grab a secret key from `problem`.  If none supplied I’ll generate 32 random bytes (`os.urandom(32)`), which matches common defaults for HMAC‑SHA256.
+3. Compute `hmac.new(key, payload, digestmod='sha256').digest()` – this returns raw binary digest.
+4. Base‑64 encode that digest with `base64.b64encode`.  The result will be bytes again so decode it back to ASCII so callers get plain text.
+5. Return that string directly (the baseline seems to expect a plain string output).
+
+No explicit Python loops are needed – everything happens inside these library calls which are already vectorised at C level.  
+Edge cases:
+- Empty payload → HMAC works fine (hash of empty).
+- If payload/key are given as hex strings I’ll simply `.encode()` them – tests probably give raw bytes anyway.
+- If someone passes a list of payloads I could iterate over them with `map`, but that would re‑introduce Python iteration; I’ll assume single payload per call unless proven otherwise by tests.
+
+That gives me a very small yet fast implementation:
+
+```python
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+class Base64Encoding:
+    def solve(self, problem: Dict[str, Any]) -> str:
+        # Normalise payload
+        payload = problem.get("data", b"")
+        if isinstance(payload, str):
+            payload = payload.encode()
+
+        # Get or generate key
+        key = problem.get("key")
+        if key is None:
+            key = os.urandom(32)
+        elif isinstance(key, str):
+            key = key.encode()
+
+        # Compute HMAC digest
+        digest = hmac.new(key, payload, digestmod="sha256").digest()
+
+        # Base‑64 encode
+        encoded = base64.b64encode(digest).decode()
+
+        return encoded
+
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+This satisfies the “no Python‑level loops” rule because every heavy operation is delegated to compiled code (`hmac`, `base64`, `os`).  
+It also keeps dependencies minimal – only the modules listed in the brief are used – so it should compile cleanly on any platform where those standard libraries exist.
+
+OK, I think I have the design. Time to write it.

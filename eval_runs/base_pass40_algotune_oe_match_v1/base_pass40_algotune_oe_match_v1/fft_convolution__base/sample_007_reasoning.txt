@@ -1,0 +1,71 @@
+We need to produce a faster implementation of FFT convolution. The current uses scipy.signal.fftconvolve. We can implement our own using numpy.fft.fft. Use real FFT (rfft) if inputs real. For performance, we can use numpy.fft.rfft. Zero pad to next power of two maybe. We need to handle mode: full, same, valid. Compute convolution result via multiplication in frequency domain. For same mode, output length = len_x. For valid: len_x - len_y + 1 if len_x>=len_y else len_y - len_x + 1? Actually valid length = max(len_x, len_y) - min(len_x, len_y) + 1? In description: valid: max(len(x) - len(y) + 1, 0). That is if x longer. But typical: if len_x>=len_y, valid length = len_x - len_y + 1; else 0? But they define max(len_x, len_y) - min(len_x, len_y) + 1. So symmetrical. We'll follow that.
+
+Implement zero padding: N = len_x + len_y - 1 for full. For same, we could compute full then slice center. For valid, slice accordingly. We can compute full convolution via FFT of size next_pow2(N). Use rfft of size n_fft. Multiply and inverse rfft. For real inputs, rfft returns real freq. Then irfft gives real output length n_fft. Then slice.
+
+Implement next power of two: n_fft = 1 << (N-1).bit_length().
+
+Edge cases: empty inputs: return empty array.
+
+We need to return "convolution" key as list? In solve, they expect solution dict with key "convolution". They used "convolution" in is_solution. In the earlier code, they used "convolution": list. So we follow that.
+
+We should also set dtype float64.
+
+Let's write code. Use numpy.fft.rfft and irfft.
+
+Potential optimization: Use numpy.fft.rfft and irfft. Use np.fft.fft if complex? But inputs real.
+
+We can also use np.fft.rfftn for multi-d? But 1D.
+
+Also, we can use np.fft.rfft with n=n_fft.
+
+Also, we can use np.fft.irfft of product.
+
+Implement:
+
+if len_x==0 or len_y==0: return {"convolution": []}
+
+Compute N_full = len_x + len_y - 1
+
+n_fft = 1 << (N_full - 1).bit_length()
+
+X = np.fft.rfft(signal_x, n_fft)
+
+Y = np.fft.rfft(signal_y, n_fft)
+
+Z = X * Y
+
+conv_full = np.fft.irfft(Z, n_fft)[:N_full]  # get full length
+
+Then slice according to mode:
+
+if mode == "full": result = conv_full
+
+elif mode == "same": start = (N_full - len_x)//2; result = conv_full[start:start+len_x]
+
+elif mode == "valid": if len_x>=len_y: start = len_y-1; result = conv_full[start:start+len_x-len_y+1] else: start = len_x-1; result = conv_full[start:start+len_y-len_x+1]
+
+But formula: valid_len = max(len_x, len_y) - min(len_x, len_y) + 1. For len_x>=len_y: start = len_y-1, length = len_x - len_y + 1. For len_y>len_x: start = len_x-1, length = len_y - len_x + 1.
+
+So implement accordingly.
+
+Return as list.
+
+Also convert to Python list via .tolist().
+
+Now implement run_solver.
+
+Add imports: numpy.
+
+Let's code.
+
+Also for performance, we can avoid conversion to list until final. Use .tolist().
+
+Edge: mode string case-insensitive? Use lower.
+
+Test.
+
+Also handle mode unknown: default to full.
+
+Also ensure dtype float.
+
+Now produce code.

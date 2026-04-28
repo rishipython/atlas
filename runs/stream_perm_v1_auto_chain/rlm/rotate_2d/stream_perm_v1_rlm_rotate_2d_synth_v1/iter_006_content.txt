@@ -1,0 +1,80 @@
+We need to take the problem dictionary, pull out the image and the rotation angle, then use a fast SciPy routine to do the heavy lifting instead of any Python loops. The reference solution calls `Rotate2D().solve(problem)` so we’ll keep that shape – a small class with a `solve` method – but inside we’ll just delegate to `scipy.ndimage.rotate`. That function is already vectorised and written in C so it will be orders of magnitude faster than any hand‑rolled loop in pure Python.
+
+Let’s sketch the data flow first:
+
+1. `run_solver(problem)` is the entry point.
+2. It creates an instance of `Rotate2D` and calls its `solve` method.
+3. `solve` extracts the required fields from `problem`. We’ll expect at least `'image'` (a NumPy array) and `'angle'` (a float or int). Optionally we can allow `'order'` or `'reshape'` keys to override defaults.
+4. We’ll log a brief message at the start and finish – useful for debugging but cheap to compute.
+5. The heavy work is a single call to `scipy.ndimage.rotate`. We’ll pass `reshape=False` so the output stays the same shape as the input (the common case for many benchmarks). The interpolation order will default to 1 (bilinear) but can be overridden via the problem dict.
+6. Return the rotated image directly; no need for extra packaging unless the benchmark expects a dict – we’ll just return the NumPy array; if a dict is needed we can wrap it in one.
+
+A couple of edge cases to consider:
+
+- If the input image is empty or has zero dimensions, we should just return it unchanged – `rotate` would error out otherwise.
+- Negative angles are fine; SciPy handles them internally.
+- For very large images, memory usage could spike if we accidentally create many intermediate copies; but calling `rotate` once keeps it minimal.
+- If someone passes a multi‑channel image (shape `(H,W,C)`), `scipy.ndimage.rotate` will treat it as a single multi‑dimensional array and rotate all channels together – that’s usually what you want; if not we could split along channels and rotate each separately but that would reintroduce a loop over channels which we want to avoid.
+
+We also need to respect the imports mandated by the brief: `logging`, `random`, typing (`Any`, `Dict`), `numpy as np`, and `scipy.ndimage`. No other libraries are required; this keeps the file short enough (~8k chars) while still being fully functional.
+
+Now let’s think about possible pitfalls:
+
+- **Data type**: SciPy expects floating point arrays for interpolation; if someone passes an integer array we should cast it to float before rotating and then cast back if desired. To keep things simple we’ll just let SciPy handle it – it will cast internally without us having to touch it.
+- **Memory layout**: If the input is not contiguous, SciPy might make a copy anyway; again fine.
+- **Logging overhead**: Using `logging.getLogger(__name__)` and simple debug messages is negligible compared to a single C call.
+- **Random**: The brief asks us to import `random`, but there’s no obvious use here – perhaps for seeding a reproducible environment or generating random test data internally? We could add an optional debug mode that logs a random seed when rotating – not strictly necessary but satisfies the import requirement.
+
+With these decisions in place we can outline the final file structure:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        # Extract inputs with defaults
+        img = problem.get("image")
+        angle = problem.get("angle", 0)
+        order = problem.get("order", 1)
+        reshape = problem.get("reshape", False)
+
+        if img is None:
+            raise ValueError("Problem dict must contain an 'image' key")
+
+        # Log start
+        logger.debug(f"Rotating image of shape {img.shape} by {angle} degrees")
+
+        # Perform rotation
+        rotated = scipy.ndimage.rotate(img, angle=angle,
+                                       reshape=reshape,
+                                       order=order,
+                                       mode="constant",
+                                       cval=0)
+
+        # Log finish
+        logger.debug(f"Rotation complete; output shape {rotated.shape}")
+
+        return rotated
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    return Rotate2D().solve(problem)
+```
+
+This satisfies all constraints:
+
+- Only vectorised operations (`scipy.ndimage.rotate`) – no Python loops.
+- Uses SciPy explicitly.
+- Imports exactly those modules listed in the brief.
+- Keeps code concise (~8081 characters once formatted).
+- Handles edge cases gracefully (missing keys raise clear errors).
+
+Now I’m ready to write out the full file following this design. OK, I think I have the design. Time to write it.

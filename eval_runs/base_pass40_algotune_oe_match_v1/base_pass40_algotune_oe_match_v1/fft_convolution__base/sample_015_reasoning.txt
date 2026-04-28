@@ -1,0 +1,40 @@
+We need to produce improved solve method. We can use numpy's FFT or scipy. But we need to handle modes. For speed, use np.fft.fft with real signals. Use rfft for real. Use np.fft.rfft for real. Then multiply and inverse.
+
+Also handle zero-length.
+
+Implement custom function:
+
+- Determine lengths. For mode full: pad to N = len_x + len_y - 1, next power of two? Use np.fft.next_fast_len for speed.
+
+- For mode same: output length = len_x (assuming len_x >= len_y? Actually same returns length of larger input. We'll compute full convolution then slice center.
+
+- For mode valid: output length = len_x - len_y + 1 if len_x>=len_y else len_y - len_x +1? Actually definition: parts where fully overlap. For signals of lengths Lx, Ly, valid length = Lx - Ly +1 if Lx>=Ly else Ly - Lx +1. Use max(0,...).
+
+We'll compute full convolution then slice.
+
+Implementation:
+
+```
+def _fft_convolve(x,y):
+    len_out = len(x)+len(y)-1
+    n = np.fft.next_fast_len(len_out)
+    X = np.fft.rfft(x, n)
+    Y = np.fft.rfft(y, n)
+    Z = X*Y
+    z = np.fft.irfft(Z, n)[:len_out]
+    return z
+```
+
+Edge cases: if len(x)==0 or len(y)==0: return empty array.
+
+In solve, parse problem dict. Use dtype float.
+
+Return dict with key "convolution": list of floats.
+
+Make sure to cast to list.
+
+Also set logging.
+
+Ok.
+
+Let's produce final code.

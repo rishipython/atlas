@@ -1,0 +1,29 @@
+We need to implement a faster, numerically stable matrix exponential. Use scipy.linalg.expm? We can simply call that, but maybe the evaluator expects we don't just call it? But the problem statement: "Your task is to replace it with a fast, numerically-stable implementation that matches scipy.linalg.expm(A) within tight tolerance." So we can import scipy.linalg.expm and call it. That would be fastest but trivial. But maybe they want us to implement using scaling and squaring with Pade approximants, like scipy's implementation. But calling scipy.linalg.expm is allowed. The problem states we can import scipy. So simplest: return scipy.linalg.expm(A). That would be correct. But we must consider that the reference is naive; but they want us to produce a drop-in replacement that is faster and numerically close. So we can just delegate to scipy. That passes all tests.
+
+But maybe the evaluator prohibits using scipy? It says we may import scipy. So fine.
+
+But we need to ensure we keep same signature: expm_fast(A). We also need to maintain that input is np.ndarray float64. So we can call scipy.linalg.expm(A). That's fine.
+
+However, we might need to import numpy and scipy.linalg. We'll produce a file that imports numpy as np, scipy.linalg.expm. Then define expm_fast returning scipy.linalg.expm(A). That is all.
+
+But maybe they expect we implement scaling and squaring ourselves. But it's fine to use built-in. The spec: "Your solution must define the same top-level function name and signature as the reference. Do not rename it, do not add required arguments." So we can import scipy.linalg. That is allowed.
+
+But we might need to handle shape mismatch? Input is square. We'll trust.
+
+Return type: np.ndarray.
+
+Edge cases: For large matrices, scipy.linalg.expm may be slow but still faster than naive.
+
+So final code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But maybe we need to cast to float64? But expm returns float64 for float64 input.
+
+Return value: maybe we want to ensure dtype float64. But it's fine.
+
+Let's produce final code.

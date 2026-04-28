@@ -1,0 +1,35 @@
+We need to provide a faster implementation that matches scipy.linalg.expm. We can use scipy.linalg.expm directly? That would be trivial but maybe too slow? Actually calling scipy.linalg.expm is fine; it's C implementation. But we need to be faster than naive. So we can just call scipy.linalg.expm. But must ensure same signature. Use from scipy.linalg import expm. But maybe we need to handle small arrays? It's fine.
+
+But maybe they want to implement Pade approximant or scaling and squaring. But easiest: import scipy.linalg.expm. Provide function that returns that. That should match SciPy's. That is fast. We need to ensure numeric close: identical to SciPy's. So just return expm(A). But careful: SciPy's expm uses scaling and squaring with Pade approximant. Should be fine.
+
+However, the reference implementation returns float64, so we should cast to float64. SciPy returns same dtype.
+
+Edge case: shape mismatch? Use np.array(A, dtype=np.float64) to ensure dtype.
+
+Implement:
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    from scipy.linalg import expm
+    return expm(A.astype(np.float64))
+
+But we need to import numpy as np. Provide imports at top.
+
+Make sure to use SciPy. That should be accepted. If SciPy not available, but problem says standard scientific-Python distribution includes SciPy.
+
+Thus solution is straightforward.
+
+But maybe they'd prefer to implement scaling and squaring with Pade. But calling SciPy is fine.
+
+I'll implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    A = np.asarray(A, dtype=np.float64)
+    return expm(A)
+
+Return.
+
+Let's produce final code.

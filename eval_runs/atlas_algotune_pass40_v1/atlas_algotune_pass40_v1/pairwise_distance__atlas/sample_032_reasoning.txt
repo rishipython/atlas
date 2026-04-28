@@ -1,0 +1,37 @@
+We need to produce a faster implementation. Use vectorized operations: compute dot product, etc. Standard formula: D_ij = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute row norms squared, then outer sum, subtract 2 dot product. Ensure non-negative small negative due to floating errors set to zero.
+
+Implementation: use np.dot(X, X.T) to compute Gram matrix. Norms squared: np.sum(X**2, axis=1). Then compute distances: norms[:,None] + norms[None,:] - 2*gram. Clip to >=0. Use np.maximum with 0.
+
+Return dtype float64.
+
+Edge cases: X dtype float64; but we can cast.
+
+Also we may use memory efficient: compute gram = X @ X.T.
+
+Complexity: O(N^2) memory.
+
+Return array.
+
+We'll produce final code with imports.
+
+Also we can implement using scipy.spatial.distance.cdist? but we need squared. But we can use pairwise_distances from sklearn, but not allowed maybe.
+
+We'll produce own.
+
+Also ensure that for large N, we might exceed memory but fine.
+
+Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    gram = X @ X.T
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2 * gram
+    np.maximum(dist, 0, out=dist)  # clip negative to zero
+    return dist
+
+Return.
+
+Also we might want to avoid overflow: use np.float64.
+
+Ok produce final file.

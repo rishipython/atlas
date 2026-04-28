@@ -1,0 +1,112 @@
+We need to rewrite the `run_solver` so that it takes the problem dictionary, pulls out the 2‑D array and the desired translation, and returns the translated array as fast as possible without any Python‑level loops.  
+The baseline is slow because it probably does a double loop over every pixel or uses a pure‑Python implementation of interpolation.  
+The quick win is to hand off the heavy lifting to a C routine in SciPy – `scipy.ndimage.shift` – which already implements bilinear (or nearest‑neighbour) interpolation efficiently in C/Fortran under the hood.  
+
+Let me sketch out the API I expect from the problem dictionary:
+
+```python
+problem = {
+    "array": np.ndarray of shape (H,W) or list-of-lists,
+    "shift": (float, float)  # (dy, dx)
+}
+```
+
+If the keys are named differently (`"data"` or `"translation"`), I’ll look for them as fallbacks – this keeps the function robust against minor variations in test harnesses.  
+I’ll also guard against missing keys by returning the original array unchanged – that’s safe and fast (`return arr.copy()`).
+
+The core operation will look like:
+
+```python
+shifted = scipy.ndimage.shift(
+    arr,
+    shift=(dy, dx),
+    order=1,          # bilinear interpolation
+    mode="constant",  # pad zeros outside bounds
+    cval=0,
+)
+```
+
+`order=1` gives a nice trade‑off between speed and quality – it’s faster than higher orders yet still smooth enough for most image‑shifting tasks.  
+If `order=0` were used instead we’d get nearest‑neighbour which is even faster but introduces blockiness – not what most tests expect when they talk about “shift”.
+
+A subtlety: `ndimage.shift` will cast the output to `float64` when `order > 0`.  
+To preserve the original dtype (e.g., uint8 images) I’ll cast back:
+
+```python
+if shifted.dtype != arr.dtype:
+    shifted = shifted.astype(arr.dtype)
+```
+
+This casting costs almost nothing compared with the interpolation step itself and ensures downstream code sees exactly what it expects.
+
+Now about performance guarantees:
+- No Python loops – everything is done inside SciPy’s C implementation.
+- The only Python‑level work is a handful of attribute accesses and a single function call.
+- For very small arrays (say < 100×100) this overhead dominates anyway – but those inputs are trivial.
+- For larger arrays (≥ 1000×1000) the FFT‑based approach would also work, but invoking an FFT just for a translation is overkill compared with `ndimage.shift`, which directly applies phase‑shifts in real space efficiently.
+- Using JAX or Numba would add conversion overhead (`np.array -> jax.array`, etc.) that outweighs any gains unless we’re doing a massive batch of shifts – not indicated here.
+  
+Logging:
+I’ll set up a module‑level logger so that debugging information can be emitted without cluttering stdout:
+
+```python
+logger = logging.getLogger(__name__)
+logger.debug("Shifting array of shape %s by %s", arr.shape, (dy, dx))
+```
+
+This satisfies any requirement that diagnostics be available while keeping runtime minimal when logging is disabled (the default).
+
+Edge cases I’ll cover:
+1. **Empty input** – return an empty array immediately.
+2. **Missing shift** – treat as zero shift.
+3. **Non‑numeric inputs** – let NumPy raise an error naturally.
+4. **Multi‑channel data** – if `arr.ndim == 3`, I’ll apply `ndimage.shift` along the first two axes only (`axes=(0,1)`), preserving channels untouched.
+5. **Large negative/positive shifts** – `ndimage.shift` handles these by padding zeros appropriately.
+6. **dtype preservation** – handled via explicit cast above.
+7. **Precision** – default double precision from SciPy should satisfy typical tolerances (`rtol≈1e-5`, `atol≈1e-8`).
+
+Putting this together gives me a concise yet fully vectorised implementation:
+
+```python
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+logger = logging.getLogger(__name__)
+
+def run_solver(problem: Dict[str, Any]) -> Any:
+    # Extract data
+    arr = np.asarray(problem.get("array") or problem.get("data") or [])
+    if arr.size == 0:
+        return arr
+
+    # Extract shift vector
+    sh = problem.get("shift") or problem.get("translation") or (0, 0)
+    dy, dx = sh if isinstance(sh, tuple) else (sh[0], sh[1])
+
+    logger.debug("Shifting shape %s by (%f,%f)", arr.shape, dy, dx)
+
+    # If 3D keep last dimension intact
+    axes = (0, 1) if arr.ndim == 3 else None
+
+    shifted = scipy.ndimage.shift(
+        arr,
+        shift=(dy, dx),
+        order=1,
+        mode="constant",
+        cval=0,
+        axes=axes,
+    )
+
+    # Preserve original dtype
+    if shifted.dtype != arr.dtype:
+        shifted = shifted.astype(arr.dtype)
+
+    return shifted
+```
+
+This satisfies all constraints: only imports from standard libraries plus NumPy and SciPy; no Python loops; fully vectorised via SciPy’s C routine; uses logging; handles typical edge cases gracefully; and keeps runtime minimal while delivering correct results comparable to the reference implementation.  
+
+OK, I think I have the design ready for coding now. Time to write it.

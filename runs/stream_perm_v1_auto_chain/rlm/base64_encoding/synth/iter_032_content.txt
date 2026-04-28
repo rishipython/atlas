@@ -1,0 +1,218 @@
+We need to figure out how to implement a base64 encoding solver efficiently. The task says "base64_encoding" and the reference is slow. We need to produce a faster implementation that still returns correct solutions. We must not use Python-level loops; everything vectorized. The design brief hints at imports: base64, hmac, os, typing.Any, Dict. So maybe we need to use these libs.
+
+We need to understand the problem: base64_encoding likely refers to some optimization problem where we encode data into base64? Let's think: maybe the problem is to find a string that when base64-encoded yields something? Or maybe it's about computing base64 encoding of random data? Let's search memory: AlgoTune tasks often involve implementing algorithms like sorting, matrix multiplication, etc. Base64 encoding might be a simple transformation of bytes into ASCII characters. The reference implementation might be slow because it uses loops or manual conversions.
+
+We need to produce a fast vectorized solution. Use numpy? But we can't import numpy according to brief? Actually imports list includes only base64, hmac, os, typing.Any, Dict. So no numpy. So vectorization likely means using built-in functions like bytes.translate or base64.b64encode which is already C-optimized.
+
+But why mention vectorization? Maybe the problem is more complex: maybe we have many strings and need to encode them all quickly. The input format might be a dictionary mapping keys to byte arrays? The solver might need to compute HMAC of each encoded string or something.
+
+Let's consider typical AlgoTune tasks: They give a problem instance with parameters and you need to produce a solution that satisfies constraints. For base64_encoding, maybe the problem is: given an integer N and a string S, find a string T such that base64(T) == S and T is minimal or something? Or maybe we need to find T that matches certain properties.
+
+But the design brief says imports include hmac and os. So maybe we need to compute HMAC of some data using os.urandom or something.
+
+Let's think about possible tasks: Base64 encoding could be used in cryptographic protocols. Maybe the task is: given a secret key and a message, compute HMAC-SHA256 of the message and then base64 encode it. That would involve hmac.new(key, msg, hashlib.sha256).digest() then base64.b64encode.
+
+But why vectorize? Maybe we have many messages and want to compute HMACs for all of them in parallel using vectorized operations via numpy or pandas? But imports don't include numpy.
+
+Maybe the problem expects us to generate random data using os.urandom and then compute its base64 representation as part of solving something.
+
+Let's read the design brief again: "Imports: import base64; import hmac; import os; from typing import Any, Dict". So only those imports are allowed/expected. No numpy, no pandas. So we must rely on pure Python libs.
+
+"**No Python-level loops** — all work is vectorised." But we can't use loops at all? That seems impossible if we have variable length inputs. But maybe they mean no explicit loops over data elements; but we can still call functions that internally loop in C (like base64.b64encode). That's okay.
+
+Thus the solution likely uses built-in functions that are efficient in C.
+
+So what exactly does solve do? Let's guess: It probably takes a problem dict containing keys like 'input', 'output', etc., and needs to produce some output string or dict.
+
+Maybe the reference implementation does something like:
+
+```
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem['data']
+        # maybe do some processing
+        encoded = base64.b64encode(data)
+        return {'encoded': encoded}
+```
+
+But that's trivial and fast already.
+
+Alternatively, maybe it's about decoding and verifying HMACs for many entries.
+
+Let's imagine the input format: A dictionary with keys 'messages': list of bytes strings; 'key': bytes; 'hmacs': list of expected HMACs (hex?). We need to find which messages match their HMACs after encoding?
+
+But not sure.
+
+Let's search memory for "AlgoTune task base64_encoding" - I recall there's an AlgoTune task where you have to find a secret key such that HMAC of some known message equals given digest after base64 encoding? Something like that.
+
+Maybe the reference implementation uses brute force over possible keys (like 256-bit key) which is slow; but we can speed up by using vectorized operations with hmac.new on multiple keys at once? Not possible without numpy.
+
+Alternatively, maybe the problem is simply generating random bytes until its base64 representation matches some pattern; brute force is slow but can be vectorized by generating many random bytes at once using os.urandom with large size and then filtering via regex? That could speed up.
+
+However the brief says final solution ~3654 characters; that's fairly large for a simple function; so there must be some complexity like reading input from STDIN, parsing JSON, etc., plus logic for solving many test cases.
+
+Maybe the solver receives multiple problems in one call; each problem dict contains parameters like 'n', 'k', etc., and we must output something for each.
+
+The design brief says "entry-point function is run_solver". So run_solver(problem) returns Base64Encoding().solve(problem). So run_solver receives a problem dict (maybe parsed from JSON). Base64Encoding.solve returns solution dict (maybe also JSON serializable).
+
+Thus we just need to implement Base64Encoding.solve efficiently.
+
+Let's think about potential algorithmic improvement: If the reference uses loops over bytes converting each byte individually into three 6-bit groups and mapping via lookup table manually in Python loops, that's slow; but we can use built-in base64.b64encode which does it in C and is fast.
+
+Also if they had loops over test cases, we can avoid loops by using map or list comprehension but those are still loops in Python albeit compiled by CPython's bytecode but not heavy overhead if small number of cases.
+
+But requirement says no Python-level loops at all - but we can use list comprehensions? They are still loops though implemented in Python bytecode; but perhaps they allow them as they are not explicit for loops but still loop-like constructs. However better avoid them entirely by using map which also iterates in Python though. But perhaps they consider any iteration as loop; but maybe they allow comprehension because it's syntactic sugar but still executed by Python interpreter per element - not ideal but okay if small dataset.
+
+But requirement may be stricter: no loops at all means cannot use for/while or comprehensions or map/generator expressions that iterate over elements. Then how do we process variable-length data? We can rely on built-in functions that accept entire arrays (bytes) at once like base64.b64encode which works on whole bytes object without explicit loop. For HMAC computation across many messages, we'd need loop anyway unless messages are concatenated into one big buffer with separators and processed with one HMAC call - but that would produce wrong result unless same key used across all messages separately.
+
+Thus likely there are only few messages per test case so loops may be acceptable but they say no loops so maybe it's just one message per test case.
+
+Thus simpler: Problem contains 'message' as string or bytes; optional 'key' for HMAC; optional 'action' specifying encode/decode/hmac etc.; Our solver must perform accordingly quickly using built-ins.
+
+Let's design:
+
+- Import modules
+- Define class Base64Encoding:
+  - solve(self, problem):
+    - Extract fields from problem dict.
+    - If action == 'encode':
+      - Use base64.b64encode on provided bytes.
+      - Return result as string (decode('ascii')).
+    - If action == 'decode':
+      - Use base64.b64decode.
+      - Return bytes as hex string or ascii?
+    - If action == 'hmac':
+      - Compute hmac.new(key, msg=message_bytes).digest()
+      - Then encode result via b64encode.
+      - Return encoded string.
+    - If action == 'verify':
+      - Compute HMAC as above and compare with provided digest after decoding from b64.
+      - Return boolean as int 1/0.
+- run_solver(problem): return Base64Encoding().solve(problem)
+
+This seems too trivial though relative to 3654 chars length requirement; maybe there are many details like handling multiple test cases per file input reading/writing etc., error handling, performance optimizations like caching mapping tables etc., but not necessary if just one operation per call.
+
+Perhaps actual algorithm involves generating random values until condition satisfied; e.g., find shortest prefix such that its base64 representation starts with given prefix pattern; brute force naive approach loops over lengths generating random bytes each time until match found; slow due to repeated calls to os.urandom inside loop. We can speed up by generating large chunks of random bytes at once via os.urandom(n*chunk_size) then process each chunk's prefixes quickly using vectorized approach like slicing memoryview?
+
+But again no loops allowed... Might use memoryview slicing inside comprehension though still loop-like.
+
+Alternatively could use multiprocessing pool?
+
+The brief says final solution ~3654 characters ~3-4k lines of code? That seems huge for simple logic though could include boilerplate reading/writing JSON from sys.stdin/out etc., plus type hints for many functions etc., plus unit tests?
+
+Maybe there are multiple steps: decode input JSON containing list of problems; for each produce output dict; write JSON array out. That would require loop over problems though but could use map again which still iterates but okay if small number of problems (~10). But 3k chars might include reading/writing overhead plus docstrings etc.
+
+Let's consider typical AlgoTune tasks: They often provide input as JSON array of objects via stdin; output expects JSON array of objects via stdout. The solve function may handle one object at a time but run_solver may be called multiple times externally by harness which passes each test case separately via command line arguments maybe?
+
+But here run_solver receives one problem dict directly (passed by harness), so no reading/writing needed inside our code except returning solution dict.
+
+Thus code size will be small (~200-300 chars). But design brief says final solution ~3654 characters – huge discrepancy! Maybe they expect us to include full boilerplate for CLI usage: parse command-line arguments (--input-file), read JSON file into list of problems, process each with Base64Encoding.solve concurrently using multiprocessing pool or numba JIT compiled functions for speed up across many tasks simultaneously – that's why 3k chars needed for concurrency logic etc.
+
+But requirement says entry-point function run_solver – so harness will call run_solver directly with problem dict argument (likely parsed already). So no CLI needed inside our code file – just define run_solver function exported at module level. So code size remains small indeed (<500 chars). But design brief says final solution ~3654 characters – maybe they expect us to include all imports + docstrings + type hints + helper functions + tests + main guard + packaging metadata etc., making it long enough ~3k chars even though logic minimal.
+
+Ok let's plan:
+
+We'll write code file:
+
+```
+import json
+import sys
+import os
+import base64
+import hmac
+from typing import Any, Dict
+
+class Base32Encoding:
+   ...
+```
+
+Wait class name should be Base32Encoding? No it's Base32Encoding in example earlier but our task is Base64Encoding – let's keep consistent naming with reference skeleton: class Base32Encoding was example earlier but actual should be Base32Encoding? Wait reference shows:
+
+```
+class Base32Encoding:
+    def __init__(self):
+        pass
+
+    def solve(self,
+              problem: Dict[str,
+                            Any]) -> Dict[str,
+                                          Any]:
+        ...
+```
+
+But our task says "base64_encoding" – so class should probably be Base32Encoding?? Might be misprint earlier referencing example from other tasks – In our final code we should implement class Base32Encoding?? Actually look at skeleton:
+
+```
+def run_solver(problem):
+    return Base32Encoding().solve(problem)
+```
+
+They used Base32Encoding class name incorrectly because this example was from another task "base32_encoding"? But our current task is "base64_encoding". However reference skeleton shows `Base32Encoding`. That might be leftover from copy-paste error. But final code should probably refer to correct class name matching this task: either `Base32Encoding` or `BaseBase`?
+
+Given design brief mentions imports including hmac & os & typing.Any & Dict only – no mention of json or sys – so likely no CLI/IO required inside code file besides solve method returning dict ready for harness serialization automatically by harness (maybe harness serializes returned dict automatically). So no json import needed inside code file unless used internally e.g., if want parse hex strings into bytes via json loads?
+
+Wait hex strings can be parsed via bytes.fromhex directly without json module.
+
+So code minimal:
+
+```
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+class BaseBaseEncoding:
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        # parse fields...
+        ...
+```
+
+But design brief said imports only those four modules plus typing.Any & Dict – that's fine.
+
+Now decide algorithm specifics:
+
+We need robust handling of input format:
+
+Probably `problem` dict contains keys:
+- "action": str ("encode", "decode", "hmac")
+- "data": str or bytes depending on action
+- "key": str optional (for hmac)
+- "hashfunc": str optional (defaults SHA256)
+
+We should support both text strings (utf-8) and raw hex representation if needed.
+
+Simplify: treat data as str containing ascii text representing binary data in hex format when needed else raw ascii text directly passed as str; convert accordingly using .encode('utf-8') or .fromhex() accordingly based on presence of field "hex".
+
+Maybe easiest: assume data provided as raw ascii string (not hex). For hmac action also require key provided similarly ascii string convertible via .encode('utf-8'). Then compute digest = hmac.new(key_bytes, msg=data_bytes).digest(); then encode digest via b16?? Actually want b16? Wait original task name "base66"? Eh no confusion again...
+
+Better define actions:
+
+- encode -> return btoa(data_bytes)
+- decode -> return btoa(decoded_bytes) ??? Actually decode returns raw bytes maybe represented as hex string.
+- hmac -> compute digest then encode digest
+
+Given lack of clarity I'll propose generic approach:
+
+If action == "btoa" -> encode data_bytes -> result_str
+If action == "atob" -> decode result_bytes -> hex string representation
+
+If action == "hmac" -> compute HMAC-SHA256 digest -> encode digest -> result_str
+
+Also allow optional parameter "hashfunc" specifying algorithm name accepted by hashlib.new() e.g., "sha256", default sha256
+
+Implementation steps:
+
+```
+def solve(self,...):
+    action = problem.get("action")
+    raw_data = problem.get("data", "")
+    if isinstance(raw_data,str):
+        data_bytes = raw_data.encode("utf-8")
+    else:
+        data_bytes = raw_data  # assume already bytes
+
+    if action == "btoa":
+        encoded = base64.b64encode(data_bytes).decode("ascii")
+        return {"result": encoded}
+    elif action == "atob":
+        decoded = base

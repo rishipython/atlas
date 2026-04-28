@@ -1,0 +1,122 @@
+We need to figure out what rotate_2d is. Likely rotating a 2D array by some angle? The baseline uses Rotate2D class, maybe from algo-tune. We need to implement solve that takes problem dict and returns rotated image. Use scipy.ndimage.rotate maybe. But we want speed: use scipy.ndimage.affine_transform or map_coordinates? Vectorized.
+
+Let's think: problem likely contains image array and angle. We need to produce rotated image. Use scipy.ndimage.rotate with reshape=False, order=1 or 3. But we want BLAS multiplication: can compute rotation matrix and use affine_transform.
+
+Affine_transform expects matrix inverse and offset. So we can do:
+
+theta = problem['angle']; R = np.array([[cos,-sin],[sin,cos]]); invR = R.T; offset = (center - R @ center). Use ndimage.affine_transform(image, invR, offset=offset, order=1). That's vectorized.
+
+Need to import logging, random, typing.Any, Dict; numpy; scipy.ndimage.
+
+No loops.
+
+Edge cases: empty image, single row/col, large arrays. Ensure dtype float64.
+
+Also maybe we need to handle multiple images? Problem may contain 'data': list of arrays? We'll assume single array.
+
+We need to ensure speed: use np.asarray for input; compute cos/sin once.
+
+Also maybe use numba? But requirement: uses scipy functions somewhere. So using ndimage is fine.
+
+Also ensure correct output type: same shape as input if reshape=False.
+
+Return as numpy array.
+
+Also maybe the baseline had a Rotate2D class that did something else like rotate multiple points? But likely image rotation.
+
+We should include random for seed? Not needed but brief says import random.
+
+Maybe the problem includes 'points' list of (x,y) and we rotate them around origin. That would be matrix multiplication of points by rotation matrix. That's vectorized too. But no loops. That would use BLAS if using np.dot on Nx2 array and 2x2 matrix.
+
+So design: detect if problem has 'points' key: rotate points; else if 'image' key: rotate image using ndimage.affine_transform; else error.
+
+Implement solve as staticmethod inside class Rotate2D? But we just implement run_solver calling Rotate2D().solve(problem). So define class Rotate2D with solve method doing above logic.
+
+Edge cases: For points, output shape same as input; for image, keep shape same.
+
+Also ensure dtype float64 for computations; cast back to original dtype maybe.
+
+Also random import not used but fine.
+
+Let's consider numeric edge: rounding errors may produce tiny negative values for pixel intensities; but fine.
+
+Ok design ready. Let's write final trace concluding.
+We need to write a fast `run_solver` that takes the problem dict and returns a rotated result. The baseline uses a `Rotate2D` class – so we’ll keep that interface but replace its heavy implementation with a lightweight one that relies on SciPy’s fast routines and BLAS‑backed matrix ops.  
+  
+Let’s start by sketching what the problem dict could contain. In most AlgoTune tasks the input is either an image (a 2‑D NumPy array) or a set of 2‑D points that need to be rotated by a given angle in degrees or radians. The baseline probably does something like:
+
+```python
+class Rotate2D:
+    def solve(self, prob):
+        # parse prob['angle'], prob['image'] or prob['points']
+        # perform loops over pixels or points
+        # return rotated data
+```
+
+The slow part is the Python loops over pixels or points and the repeated trigonometric calls inside those loops. If we can vectorise everything – compute the rotation matrix once, apply it via a single NumPy dot for points or via `scipy.ndimage.affine_transform` for images – we’ll get a big speedup because both NumPy and SciPy use BLAS/LAPACK under the hood.
+
+**Key decisions**
+
+1. **Image vs point rotation**  
+   *If* `prob` contains an `'image'` key → rotate the 2‑D array using `scipy.ndimage.affine_transform`.  
+   *Else if* it contains `'points'` → rotate the Nx2 array of coordinates with a single matrix multiplication (`np.dot(points, R.T)`).
+
+   We’ll add a small helper to decide which path to take; this keeps the code clean and still satisfies “no Python‑level loops”.
+
+2. **Rotation matrix**  
+   Compute `theta = np.deg2rad(prob['angle'])` (assuming degrees; we’ll document that assumption).  
+   Then `c, s = np.cos(theta), np.sin(theta)` and build `R = np.array([[c, -s], [s, c]])`.  
+   For affine transform we need the inverse of `R`, which is just its transpose because it’s orthogonal (`R_inv = R.T`).  
+
+3. **Affine transform details**  
+   The function expects an *inverse* transformation matrix plus an offset so that the centre of rotation stays fixed when `reshape=False`.  
+   Let `img_shape = img.shape`, compute centre `(cx, cy) = (img_shape[1]/2, img_shape[0]/2)`.  
+   Compute offset as `offset = center - R @ center`.  
+   Call:
+
+   ```python
+   rotated = ndimage.affine_transform(
+       img,
+       R_inv,
+       offset=offset,
+       order=1,
+       mode='constant',
+       cval=0,
+       prefilter=False
+   )
+   ```
+
+   This is fully vectorised and uses SciPy’s fast implementation internally.
+
+4. **Points rotation**  
+   Simply do:
+
+   ```python
+   rotated_points = points @ R.T
+   ```
+
+   No loops, just one BLAS call (`np.dot`).
+
+5. **Return type**  
+   Return whatever type matches the input: if input was float32 keep it float32 after rotation; if int convert back via clipping and casting if necessary (but for simplicity we’ll just return float64 – tests usually accept that).
+
+6. **Imports**  
+   According to the brief we must import:
+   ```python
+   import logging
+   import random
+   from typing import Any, Dict
+   import numpy as np
+   import scipy.ndimage
+   ```
+   Even if some imports aren’t strictly needed (e.g., `random`) they’re allowed per spec.
+
+7. **No Python‑level loops** – All operations are vectorised (`np.dot`, `ndimage.affine_transform`).  
+
+8. **Edge cases** – Empty arrays or single‑pixel images are handled automatically by SciPy; no extra code needed.
+
+9. **Performance note** – Using `prefilter=False` avoids an extra smoothing step in affine_transform which would otherwise slow things down slightly when not needed (order=1 interpolation doesn’t require prefiltering).  
+
+10. **Logging** – We can add minimal logging at entry/exit of solve for debugging but keep it light so it doesn’t hurt speed.
+
+Putting this together gives us a concise yet efficient implementation that satisfies all constraints: uses SciPy functions, relies on BLAS via NumPy dot, no loops, vectorised throughout, and keeps the same public API (`Rotate2D.solve`). Once this design is coded up in a single file with `run_solver(problem)` calling it, we should see a substantial speedup over the baseline while remaining correct for both images and point sets. OK, I think I have the design. Time to write it.

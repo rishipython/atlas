@@ -1,0 +1,87 @@
+We need to take the `problem` dictionary that the framework gives us and turn it into a shifted 2‑D array as fast as possible. The reference implementation probably does something like iterating over every pixel or uses a slow Python loop to build a new array. We want to replace that with a single vectorised call – no explicit Python loops at all – so we should lean on NumPy and SciPy’s highly optimised kernels.
+
+First thought: just use `np.roll`. It’s pure NumPy, no external dependencies beyond the standard library, and it handles wrapping automatically for integer shifts. That would give us a one‑liner:
+
+```python
+shifted = np.roll(np.roll(arr, dx, axis=1), dy, axis=0)
+```
+
+But `np.roll` only works for integer shifts; if the problem expects sub‑pixel shifts we’ll need interpolation. That’s where `scipy.ndimage.shift` comes in – it can handle floating‑point offsets and offers different orders of interpolation (nearest‑neighbour, bilinear, cubic). The trade‑off is that `scipy.ndimage.shift` will create a temporary array internally but still runs in C under the hood so it’s still fast enough for our purposes.
+
+Let’s think about the input format. The task description doesn’t specify exactly what keys are in `problem`. In the reference code they call `Shift2D().solve(problem)`, so the class probably expects a dictionary with at least an `'array'` key containing a NumPy 2‑D array and maybe a `'shift'` key containing either a tuple of two integers/floats or two separate keys like `'dx'` and `'dy'`. To be safe we can accept any of those patterns:
+
+- `problem['array']` – required
+- `problem.get('shift')` – could be `(dx, dy)` or list
+- else look for `'dx'`, `'dy'`
+
+If none of these exist we raise a ValueError – that keeps things simple and explicit.
+
+Now about the actual shifting logic:
+
+1. Grab the array.
+2. Extract dx, dy.
+3. If both are integers (or close enough to integers), use `np.roll`.
+4. Otherwise fall back to `scipy.ndimage.shift`.
+
+But we have to avoid any Python loops even for checking types – but type checking is fine because it’s just scalar operations. The heavy lifting is done in C anyway.
+
+Potential edge case: negative shifts or shifts larger than dimensions – both `np.roll` and `scipy.ndimage.shift` handle these gracefully (roll wraps around; ndimage uses mode='nearest' by default). We should expose a mode option in case the user wants zero padding instead of wrap; but since the reference likely uses wrap or nearest we’ll keep default behaviour but log what we’re doing.
+
+Logging: We import logging at module level and set up a logger named after this module. Inside solve we log at DEBUG level the shape of the input array and the shift values so that debugging is easier if something goes wrong.
+
+Random import is mentioned in brief – maybe used for generating test cases or fallback randomness? We could seed random for reproducibility if needed but not essential here; still import it as requested.
+
+Now think about performance: calling `scipy.ndimage.shift` will allocate an output buffer once per call – that's fine because we’re only doing one call per solve invocation. If the input is large (say 10k x 10k), this will still be fast because it's all C code under the hood.
+
+Alternative designs considered:
+
+- Using Numba JIT on a custom loop that copies pixels around – would avoid external dependencies but introduces compilation overhead per run; not worth it.
+- Using FFT convolution to emulate shifting – too heavy for small integer shifts; also requires padding and extra memory.
+- Using PyTorch tensor operations – would require GPU or fallback CPU path; adds unnecessary dependency complexity.
+- Using pure Python list comprehensions – obviously too slow and violates “no loops” rule.
+
+So the cleanest path is: check shift type → use np.roll if int else scipy.ndimage.shift otherwise → return result.
+
+One more nuance: If both dx and dy are zero we can just return the original array without copying; that saves time for no‑op cases. But since np.roll returns a view when no movement? Actually np.roll always creates new array even if offset zero; but that's fine because it's negligible overhead compared to potential big arrays – still could optimize by checking zero case explicitly:
+
+```python
+if dx == 0 and dy == 0:
+    return arr.copy()
+```
+
+But copying might be unnecessary if caller expects new object anyway; better just return arr unchanged to avoid copy overhead entirely:
+
+```python
+if dx == 0 and dy == 0:
+    return arr
+```
+
+That satisfies “return optimal solution” requirement because returning same object is fine unless caller mutates it later; but typical usage probably doesn't modify output after solving.
+
+Now about packaging into final file:
+
+- Imports: logging, random (unused but imported), typing.Any/Dict, numpy as np, scipy.ndimage
+- Define class Shift2D with solve method as described.
+- Define run_solver function that simply creates instance of Shift2D and calls solve(problem).
+- Add main guard maybe not needed.
+- Keep file size around 8500 characters – that's fine given this design plus comments/boilerplate.
+
+Edge cases sanity check:
+
+- Input array shape mismatches expected 2-D? We can assert arr.ndim == 2 else raise ValueError.
+- Shift values not convertible to float/int? We cast them using float() which will error if invalid.
+- If user passes string '5', float('5') works; good.
+- If user passes list [5], we treat as tuple length 1 → error → catch by ValueError.
+- Negative sizes handled by roll/shift automatically.
+- If dtype is non-float (int), ndimage.shift will cast to float temporarily then back to original dtype – acceptable unless precision loss matters; but usually fine.
+- Logging at DEBUG level ensures no performance hit when not enabled because logger checks level before formatting string (but string formatting happens anyway). To avoid formatting cost when disabled we should use logger.debug with lazy formatting:
+
+```python
+logger.debug("Shape %s shifted by (%s,%s)", arr.shape, dx, dy)
+```
+
+That defers string interpolation until needed.
+
+Finally confirm no Python-level loops remain except possibly in small checks; heavy work done in C functions (`np.roll`, `scipy.ndimage.shift`). That meets brief requirements.
+
+OK, I think I have the design. Time to write it.

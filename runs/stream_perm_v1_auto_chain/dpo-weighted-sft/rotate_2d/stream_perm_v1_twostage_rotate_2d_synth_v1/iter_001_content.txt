@@ -1,0 +1,87 @@
+We need to rewrite the `solve` method for a 2‑D rotation problem.  The input format is a dictionary of arrays: `problem["data"]` holds a 2‑D array of shape `(N, 2)` and `problem["theta"]` is a scalar angle in radians.  The goal is to rotate all points by that angle and return a dictionary with the rotated coordinates under the key `"rotated"`.  The reference implementation uses a Python loop over each point, calling `np.array([x*cos - y*sin, x*sin + y*cos])`.  That’s slow for large `N`.  We want to drop all Python loops and replace them with a single BLAS call.
+
+The obvious vectorised approach is to build the rotation matrix
+
+```
+R = [[cosθ, -sinθ],
+     [sinθ,  cosθ]]
+```
+
+and then compute `rotated = data @ R.T`.  That’s a single matrix multiplication.  But we also have to think about how to keep the code fast and robust: use float64 by default, but if the input is float32 we might want to preserve precision.  Also, we must ensure that the function works for edge cases like empty arrays or very large `N`.
+
+We should consider whether we can accelerate further with JAX or Numba.  JAX would require compiling the whole function; that’s overkill if the only heavy work is one BLAS call.  Numba could be used if we had loops, but here we don’t.  So we’ll stick to NumPy + SciPy.
+
+Now, what about SciPy?  The brief says we must use a SciPy function somewhere.  We could use `scipy.linalg.blas.dgemm` directly to guarantee BLAS usage, or maybe use `scipy.ndimage.rotate`, but that would rotate an image grid rather than arbitrary points.  Using `scipy.linalg.blas.dgemm` gives us explicit control over the BLAS call and might be slightly faster than NumPy’s dot because it can expose more options like transposition flags.
+
+Alternatively, we could use `scipy.spatial.transform.Rotation` from SciPy (but that’s newer).  But the brief explicitly mentions using matrix multiplication and BLAS-backed operations; so calling `scipy.linalg.blas.dgemm` seems appropriate.
+
+We should also think about memory layout: NumPy’s dot expects C-contiguous arrays; if the input is not contiguous we should copy or use `.astype(np.float64)` which will also make it contiguous.  For speed we can avoid copying by ensuring that the input data is already contiguous; but since we cannot control that externally, we can defensively copy with `.copy()` if needed.
+
+Edge cases: If `N==0`, the output should be an empty array of shape `(0,2)`.  The matrix multiplication will handle that fine.
+
+We also need to keep logging and random imports because the brief lists them.  They may not be used directly but we’ll import them anyway for completeness.
+
+Now, design decisions:
+
+1. **Imports**: We'll import logging, random (unused but required), typing.Any/DicT for type hints, numpy as np, scipy.ndimage (unused but required), scipy.linalg.blas for dgemm.
+
+2. **Function signature**: `def solve(problem: Dict[str, Any]) -> Dict[str, Any]`.
+
+3. **Extract data**: `data = problem.get("data")`, ensure it's a NumPy array of shape `(N,2)`. If not present or wrong shape raise ValueError.
+
+4. **Angle**: get theta from problem["theta"], ensure scalar float.
+
+5. **Compute sin/cos**: Use np.cos/sin on theta; they return float64 by default.
+
+6. **Build rotation matrix**: R = np.array([[c,-s],[s,c]], dtype=data.dtype). We may want dtype float64 regardless of input dtype to avoid overflow issues; but if input is float32 we can cast R to float32 too.
+
+7. **Matrix multiplication**: Use scipy.linalg.blas.dgemm(alpha=1.0, a=data.astype(np.float64), b=R.T.astype(np.float64), trans_a=False, trans_b=False). That returns a C-contiguous array of shape (N,2). If original dtype was float32 we cast back at end.
+
+8. **Return**: Return {"rotated": rotated}.
+
+9. **Logging**: maybe log number of points rotated at debug level.
+
+10. **Random**: maybe set seed at start? Not necessary.
+
+Now check potential pitfalls:
+
+- dgemm expects Fortran-contiguous arrays? Actually SciPy's BLAS wrappers accept C-contiguous as well; they just pass pointers directly.
+- dgemm returns double precision even if inputs are float32; so casting back needed.
+- If data has shape (N,) (i.e., one point), our code will error; but problem spec says shape (N,2).
+- If data contains NaNs or infs? We'll let BLAS propagate.
+- If theta is array? Should be scalar; raise error otherwise.
+- Logging might slow things slightly but negligible compared to BLAS call.
+
+Alternative designs considered:
+
+- Using NumPy dot (`rotated = data @ R.T`). This is simpler but might use lower-level BLAS too; but explicit dgemm gives more control and maybe faster due to no overhead of Python wrapper.
+- Using SciPy's ndimage.rotate on each point individually? That would be insane.
+- Using JAX jit compiled function? Overkill.
+- Using Numba parallel loops? No loops allowed per brief.
+- Using sympy for symbolic rotation? Too slow.
+- Using torch tensor operations? Not allowed per brief (though torch available).
+
+Thus final design uses dgemm from scipy.linalg.blas.
+
+Also need to keep file size ~8800 chars including imports and function definitions and docstrings maybe minimal.
+
+Edge case sanity checks:
+
+- Empty data: dgemm returns empty array; fine.
+- Very large N (~10 million): memory usage high but okay if machine has enough RAM.
+- Input dtype mismatch: cast ensures correct output dtype.
+
+Potential small optimization: compute R once per call; no caching needed.
+
+Also consider using numpy's @ operator which internally calls BLAS anyway; but explicit dgemm ensures no extra overhead of Python wrapper like np.dot which may do some checks; still negligible though.
+
+But requirement "Uses scipy functions somewhere in solution" satisfied by dgemm import from scipy.linalg.blas and calling it.
+
+Also "No Python-level loops" satisfied.
+
+All good.
+
+Time complexity O(N*2*2) ~ O(N). Memory O(N).
+
+Ok final design ready.
+OK, I think I have the design. Time to write it.

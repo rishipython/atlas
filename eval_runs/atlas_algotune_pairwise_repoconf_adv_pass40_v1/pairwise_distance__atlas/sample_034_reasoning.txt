@@ -1,0 +1,9 @@
+We need to provide a faster implementation. Use vectorized operations or broadcasting. For squared Euclidean distance: D = A + A.T - 2*X @ X.T, where A is vector of squared norms. But careful: A shape (N,) and we need outer addition. Use np.sum(X**2, axis=1).reshape(-1,1) to get column, plus its transpose. Then subtract 2*X @ X.T. That yields squared distances. Ensure dtype float64. Return array. Need to maintain numeric equality to the slow method. Should be fine. Also ensure shape (N,N). Might produce negative tiny due to floating errors; can set negative to zero? Not necessary but could to ensure non-negative. But allclose may accept small negative? It will be close. We'll just compute.
+
+Edge cases: X may not be float64? Problem says dtype float64. We'll cast to float64 anyway.
+
+Implementation: def pairwise_sq_dist(X: np.ndarray) -> np.ndarray: ... return dist.
+
+Add import numpy as np at top. Provide full file.
+
+Let's write.

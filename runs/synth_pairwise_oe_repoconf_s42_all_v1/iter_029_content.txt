@@ -1,0 +1,201 @@
+We need to replace the triple loop with a fast vectorized routine. Let's think: pairwise squared Euclidean distance can be computed via Gram matrix trick: D = A + A.T - 2*X @ X.T, where A is squared norms column-wise. So we can do `sq_norms = np.sum(X**2, axis=1)` then `dist = sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T`. That gives float64. That's already vectorized and uses BLAS for matrix multiplication. But the brief says we must use scipy functions somewhere, and numba JIT. So we can't just use pure numpy; we need to incorporate scipy and numba.
+
+Maybe we can use scipy.spatial.distance.cdist? That would compute pairwise distances but maybe slower? But we can use it as a fallback? The brief says use scipy somewhere in the solution. So maybe we call `scipy.spatial.distance.squareform`? Actually that is for converting condensed distances. But we could use `scipy.linalg.norm`? Or use `scipy.linalg.blas.dgemm` explicitly. That would count as using scipy.
+
+Alternatively, we can use numba to JIT a kernel that loops over N but uses vectorized operations inside? But the brief says no Python-level loops; but maybe numba loops are okay? It says no Python-level loops, but numba loops are compiled, not Python-level. We could write a numba function that does the same triple loop but compiled. That might be acceptable. But we also want matrix multiplication.
+
+So perhaps design: Use scipy.linalg.blas.dgemm to compute X @ X.T efficiently. Then compute squared norms via np.sum(X**2, axis=1). Then combine.
+
+But we also need to incorporate numba JIT; maybe we wrap the whole function in a numba njit that calls the scipy blas? But calling scipy from inside numba might not work due to Python call overhead; but we could call dgemm directly via SciPy's low-level interface which returns a numpy array; that's fine.
+
+Alternatively, write a small numba function that computes the distance matrix using broadcasting but no loops? But broadcasting still uses loops internally.
+
+Better: Use numba to jit the entire routine that does the Gram trick and calls dgemm. But dgemm returns numpy array; calling it inside numba might be allowed if it's compiled C function? Actually calling SciPy functions from nopython mode may not be supported. So maybe better to do: Write a pure numpy implementation using dgemm for multiplication and rely on vectorized operations; then wrap the whole function with @numba.njit(parallel=True) maybe? But if we use numpy inside numba, it may not compile in nopython mode unless it's supported operations.
+
+Alternatively, we can implement a pure numpy version and then just annotate with @numba.jit(nopython=True) which will compile but may not support all numpy ops; but many are supported (np.sum, np.dot). However, calling np.dot inside nopython might compile to BLAS calls automatically.
+
+But the brief says "Uses scipy functions somewhere". So at least one call to a scipy function must exist in code.
+
+Thus design: import numpy as np, import scipy.linalg as la, import numba
+
+Define pairwise_sq_dist:
+
+```
+@numba.njit
+def _pairwise_sq_dist_numba(X):
+    N = X.shape[0]
+    out = np.empty((N,N), dtype=np.float64)
+    for i in range(N):
+        for j in range(i+1,N):
+            diff = X[i]-X[j]
+            out[i,j] = out[j,i] = np.dot(diff,diff)
+    return out
+```
+
+But that's Python loops; though inside njit it's compiled; still counts as loops but not Python-level loops. However brief says no Python-level loops; this is okay because they are compiled loops inside numba.
+
+But also need to use scipy somewhere. We could compute Gram matrix via la.blas.dgemm:
+
+```
+G = la.blas.dgemm(1.0, X, X.T)
+```
+
+Then compute sqnorms etc.
+
+We can combine: Use la.blas.dgemm for multiplication; then compute distances vectorized; no loops at all.
+
+Wrap entire function with @numba.njit(parallel=True) maybe not needed because no loops.
+
+But if we don't have any loops inside njit, it's trivial.
+
+Alternatively, skip numba entirely and just use numpy and scipy. But brief demands numba usage somewhere.
+
+Thus maybe create a helper function decorated with @numba.njit that does something trivial like computing sum of squares of each row (though that could be done with np.sum). The key is to have some code executed under numba to satisfy requirement.
+
+We could do:
+
+```
+@numba.njit
+def _row_sums(X):
+    N,D = X.shape
+    res = np.empty(N,dtype=np.float64)
+    for i in range(N):
+        s=0.0
+        for k in range(D):
+            v=X[i,k]
+            s+=v*v
+        res[i]=s
+    return res
+```
+
+Then in main function call _row_sums(X) and then compute distances using broadcasting plus dgemm result from scipy.
+
+That would satisfy all constraints: uses numpy, uses scipy (dgemm), uses numba (row sums), no Python-level loops (except inside njit which is fine).
+
+Also ensure dtype float64 throughout.
+
+Edge cases: small N or D zero? Should handle N>0 else return empty array shape (0,0). If D=0 then all distances zero; our formula should work: sqnorms zeros, G zeros, dist zeros.
+
+Also potential negative due to floating error: after formula may get tiny negative values like -1e-15 due to rounding when points identical. We can clip to zero via `np.maximum(dist, 0)` or `np.where(dist<0,... )`. Might not be necessary if formula exact because of subtraction of identical numbers yields zero exactly in double precision? Might produce small negative due to rounding of dot product? Possibly slight negative due to floating error of dot product and subtraction 2*G vs sum of squares. We can clip final result with `np.maximum(dist, 0)` or `dist.clip(min=0)`. We'll do that for safety.
+
+Now code size ~1322 chars? We'll see after writing minimal imports and functions.
+
+Let's draft code mentally:
+
+```
+import numpy as np
+import scipy.linalg as la
+import numba
+
+@numba.njit
+def _row_squares(X):
+    N,D = X.shape
+    out = np.empty(N,dtype=np.float64)
+    for i in range(N):
+        s=0.0
+        for k in range(D):
+            v=X[i,k]
+            s+=v*v
+        out[i]=s
+    return out
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    N,D = X.shape
+    if N==0:
+        return np.empty((0,0),dtype=np.float64)
+    sq_norms = _row_squares(X)
+    G = la.blas.dgemm(1.0,X,X.T)
+    dist = sq_norms[:,None] + sq_norms[None,:] - 2*G
+    # clip negatives
+    dist[dist<0]=0.0
+    return dist
+```
+
+Check imports: need from scipy.linalg import blas? Actually la.blas is module with dgemm defined as la.blas.dgemm or from scipy.linalg import blas then blas.dgemm.
+
+Better: `from scipy.linalg import blas` then `blas.dgemm`.
+
+So final imports:
+
+```
+import numpy as np
+from scipy.linalg import blas
+import numba
+```
+
+Now code length ~?? Should be around 300-400 chars actually less than 1322 but that's fine because brief said final solution ~1322 characters but maybe that's approximate; not strict requirement? It says final solution is ~1322 characters – probably approximate expectation but not strict constraint.
+
+We must ensure all imports at top; no extra prints etc.
+
+Edge cases: If D==0, G will be shape (N,N) zeros because dgemm on empty columns yields zeros? dgemm expects matrices shape NxD times DxN => NxN zeros fine.
+
+If N==1 returns [[0]] correct.
+
+If input dtype not float64 convert ensures correct type.
+
+Potential performance: dgemm uses BLAS which is fast; row_squares compiled by numba also fast though computing squares per element anyway similar cost as sum of squares but maybe slower than vectorized sum? But still fine relative speed vs triple loop. Could even remove row_squares and use np.sum(X**2,...). But requirement of using numba forces us to include it somewhere; so keep it as helper used only once so overhead minimal.
+
+Alternatively could integrate row_squares into main function by calling _row_squares within main; that's fine.
+
+Also ensure that _row_squares returns float64 array shape (N,) used later; good.
+
+Check memory: G computed via dgemm returns float64 matrix shape NxN potentially large memory but unavoidable for full distance matrix anyway.
+
+All good.
+
+Edge case negative clipping: Use dist -= 1e-12?? Actually set negative entries to zero exactly using mask assignment above works fine because dist<0 includes any negative values including tiny ones like -1e-16 -> set to 0 exactly which matches expected numeric tolerance perhaps better than small negative values causing allclose fail if atol small? Usually atol small ~1e-8 so negative tiny values may still pass allclose because difference <= atol? But safer clip anyway.
+
+Return dist as float64 array shape (N,N).
+
+Ok ready.
+```python
+import numpy as np
+from scipy.linalg import blas
+import numba
+
+
+@numba.njit
+def _row_squares(X):
+    N, D = X.shape
+    res = np.empty(N, dtype=np.float64)
+    for i in range(N):
+        s = 0.0
+        for k in range(D):
+            v = X[i, k]
+            s += v * v
+        res[i] = s
+    return res
+
+
+def pairwise_sq_dist(X):
+    """
+    Return the (N,N) pairwise squared Euclidean distance matrix.
+    
+    Parameters:
+        X : ndarray of shape (N,D), dtype float64
+    
+    Returns:
+        ndarray of shape (N,N), dtype float64 containing squared distances.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    N, D = X.shape
+
+    if N == 0:
+        return np.empty((0, 0), dtype=np.float64)
+
+    # Compute squared norms per point using a small JIT‑compiled loop.
+    sq_norms = _row_squares(X)
+
+    # Gram matrix via BLAS.
+    G = blas.dgemm(1.0, X, X.T)
+
+    # Broadcasted formula: ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2 * G
+
+    # Numerical safety: clip tiny negatives caused by rounding.
+    dist[dist < 0] = 0.0
+
+    return dist
+
+```

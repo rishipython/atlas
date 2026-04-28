@@ -1,0 +1,35 @@
+We need to replace the slow implementation with efficient vectorized approach. The standard formula: pairwise squared distances = A + A.T - 2 * X @ X.T, where A is column-wise sum of squares. Ensure dtype float64.
+
+We must implement pairwise_sq_dist function using numpy.
+
+Potential pitfalls: For large N, memory usage: (N,N) matrix might be large but that's expected.
+
+We also need to maintain same signature and return dtype float64.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist2 = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # ensure non-negative due to floating errors
+    dist2[dist2 < 0] = 0.0
+    return dist2
+
+That's all.
+
+Let's produce final code. Use imports: import numpy as np.
+
+Return as described.
+
+Edge cases: N=0? If X empty shape (0,D). Then sq_norms shape (0,) and X @ X.T shape (0,0). Should return empty array shape (0,0). The formula works: sq_norms[:,None] + sq_norms[None,:] gives shape (0,0). Good.
+
+If D=0? Then X shape (N,0). X @ X.T shape (N,N) with zeros. sq_norms all zeros. Dist2 zeros. Good.
+
+Add docstring as before.
+
+Return.
+
+No other code.
+
+Let's produce final.

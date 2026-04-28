@@ -1,0 +1,54 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use rfft? But easiest: use np.fft.fft with appropriate size. Complexity: use next power of two maybe. Use np.fft.ifft. Ensure real output. Use dtype float64.
+
+We need to handle arbitrary length arrays. Use np.fft.fftpack? Use np.fft.fft. For real data, we can use np.fft.rfft. But simpler: use np.fft.fft on combined length L = N+M-1. Need to zero pad to length L. Actually convolution length is N+M-1. So we can compute FFT of length L: use np.fft.fft(x, L) and same for h. Then multiply elementwise, then ifft. Return real part.
+
+But need to ensure we don't get small imaginary due to numerical errors. So take real part: np.real(...). Also we might want to use np.fft.fft with dtype complex128. Use np.fft.ifft. Should be fine.
+
+Potential issue: For large arrays, using rfft might be faster. But simple is fine.
+
+Edge cases: empty arrays? Convolution of empty? np.convolve([]) returns array? Actually np.convolve requires arrays of at least size 1? Let's check. np.convolve(np.array([]), np.array([1])) returns array([]). But we can handle if N==0 or M==0, return np.array([], dtype=np.float64). But not necessary? In reference, they assume N>0 and M>0. But better to handle.
+
+Also maybe we want to use np.fft.rfft for real input: compute length L, use rfft of length L, multiply, irfft. That will be faster. Let's implement.
+
+Implementation:
+
+```
+def conv1d(x,h):
+    N=x.shape[0]; M=h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L=N+M-1
+    # choose next power of 2? Not necessary but might be faster
+    # but we can just use L
+    X=np.fft.rfft(x, n=L)
+    H=np.fft.rfft(h, n=L)
+    Y=X*H
+    y=np.fft.irfft(Y, n=L)
+    return y
+```
+
+But need to cast to float64: it's already float64.
+
+Potential difference: rounding errors? Should be fine.
+
+But we might want to use np.fft.fft with n=L to avoid rounding error of rfft? rfft uses real FFT, but results same.
+
+Also we need to ensure dtype: input arrays may not be float64? They are float64 per problem. But we can cast to float64.
+
+Test with small arrays: Should produce same.
+
+We also need to import numpy at top.
+
+Let's produce final code.
+
+But might need to use np.fft.rfft for speed. Use L = N+M-1.
+
+Edge: If L is odd, irfft returns correct length. Yes.
+
+We must ensure we return dtype float64. The output of irfft is float64.
+
+Return y.
+
+All good.
+
+Let's produce final code.

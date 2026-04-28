@@ -1,0 +1,19 @@
+We need to write efficient implementation. Standard formula: dist^2 = ||x||^2 + ||y||^2 - 2 x·y. Compute squared norms of rows: s = np.sum(X**2, axis=1). Then D = s[:,None] + s[None,:] - 2 * X @ X.T. Ensure dtype float64. Also ensure non-negative due to numeric errors: maybe clip to >=0.
+
+Return D. Use np.maximum(D, 0.0). That should be numerically close.
+
+Edge cases: N=0? Should handle empty? But shape (0,D). Then X @ X.T gives (0,0). s is empty. D empty. Works.
+
+Return dtype float64.
+
+Implementation simple.
+
+But note that reference expects dtype float64. We'll keep that.
+
+Return D.
+
+Let's produce file with imports and function.
+
+Also mention docstring.
+
+Ok.

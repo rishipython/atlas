@@ -1,0 +1,95 @@
+max_iterations: 40
+checkpoint_interval: 10
+log_level: INFO
+random_seed: 42
+diff_based_evolution: true
+allow_full_rewrites: true
+max_code_length: 20000
+llm:
+  models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  evaluator_models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  api_base: http://localhost:8000/v1
+  api_key: EMPTY
+  temperature: 0.4
+  top_p: 0.95
+  max_tokens: 128000
+  timeout: 150
+  retries: 3
+  retry_delay: 5
+prompt:
+  system_message: "SETTING:\nYou're an autonomous programmer tasked with solving a\
+    \ specific problem. You are to use the commands defined below to accomplish this\
+    \ task. Every message you send incurs a cost\u2014you will be informed of your\
+    \ usage and remaining budget by the system.\nYou will be evaluated based on the\
+    \ best-performing piece of code you produce, even if the final code doesn't work\
+    \ or compile (as long as it worked at some point and achieved a score, you will\
+    \ be eligible).\nApart from the default Python packages, you have access to the\
+    \ following additional packages:\n - cryptography\n - cvxpy\n - cython\n - dace\n\
+    \ - dask\n - diffrax\n - ecos\n - faiss-cpu\n - hdbscan\n - highspy\n - jax\n\
+    \ - networkx\n - numba\n - numpy\n - ortools\n - pandas\n - pot\n - psutil\n -\
+    \ pulp\n - pyomo\n - python-sat\n - pythran\n - scikit-learn\n - scipy\n - sympy\n\
+    \ - torch\nYour primary objective is to optimize the `solve` function to run as\
+    \ as fast as possible, while returning the optimal solution.\nYou will receive\
+    \ better scores the quicker your solution runs, and you will be penalized for\
+    \ exceeding the time limit or returning non-optimal solutions.\n\nBelow you find\
+    \ the description of the task you will have to solve. Read it carefully and understand\
+    \ what the problem is and what your solver should do.\n\nYou are an expert programmer\
+    \ specializing in signal_processing algorithms. Your task is to improve the convolve2d_full_fill\
+    \ algorithm implementation with baseline comparison.\n\nThe problem description\
+    \ is:\nConvolve2D Full Fill\n\nThis task computes the two-dimensional convolution\
+    \ of two matrices.  \nThe input is a tuple of two 2D arrays: the first array has\
+    \ dimensions (30*n)\xD7(30*n) and the second has dimensions (8*n)\xD7(8*n), where\
+    \ n is a scaling factor that increases the problem size.  \nThe convolution is\
+    \ performed in \\\"full\\\" mode (all overlapping regions are computed) with \\\
+    \"fill\\\" boundary handling (treating areas outside the array as zeros).  \n\
+    The output is a 2D array representing the convolution result.\n\nFocus on improving\
+    \ the solve method to correctly handle the input format and produce valid solutions\
+    \ efficiently. Your solution will be compared against the reference AlgoTune baseline\
+    \ implementation to measure speedup and correctness.\n\nPERFORMANCE OPTIMIZATION\
+    \ OPPORTUNITIES:\nYou have access to high-performance libraries that can provide\
+    \ significant speedups:\n\n\u2022 **JAX** - JIT compilation for numerical computations\n\
+    \n\u2022 **Numba** - Alternative JIT compilation, often simpler to use\n\n\u2022\
+    \ **scipy optimizations** - Direct BLAS/LAPACK access and specialized algorithms\n\
+    \  Many scipy functions have optimized implementations worth exploring\n\n\u2022\
+    \ **Vectorization** - Look for opportunities to replace loops with array operations\n\
+    \nEXPLORATION STRATEGY:\n1. Profile to identify bottlenecks first\n2. Consider\
+    \ multiple optimization approaches for the same problem\n3. Try both library-specific\
+    \ optimizations and algorithmic improvements\n4. Test different numerical libraries\
+    \ to find the best fit\n"
+  num_top_programs: 5
+  num_diverse_programs: 5
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 32768
+  suggest_simplification_after_chars: 8000
+database:
+  in_memory: true
+  log_prompts: true
+  population_size: 1000
+  archive_size: 100
+  num_islands: 4
+  migration_interval: 20
+  migration_rate: 0.1
+  elite_selection_ratio: 0.1
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.6
+  feature_bins: 10
+evaluator:
+  timeout: 200
+  max_retries: 3
+  parallel_evaluations: 4
+  cascade_evaluation: true
+  cascade_thresholds:
+  - 0.5
+  - 0.8
+evolution_trace:
+  enabled: true
+  format: jsonl
+  include_code: true
+  include_prompts: true
+  buffer_size: 1
+  compress: false

@@ -1,0 +1,25 @@
+We need to produce efficient implementation. Use vectorized approach: compute squared norms and dot products. For matrix X shape (N,D). D = X @ X.T gives pairwise dot products. Norm squared per row: np.sum(X**2, axis=1). Then squared distance: norms[:,None] + norms[None,:] - 2*dot. Use broadcasting.
+
+Return dtype float64.
+
+Edge cases: large N. Use np.dot. Implementation straightforward.
+
+Return symmetrical matrix. Might produce negative small values due to floating errors; clip to zero.
+
+Let's implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    Dmat = norms[:,None] + norms[None,:] - 2.0 * X @ X.T
+    Dmat = np.maximum(Dmat, 0.0)
+    return Dmat
+
+This is fast.
+
+Check shape.
+
+Return same dtype.
+
+Let's produce file.
+

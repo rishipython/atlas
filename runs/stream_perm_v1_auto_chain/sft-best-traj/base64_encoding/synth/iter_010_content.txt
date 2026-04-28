@@ -1,0 +1,117 @@
+We need to take the problem input, turn it into a byte sequence, feed that into a fast Base‑64 encoder, and return the resulting string.  
+The goal is speed, so we’ll avoid any Python‑level loops – everything will be done in a Numba‑compiled kernel that works on NumPy arrays.
+
+**First thoughts**  
+Base‑64 works on blocks of three bytes → four six‑bit values.  
+If the length isn’t a multiple of three we pad with zero bytes and later replace the corresponding output characters with “=”.  
+The mapping from a six‑bit value (0–63) to the ASCII character is fixed; we can store that in a small lookup table (a NumPy array of type `uint8` containing the ASCII codes).
+
+**Design options**  
+1. **Pure NumPy vectorisation** – reshape the data into shape `(-1,3)` and compute all four indices with broadcasting.  
+   *Pros*: No explicit loops at all; relies on BLAS‑style ops.*  
+   *Cons*: The bit‑shifts and masks are not broadcastable in a single expression; would need several intermediate arrays, increasing memory traffic.*
+
+2. **Numba JIT loop over rows** – write an `njit` function that iterates over the reshaped array row by row, computing the four indices with simple integer ops.  
+   *Pros*: Very small memory footprint; JIT compiles the loop into efficient machine code.*  
+   *Cons*: Still a loop inside Numba – but that’s fine because it’s compiled.*
+
+3. **Cython or PyPy** – could be faster for pure Python loops but adds complexity and isn’t required here.*
+
+Option 2 looks cleanest: we keep the code short, avoid extra temporary arrays, and let Numba do all the heavy lifting.
+
+**Edge cases**  
+* Empty input → return empty string immediately – no allocation needed.  
+* Input length < 3 → still go through the same path; padding logic will add “=” appropriately.  
+* Very large inputs → Numba handles large arrays fine; we just keep everything in contiguous memory.
+
+**Padding logic**  
+After computing all indices we’ll have an array `out_idx` of length `4 * ceil(n/3)`.  
+If `n % 3 == 1`, the last two output characters correspond to padded zero bytes and must be replaced by “==”.  
+If `n % 3 == 2`, replace only the last character by “=”.  
+We’ll do this by writing directly into the output byte buffer before converting it to a Python string.
+
+**Implementation sketch**  
+
+```python
+import base64          # kept per spec – not used directly
+import hmac            # kept per spec – not used directly
+from typing import Any
+import numpy as np
+import numba
+
+# ASCII codes for Base‑64 alphabet
+BASE64_TABLE = np.array(
+    list(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'),
+    dtype=np.uint8
+)
+
+@numba.njit(parallel=False)
+def _encode_bytes(data: np.ndarray) -> np.ndarray:
+    """
+    data: uint8 array of arbitrary length
+    returns: uint8 array containing ASCII codes of Base‑64 representation,
+             already padded with '=' where appropriate.
+    """
+    n = data.shape[0]
+    if n == 0:
+        return np.empty((0,), dtype=np.uint8)
+
+    # Pad input so its length is a multiple of three
+    padded_len = ((n + 2) // 3) * 3
+    padded = np.empty((padded_len,), dtype=np.uint8)
+    padded[:n] = data
+
+    # Number of output characters (4 per block)
+    out_len = padded_len // 3 * 4
+    out = np.empty((out_len,), dtype=np.uint8)
+
+    # Process each block
+    for i in range(0, padded_len, 3):
+        b0 = padded[i]
+        b1 = padded[i + 1]
+        b2 = padded[i + 2]
+
+        idx0 = b0 >> 2
+        idx1 = ((b0 & 0x03) << 4) | (b1 >> 4)
+        idx2 = ((b1 & 0x0F) << 2) | (b2 >> 6)
+        idx3 = b2 & 0x3F
+
+        j = (i // 3) * 4
+        out[j]     = BASE64_TABLE[idx0]
+        out[j + 1] = BASE64_TABLE[idx1]
+        out[j + 2] = BASE64_TABLE[idx2]
+        out[j + 3] = BASE64_TABLE[idx3]
+
+    # Apply padding '=' where needed
+    rem = n % 3
+    if rem == 1:
+        out[-2:] = ord('='), ord('=')
+    elif rem == 2:
+        out[-1]   = ord('=')
+
+    return out
+
+def run_solver(problem: Any) -> str:
+    """
+    Expected problem format:
+      {'bytes': <list or bytes>}
+    """
+    raw_bytes = problem.get('bytes', b'')
+    if isinstance(raw_bytes, list):
+        data_arr = np.array(raw_bytes, dtype=np.uint8)
+    else:
+        data_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
+
+    encoded_bytes = _encode_bytes(data_arr).tobytes()
+    return encoded_bytes.decode('ascii')
+```
+
+This skeleton satisfies all constraints:
+
+* Only imports listed in the brief are used (`base64`, `hmac`, `typing`, `numpy`, `numba`).  
+* The core computation is inside a Numba‑compiled function with no Python loops—just a simple C‑style loop over blocks that Numba turns into efficient machine code.  
+* Padding is handled after generating all indices, so there’s no conditional logic inside the inner loop except for setting two or one padding characters at the end.  
+
+All corner cases are covered: empty input returns an empty string; inputs shorter than three bytes are correctly padded; large inputs are processed block by block without excessive memory usage.
+
+OK, I think I have the design. Time to write it.

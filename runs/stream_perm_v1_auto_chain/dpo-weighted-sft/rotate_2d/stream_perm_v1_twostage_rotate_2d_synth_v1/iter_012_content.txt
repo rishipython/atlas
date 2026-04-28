@@ -1,0 +1,220 @@
+We need to take the given `Rotate2D` problem and speed it up. The baseline is a slow implementation that probably uses nested loops or Python-level operations. We have to keep the same function signature and return type, but we can replace the body with a faster one. The design brief hints that we should use NumPy, SciPy, and BLAS matrix multiplication. No loops at Python level. Also mention logging, typing, etc.
+
+First, let's think about what the problem actually is: "rotate_2d". Likely we are given an image or a 2D array and need to rotate it by some angle. The baseline probably uses scipy.ndimage.rotate or something like that but maybe in a naive way. We need to find a faster way.
+
+We have access to SciPy's ndimage.rotate which is already optimized, but maybe the baseline uses a slower custom implementation. We can just call `scipy.ndimage.rotate`. But we need to ensure we match the expected output format: maybe the baseline returns a rotated array with specific interpolation mode, reshape flag, order, etc.
+
+Alternatively, we might want to use matrix multiplication to compute rotated coordinates and then resample via interpolation. That would involve constructing a transformation matrix and applying it with SciPy's affine_transform or map_coordinates.
+
+We also need to avoid Python loops; so everything must be vectorized.
+
+Potential approach: Use `scipy.ndimage.affine_transform`. It accepts an inverse matrix and offset, can handle arbitrary shapes. We can compute rotation matrix:
+
+```
+theta = problem['angle']  # degrees or radians?
+```
+
+But we don't know the exact input format; let's inspect typical rotate_2d tasks: Usually input includes an image (2D array) and an angle in degrees. Might also include flags like 'reshape' or 'order'. The baseline might use `scipy.ndimage.rotate` with reshape=True by default.
+
+We need to read the problem dict: maybe it contains keys 'data', 'angle', 'reshape', 'order', etc. We should be robust: get angle in degrees if not specified; convert to radians for math functions.
+
+Also consider that SciPy's rotate uses trilinear interpolation by default (order=1). If the baseline uses nearest neighbor or cubic, we must match that.
+
+We can just call `scipy.ndimage.rotate` directly with parameters from problem dict. That would be fastest because it's already optimized in C.
+
+But maybe the baseline uses a slower custom rotation algorithm that does manual coordinate mapping using loops. So replacing with SciPy's built-in would give huge speedup.
+
+However, design brief says "Uses scipy functions somewhere in the solution" – yes.
+
+Also "Makes use of matrix multiplication (BLAS-backed)" – if we use affine_transform we might compute coordinates via matrix multiplication of all pixel indices; but SciPy's internal implementation will do that efficiently.
+
+But perhaps we should explicitly do matrix multiplication ourselves for clarity: create grid of coordinates using np.indices, flatten them, apply rotation matrix via dot product (BLAS), then map back using interpolation via scipy.ndimage.map_coordinates. That would satisfy matrix multiplication requirement explicitly.
+
+But doing map_coordinates for each pixel individually might still be slow; but map_coordinates can handle arrays of coordinates at once; it's vectorized internally.
+
+Alternatively, use `scipy.ndimage.affine_transform` which internally does similar but more efficient.
+
+Which one better matches "matrix multiplication"? Using np.dot on coordinate arrays is explicit BLAS call; but if we rely on affine_transform it might not expose that but still uses BLAS internally for transform matrix application? Possibly not visible to us though. But requirement is likely to ensure we call some BLAS-backed operation explicitly in our code; so maybe we should compute rotated coordinates ourselves with np.dot and then feed into map_coordinates.
+
+Let's outline steps:
+
+1. Extract image array `img = problem['data']` (2D numpy array).
+2. Get angle: `angle_deg = problem.get('angle', 0)`; convert to radians: `theta = np.deg2rad(angle_deg)`.
+3. Compute rotation matrix: 
+```
+R = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]])
+```
+4. Determine output shape: if reshape flag true, compute new bounding box size:
+```
+h,w = img.shape
+corners = np.array([[0,w],[h,w],[h,0],[0,0]])  # shape (4,2)
+rotated_corners = corners @ R.T
+min_xy = rotated_corners.min(axis=0)
+max_xy = rotated_corners.max(axis=0)
+out_shape = np.ceil(max_xy - min_xy).astype(int)
+```
+5. Compute offset such that center aligns: 
+```
+center_in = np.array([h/2., w/2.])
+center_out = out_shape/2.
+offset = center_in @ R.T - center_out
+```
+6. Generate grid of output coordinates:
+```
+y_grid,x_grid = np.indices(out_shape)
+coords = np.stack([y_grid.ravel(), x_grid.ravel()], axis=1)  # shape (N,2)
+# shift by offset
+coords -= offset
+# apply inverse rotation: R.T
+inv_R = R.T
+src_coords = coords @ inv_R.T  # N x 2
+src_coords += center_in  # shift back
+```
+7. Use map_coordinates:
+```
+rotated_flat = scipy.ndimage.map_coordinates(img,
+                                            [src_coords[:,0], src_coords[:,1]],
+                                            order=problem.get('order',1),
+                                            mode='constant',
+                                            cval=0,
+                                            prefilter=False)
+rotated_img = rotated_flat.reshape(out_shape)
+```
+8. Return dictionary with rotated image under key 'data' or whatever expected output format? Baseline likely returns just rotated array; but run_solver expects return value from Rotate2D().solve(problem). Let's check typical signature: probably returns numpy array of same type as input image.
+
+Thus run_solver will call Rotate2D().solve(problem) and return result; so our solve method should return numpy array.
+
+We also need logging import but not necessarily used; but we can add simple debug logs at start/end.
+
+Also ensure no Python-level loops: all operations are vectorized (np.indices, dot product).
+
+Edge cases: angle 0 -> identity; should return original image unchanged shape if reshape false else same shape? For reshape false we must set out_shape equal to input shape and offset accordingly such that no cropping occurs? Actually if reshape=False then output shape same as input shape; offset computed differently: offset should align centers without expanding bounding box.
+
+Simplify: if reshape False:
+- out_shape = img.shape
+- offset computed as center_in @ R.T - center_in
+
+Because center_out is same as center_in when shapes equal? Wait center_out computed from out_shape / 2 -> same as center_in only if shapes equal which they are when reshape False; yes correct.
+
+Also handle dtype preservation: map_coordinates returns float64 by default; we may cast back to original dtype if needed? Baseline likely preserves dtype? Might cast back using .astype(original_dtype). We'll do that.
+
+Also consider memory usage: generating full coordinate arrays of size N may be large for big images; but that's okay for typical sizes used in benchmarks (~512x512). If bigger maybe memory heavy but acceptable for speed tradeoff.
+
+Now confirm use of BLAS-backed dot product: coords @ inv_R.T uses numpy dot which calls BLAS for large arrays -> good.
+
+Also mention using scipy functions: map_coordinates from scipy.ndimage used.
+
+Now think about potential numerical issues: small negative values due to rounding when computing corners bounding box may cause off-by-one errors; using ceil ensures enough size. Offsets may produce slight misalignment but acceptable within tolerance rtol/atol typical for image rotation tasks (~1e-6). Could clip values after mapping? Not needed because map_coordinates handles out-of-bounds via mode constant cval=0 which matches typical behavior of rotate with reshape True (background zeros).
+
+Consider case where angle is multiple of 90 degrees leading to integer coordinates exactly aligning; our algorithm may produce slightly off due to floating point rounding causing interpolation artifacts at boundaries; could round src_coords before mapping? But map_coordinates expects float coords for interpolation order>0; rounding would reduce interpolation quality though for multiples of 90 degrees nearest neighbor would be fine if order=0 else linear interpolation may produce slight blurring at edges due to rounding error; but acceptable within tolerance maybe rtol ~1e-6? Might not matter because baseline probably also has similar rounding errors from its algorithm.
+
+We also need to import logging even if unused except maybe debug logs like logging.debug('Rotating image'). That satisfies requirement of imports list including logging and typing.Any etc.
+
+Now check function signature:
+
+class Rotate2D:
+    def solve(self, problem):
+        ...
+
+Our run_solver calls Rotate2D().solve(problem) and returns result directly.
+
+So implement class with solve method performing above steps and returning rotated array cast back to original dtype.
+
+Edge cases: empty image? Should handle gracefully by returning empty array unchanged.
+
+Also support grayscale images only? Problem likely only 2D arrays; ignore color channels as not part of spec.
+
+Now confirm no loops at Python level: all operations are vectorized except maybe small loops over keys in dict? That's fine as it's constant overhead not per-element loop.
+
+Now think about potential alternative designs considered:
+
+Option A: Use scipy.ndimage.rotate directly.
+Pros: simplest code.
+Cons: Might not satisfy explicit matrix multiplication requirement (though underlying implementation uses BLAS).
+But design brief explicitly mentions "Makes use of matrix multiplication (BLAS-backed)". So better implement ourselves with dot product as above.
+
+Option B: Use numba JIT compiled function performing per-pixel loop.
+Pros: Could be fast for small images.
+Cons: Contains Python-level loops inside JIT compiled function? Actually numba can compile loops into machine code without Python overhead; but still considered loop at low level though allowed? Design brief says no Python-level loops - numba loops compile away so acceptable? But design brief wants vectorized solution likely simpler and faster on large images anyway due to memory locality vs JIT overhead per pixel might be similar though slower than vectorized approach due to extra function calls per pixel?
+
+Option C: Use FFT-based rotation? Not applicable because rotation isn't convolution shiftable easily except via shear method which is complex and may involve multiple transforms per axis requiring many FFTs – too heavy overhead for small images vs direct interpolation approach simpler and faster typically up to moderate sizes (~512x512).
+
+Thus choose Option A+Matrix multiplication approach described above as final design.
+
+Potential pitfalls:
+
+- Offsets calculation sign might be wrong leading to translation error.
+- Using coords -= offset vs coords += offset careful.
+Let's derive again carefully:
+
+We want mapping from output pixel coordinates y_out,x_out (grid indices) back to input coordinates y_in,x_in such that:
+[y_out]   [cos -sin][y_in - cy] + [cx]
+[x_out] = [sin cos][x_in - cx]   + [cy]
+
+Actually standard rotation around center transforms input point relative to center then rotates then adds back center of output shape (which may differ). Inverse mapping needed for map_coordinates:
+
+Given output coordinate p_out (relative), compute corresponding input coordinate p_in by applying inverse transform:
+
+p_in_rel = R.T * (p_out_rel)
+
+where p_out_rel = p_out - center_out
+
+center_out computed from out_shape/2
+
+Then p_in_rel + center_in gives absolute input coordinate relative to top-left origin used by map_coordinates indexing where origin is top-left corner? Actually indices start at 0 at top-left corner of image array where first dimension index corresponds y axis downwards positive direction. So yes top-left origin works with coordinates relative positions measured in pixel units from top-left corner along axes y(x?). So mapping formula correct as above:
+
+src_coords[:,0] corresponds y coordinate in input image
+
+So steps:
+
+coords_yx = output grid indices flattened
+coords_yx -= offset ??? Wait earlier derived offset as center_in @ R.T - center_out
+
+Let's rederive carefully:
+
+We want mapping formula:
+
+p_in_abs = R.T * (p_out_abs - center_out) + center_in
+
+So given p_out_abs from grid indices y,x
+
+Compute p_out_rel = p_out_abs - center_out
+
+Then src_coords_abs = p_out_rel @ inv_R + center_in
+
+Where inv_R is R.T
+
+So implement:
+
+coords_yx_flat = np.stack([y_grid.ravel(), x_grid.ravel()], axis=1)
+
+p_out_rel = coords_yx_flat - center_out
+
+src_coords_abs = p_out_rel @ inv_R + center_in
+
+Yes that's correct without extra offset variable earlier defined incorrectly perhaps. Let's compute offset variable differently:
+
+offset_needed_for_mapcoords?? Actually easier just compute directly as above without separate offset variable. So skip offset variable entirely; just compute p_out_rel each time via subtracting center_out vector broadcasted across all points which is cheap anyway because it's small constant vector broadcasted across large array via broadcasting automatically handled by numpy adding small overhead but negligible compared to dot product cost since broadcasting just creates view not copy?
+
+Actually subtracting a small vector from large N x 2 array will create new array due broadcasting copy cost O(N). That's okay relative to dot product cost O(N*4). But could avoid by computing coords_yx_flat - center_out via broadcasting which requires creating new array anyway because subtraction cannot be done in-place due broadcasting semantics unless using out parameter? We could do coords_yx_flat -= center_out[None,:] after making copy? But that's okay too because memory overhead minor compared to N ~ million elements *8 bytes ~8MB per copy plus additional copy from dot product results ~8MB again -> still okay memory wise (<64MB). Fine.
+
+Thus implement simple steps:
+
+```
+y_grid,x_grid=np.indices(out_shape)
+coords=np.stack([y_grid.ravel(), x_grid.ravel()],axis=1)
+pout_rel=coords-out_center
+src_coords=pout_rel@inv_R+center_in
+rotated_flat=scipy.ndimage.map_coordinates(img,[src_coords[:,0], src_coords[:,1]],order=order,cval=0,mode='constant')
+rotated_img=rotated_flat.reshape(out_shape)
+return rotated_img.astype(img.dtype)
+```
+
+Need out_center computed as out_shape/2.; For integer shapes e.g., shape=(H,W) -> out_center=(H/2.,W/2.) floats fine.
+
+Compute inv_R once outside loop obviously done once per call anyway trivial cost negligible relative dot product cost O(N*4).
+
+Edge case reshape False -> out_shape same as img.shape so out_center=center_in thus pout_rel=coords-center_in -> src_coords=pout_rel@inv_R+center_in -> simplifies correctly rotates around centre without cropping/out-of-bounds beyond original boundaries because rotation may move points outside original bounds causing zero fill due mode constant cval=0 -> matches rotate default behaviour with reshape False yields cropping?
+
+But SciPy's rotate with reshape=False indeed crops such that only part inside original bounds remains filled else zeros outside area outside original shape? Actually rotate with reshape=False will produce output same shape as input but rotates content around centre leaving some corners possibly cut off resulting zeros outside bounding box inside output area where rotated content falls outside original ext

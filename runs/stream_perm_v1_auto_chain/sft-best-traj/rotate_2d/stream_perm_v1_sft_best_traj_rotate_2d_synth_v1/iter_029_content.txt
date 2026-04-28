@@ -1,0 +1,140 @@
+We need to figure out what rotate_2d problem is. Likely given a set of points, we need to rotate them by some angle? Maybe the baseline Rotate2D class does something like rotating a 2D array or image? The reference implementation uses numpy and scipy.ndimage maybe for interpolation. We want to speed up.
+
+Let's think: rotate_2d might be rotating a 2D image or array by arbitrary angle, using bilinear interpolation. Baseline maybe uses scipy.ndimage.rotate which is slow due to overhead.
+
+We need to implement solve method that takes problem dict containing maybe 'image', 'angle', etc.
+
+We must use matrix multiplication BLAS-backed: maybe use affine transform via matrix multiplication on coordinates, then scatter back into grid using interpolation.
+
+No python loops, vectorised.
+
+Use scipy functions somewhere: maybe scipy.ndimage.map_coordinates for interpolation or scipy.linalg for matrix inversion.
+
+Ok design: In solve, get input shape (H,W), angle in degrees. Compute rotation matrix R = [[cos, -sin],[sin, cos]].
+
+Compute grid of coordinates: x,y meshgrid. Translate center to origin, apply R, translate back.
+
+Compute new coordinates array of shape (H*W,2). Use map_coordinates to sample original image at those coords. That returns rotated image.
+
+Vectorised: use np.meshgrid then flatten.
+
+Matrix multiplication: we can compute coords = np.vstack((x_flat,y_flat)) then coords_centered = coords - center; rotated = R @ coords_centered; new_coords = rotated + center.
+
+But that's still loops? No loops. Use np.dot.
+
+Use scipy.ndimage.map_coordinates with order=1 for bilinear.
+
+Return result as array.
+
+Edge cases: bounds_mode='constant', cval=0.
+
+Also handle dtype float32 vs float64; keep float64 for accuracy but maybe cast to float32 if needed for speed? But BLAS will be double anyway.
+
+We must import logging, random, typing.Any, Dict; numpy as np; scipy.ndimage
+
+Ok final design: run_solver(problem) returns Rotate2D().solve(problem). Implement Rotate2D with __init__ maybe nothing. solve method as above.
+
+We also might add small random jitter? random imported but not used? Could use random for seed? Not needed.
+
+But brief says imports include random; maybe used for debugging or generating test data? Not required but okay to import and not use.
+
+Need to ensure no python loops. map_coordinates internally loops but okay.
+
+Also we must ensure we use BLAS matrix multiplication: np.dot uses BLAS.
+
+Ok finalize design. Let's write chain-of-thought.
+We need to replace the slow reference `Rotate2D().solve(problem)` with something that still does the same rotation but runs faster.  
+The problem statement only says “rotate_2d”, so I’ll assume the input `problem` contains an image (a 2‑D NumPy array) and an angle in degrees. The goal is to return the rotated image with bilinear interpolation – that’s what `scipy.ndimage.rotate` normally does, but it’s a bit heavy because it constructs a full affine transformation and then samples pixel by pixel in Python loops internally.  
+
+First thought: just call `scipy.ndimage.rotate` directly and hope it’s fast enough.  
+But that defeats the purpose of the challenge – we’re supposed to make something noticeably faster and still use BLAS‑backed matrix ops. So I’ll roll my own affine transform routine that stays fully vectorised and relies on NumPy’s dot (BLAS) and `scipy.ndimage.map_coordinates` for interpolation.
+
+**Step 1 – build the rotation matrix**  
+```python
+theta = np.deg2rad(angle)
+R = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]])
+```
+That’s trivial and uses NumPy which calls BLAS when doing dot later on.
+
+**Step 2 – generate coordinate grids**  
+I’ll create a meshgrid of all pixel coordinates:
+```python
+h, w = img.shape
+x = np.arange(w)
+y = np.arange(h)
+X, Y = np.meshgrid(x, y)
+coords = np.vstack((X.ravel(), Y.ravel()))   # shape (2, N)
+```
+No Python loops here – just vectorised NumPy operations.
+
+**Step 3 – shift to centre, rotate, shift back**  
+The centre of rotation is `(w/2, h/2)`.  
+```python
+center = np.array([w / 2.0, h / 2.0])
+coords_centered = coords - center[:, None]          # broadcast subtract
+rotated = R @ coords_centered                       # BLAS dot
+new_coords = rotated + center[:, None]              # back to image frame
+```
+All three lines are pure NumPy; the `@` operator triggers a BLAS call under the hood because both operands are 2‑D arrays of float64. That satisfies the “matrix multiplication” requirement.
+
+**Step 4 – sample original image at new coordinates**  
+`scipy.ndimage.map_coordinates` can take an array of coordinates and interpolate:
+```python
+rotated_img_flat = map_coordinates(img,
+                                   [new_coords[1], new_coords[0]],
+                                   order=1,
+                                   mode='constant',
+                                   cval=0)
+rotated_img = rotated_img_flat.reshape(h, w)
+```
+Notice that `map_coordinates` expects coordinates in (row, col) order; that’s why I pass `[new_coords[1], new_coords[0]]`. The function is already highly optimised in C/Fortran so it will be fast even though it internally loops over pixels – but that loop is outside Python’s control so we satisfy “no Python-level loops”.
+
+**Edge cases & numerical safety**  
+- If the input image is not square we still handle it because we compute separate width and height.
+- The rotation matrix is orthogonal so no scaling issues.
+- We keep everything in float64; if memory becomes a concern we could cast to float32 before calling `map_coordinates`, but that would add an extra copy and probably not help.
+- We clip negative values after interpolation? Bilinear interpolation shouldn’t produce negatives unless the input had them; no clipping needed.
+- If angle is 0 or multiples of 360 we could shortcut by returning a copy of the original image quickly:
+```python
+if angle % 360 == 0:
+    return img.copy()
+```
+This avoids unnecessary work for trivial cases.
+
+**Imports**  
+The brief mentions importing `logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`. I’ll import all even if some aren’t used directly – they’re harmless and satisfy the requirement:
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage as ndimage
+```
+I’ll set up a simple logger just in case someone wants debug output:
+```python
+logger = logging.getLogger(__name__)
+```
+
+**Putting it together**  
+Define a small class `Rotate2D` with an empty constructor and a `solve` method implementing the steps above. The entry point `run_solver(problem)` simply instantiates the class and calls `solve`.
+
+Potential pitfalls I considered:
+
+- Using nested Python loops over pixels would kill speed; avoided by vectorising all coordinate transforms.
+- Using pure NumPy without any SciPy function would miss out on highly optimised interpolation; hence I keep `ndimage.map_coordinates`.
+- Forgetting that `map_coordinates` expects coordinates in (row, col) order; caught by swapping indices.
+- Not handling non‑square images could lead to wrong centre calculation; fixed by separate h,w.
+- Edge case where angle is exactly 90°, 180°, etc.; rotation matrix still works fine.
+- Precision loss from converting degrees to radians; negligible compared to overall operation cost.
+- Potential memory blow‑up if image is huge: all intermediate arrays are roughly size 3×h×w floats (~24 bytes per pixel), acceptable for typical sizes (<10 MB).
+
+With this design I’ve satisfied all constraints:
+
+- Uses only vectorised NumPy operations (no Python loops).
+- Calls BLAS via NumPy dot.
+- Uses a SciPy function (`map_coordinates`) somewhere.
+- Keeps imports exactly as requested.
+- Keeps code compact yet readable (≈9k characters including comments).
+
+OK, I think I have the design. Time to write it.

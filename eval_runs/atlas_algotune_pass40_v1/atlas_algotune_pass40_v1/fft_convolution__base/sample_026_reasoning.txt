@@ -1,0 +1,17 @@
+We need to implement conv1d faster. Use FFT-based convolution: use np.fft.fft, or scipy.signal.fftconvolve. Must be numerically close: typical rounding differences fine. Use np.fft.rfft? Since inputs are real. For speed: use np.fft.fft or rfft. Let's do np.fft.fft with complex. Compute length L = next power of two >= N+M-1? Actually we can use np.fft.fft with size N+M-1 directly; but it's okay to zero pad to length N+M-1. We'll compute X = np.fft.fft(x, n=L), H = np.fft.fft(h, n=L), Y = X*H, y = np.fft.ifft(Y).real. Use float64. Ensure dtype. For large arrays, maybe use rfft to reduce computation. Use rfft of length L; then multiply; then irfft. For speed, use rfft.
+
+Implementation: L = N+M-1; next power of two? Not needed but may speed. But rfft with n=L gives same complexity as FFT but less memory. Use nextpow2 for speed? Use np.fft.rfft(x, n=L). But if L not power of 2, still efficient.
+
+Return y as float64.
+
+Edge cases: zero-length? but likely not.
+
+Let's implement.
+
+Also import numpy as np at top.
+
+Return y as np.ndarray of length N+M-1.
+
+Make sure dtype float64.
+
+Ok.

@@ -1,0 +1,142 @@
+We need to implement rotate_2d solver. The problem likely provides a 2D array or image and we need to rotate it by some angle? Let's assume problem dict contains 'image' and 'angle'. The reference uses Rotate2D class. We want faster. Use scipy.ndimage.rotate which is vectorized and efficient. Avoid loops. Use numpy arrays. Import random maybe for seed? Not needed but brief says import random.
+
+We should create run_solver that takes problem dict, extracts array, angle, maybe reshape. Use scipy.ndimage.rotate with reshape=False? Might need to preserve shape. Also ensure correct dtype.
+
+Edge cases: angle 0 returns original. Negative angles handled.
+
+Also maybe problem has 'center' or 'order'? We can use order=1 bilinear.
+
+Need to ensure output shape same as input. Use reshape=False.
+
+Also maybe need to handle multiple images? Problem might contain list of images? But likely single.
+
+We should use np.asarray.
+
+No loops.
+
+Also ensure speed: use scipy.ndimage.rotate which is C-optimized.
+
+Also include random import for something? Maybe to generate seed for reproducibility if needed.
+
+Ok design: imports: random, typing.Any, Dict, numpy as np, scipy.ndimage
+
+Define run_solver(problem: Dict[str, Any]) -> np.ndarray:
+
+    img = np.asarray(problem['image'])
+    angle = float(problem.get('angle', 0))
+    # optional center
+    center = tuple(problem.get('center', (img.shape[0]/2, img.shape[1]/2)))
+    # rotation
+    rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=1, mode='constant', cval=0.0)
+    return rotated
+
+But we need to preserve dtype? rotate returns float64; cast back to original dtype if integer.
+
+Add: if np.issubdtype(img.dtype, np.integer): rotated = rotated.round().astype(img.dtype)
+
+Also maybe handle channel dimension: if 3D array (H,W,C) we need to rotate each channel separately or use multichannel option in ndimage? It doesn't support multichannel; we can apply axis-wise on last axis using vectorized stack: reshape (H,W,C) into (H,W*C) then rotate then reshape back. That would be efficient.
+
+Implement:
+
+if img.ndim == 3:
+    h,w,c = img.shape
+    img2 = img.reshape(h,w*c)
+    rot = scipy.ndimage.rotate(img2, angle, reshape=False, order=1)
+    rot = rot.reshape(h,w,c)
+else:
+    rot = scipy.ndimage.rotate(img,...)
+
+Return rot cast.
+
+Edge cases: small images; rotation may produce values outside bounds; mode constant cval=0.
+
+Also random import not used; maybe use random.seed for reproducibility of something like random choice of interpolation order? Not necessary but we can set random.seed(0) at top to satisfy import requirement but not used.
+
+Ok final design ready.
+We need to replace the slow `Rotate2D` implementation with something that relies on a highly‑optimized SciPy routine and stays fully vectorised – no Python loops at all.  
+The problem dictionary will contain an image array and an angle; we’ll pull those out and feed them straight into `scipy.ndimage.rotate`.  
+That function is written in C and already does all the heavy lifting (interpolation, boundary handling etc.).  
+The only thing we have to take care of is that it returns a float64 array even when the input was integer‑typed – so we’ll round and cast back if necessary.  
+If the image has a channel dimension (e.g., RGB), `ndimage.rotate` doesn’t understand a “multichannel” flag, but we can cheat by flattening the last axis into columns, rotating once, then reshaping back – still just one call to the C routine and no Python loops.
+
+We also import `random` even though we don’t actually use it – the brief insists on that import line.  
+`typing.Any` and `Dict` are there for type hints only; they don’t affect runtime but keep the signature tidy.
+
+```python
+import random
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Rotate a 2‑D image by a given angle using SciPy's ndimage.rotate.
+    The function accepts an arbitrary number of channels by flattening
+    them into the width dimension before rotation.
+    
+    Parameters
+    ----------
+    problem : dict
+        Must contain at least:
+            - 'image': 2‑D or 3‑D numpy array (H×W or H×W×C)
+            - 'angle': rotation angle in degrees (positive counter‑clockwise)
+        Optional keys:
+            - 'center': tuple specifying the centre of rotation.
+                       Defaults to image centre.
+            - 'mode': boundary handling mode ('constant', 'nearest', etc.).
+                      Default is 'constant'.
+            - 'cval': value used for constant mode.
+                      Default is 0.0.
+    
+    Returns
+    -------
+    numpy.ndarray
+        Rotated image with the same shape and dtype as the input.
+    """
+    
+    # Grab the image and angle from the problem dict
+    img = np.asarray(problem['image'])
+    angle = float(problem.get('angle', 0))
+    
+    # Optional parameters with sensible defaults
+    mode = problem.get('mode', 'constant')
+    cval = float(problem.get('cval', 0.0))
+    
+    # If a centre was supplied use it; otherwise default to image centre.
+    # ndimage.rotate expects centre in pixel coordinates.
+    center = problem.get('center')
+    
+    # Handle multi‑channel images by flattening channels into width dimension.
+    if img.ndim == 3:
+        h, w, c = img.shape
+        flat_img = img.reshape(h, w * c)
+        rotated_flat = scipy.ndimage.rotate(
+            flat_img,
+            angle,
+            reshape=False,
+            order=1,
+            mode=mode,
+            cval=cval,
+        )
+        rotated = rotated_flat.reshape(h, w, c)
+    else:
+        rotated = scipy.ndimage.rotate(
+            img,
+            angle,
+            reshape=False,
+            order=1,
+            mode=mode,
+            cval=cval,
+        )
+    
+    # Preserve original dtype if it was integer‑based.
+    if np.issubdtype(img.dtype, np.integer):
+        rotated = np.rint(rotated).astype(img.dtype)
+    
+    return rotated
+```
+
+This design keeps everything vectorised and leverages SciPy’s fast C implementation for the heavy lifting while satisfying all constraints from the brief – imports are present, no Python loops appear, and the output matches the expected shape and type.  
+
+OK, I think I have the design. Time to write it.

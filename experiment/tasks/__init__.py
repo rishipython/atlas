@@ -20,7 +20,12 @@ Families currently registered:
 - ``algotune``                 — upstream OpenEvolve AlgoTune problems
                                  (fft_convolution,
                                  convolve2d_full_fill,
-                                 affine_transform_2d)
+                                 affine_transform_2d,
+                                 fft_cmplx_scipy_fftpack,
+                                 lu_factorization,
+                                 polynomial_real,
+                                 eigenvectors_complex,
+                                 psd_cone_projection)
 - ``prompt_opt``               — prompt optimisation on GSM8K-style
                                  problems (faded; evaluator saturates)
 """

@@ -1,0 +1,23 @@
+We need to replace the naive implementation with a faster numerically stable implementation. We can simply use scipy.linalg.expm. But maybe the evaluator expects we use SciPy. But we can use SciPy's expm. We can just import scipy.linalg.expm and return that. But we must keep same signature. So implement:
+
+def expm_fast(A): return scipy.linalg.expm(A)
+
+We must import scipy.linalg. That should be fine.
+
+Alternatively, we can implement Pade approximation with scaling and squaring. But using scipy is simplest.
+
+We need to produce a single file with imports and function.
+
+We should also handle shape: ensure A is 2D square. We can just call expm. That returns float64. Should be fine.
+
+Thus code:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy.linalg.expm(A)
+
+Also we might want to cast to float64. expm returns float64.
+
+Thus final.

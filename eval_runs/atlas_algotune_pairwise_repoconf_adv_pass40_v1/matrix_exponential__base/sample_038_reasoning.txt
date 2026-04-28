@@ -1,0 +1,32 @@
+We need to implement expm_fast that is fast and accurate. We can use scipy.linalg.expm or implement scaling and squaring with Padé approximants. We can simply call scipy.linalg.expm as the fast version. But the problem might expect us to implement it ourselves. But we can use scipy. But we must return same result within tolerance. Using scipy.expm directly is easiest. But maybe they want an implementation. But referencing SciPy is fine. The reference is slow; we can just call scipy.linalg.expm. That will be fast and accurate. But maybe the test expects not to use external functions? It says you may import numpy, scipy, numba, etc. So using scipy.linalg.expm is fine. But we need to keep function signature and return same shape. So implement:
+
+from scipy.linalg import expm
+
+def expm_fast(A): return expm(A)
+
+But we must ensure dtype float64. SciPy returns float64. It's fine. But we need to ensure that A is square. Might be safe. Let's just do that.
+
+Alternatively, implement scaling and squaring with Pade approximant manually. But using scipy is simpler.
+
+However, there might be restrictions that the evaluator expects the algorithm to be faster but not rely on SciPy? But SciPy is allowed. It's fine.
+
+But there is a nuance: the reference implementation uses np.eye and loops. Our new implementation must be drop-in replacement and produce same results within tolerance. Using scipy.expm is fine.
+
+But we must also import numpy. We'll provide a file with imports and function.
+
+We also need to ensure that the function is fast. SciPy is fast.
+
+Let's produce file:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    return expm(A)
+
+But maybe the evaluator will compare with scipy.expm too? They will compute np.allclose with tolerance. So it's fine.
+
+Edge: If A is not square? Not needed.
+
+Let's produce final code.

@@ -1,0 +1,135 @@
+We need to figure out what shift_2d is. Likely a problem that shifts a 2D array? The reference uses Shift2D().solve(problem). We need to replace with faster implementation. We must use scipy functions, no Python loops, vectorised. Also import logging, typing.Any, Dict, numpy as np, scipy.ndimage. So likely we need to use ndimage.shift or similar.
+
+Let's think: Problem probably contains an image or 2D array and a shift vector. Maybe the solver returns shifted array.
+
+We need to design run_solver that takes problem dict and returns solution. Use scipy.ndimage.shift which handles subpixel shifts with interpolation.
+
+But we need to handle input format: problem might be dict with 'image' and 'shift'. Use numpy arrays. We must ensure dtype float64 for speed.
+
+Edge cases: negative shifts, large shifts beyond bounds. Use mode='nearest' or 'constant'.
+
+We need to avoid loops: just call shift once.
+
+Also maybe compute shift via Fourier shift theorem: use fftshift? But simpler: ndimage.shift is fine.
+
+But maybe we need to handle multiple images? The problem may contain multiple shapes? Let's inspect typical AlgoTune shift_2d tasks: I recall it's about aligning two images by shifting one relative to the other using cross-correlation. The solver might compute optimal shift that maximizes correlation between two arrays.
+
+Thus reference solution likely brute-force search over integer shifts. We can accelerate by computing cross-correlation via FFT convolution: use scipy.signal.correlate2d or fftconvolve.
+
+So design: compute cross-correlation of image A and B using FFT-based convolution; find argmax; apply shift to align B to A; return shifted B or shift vector.
+
+Use scipy.signal.fftconvolve for speed. But brief says import scipy.ndimage only, not signal. But we can import from scipy.ndimage? Actually brief says imports: logging; typing.Any, Dict; numpy as np; scipy.ndimage. Only these imports allowed? It didn't say cannot import others but design brief lists these imports. Might be okay to import more but keep minimal.
+
+Better use ndimage.shift for applying shift after computing offset.
+
+Compute cross-correlation via FFT: use np.fft.fftn on padded arrays, multiply conj(A) * B, inverse fft, find peak.
+
+Implementation steps:
+
+- Extract arrays A,B from problem dict.
+- Convert to float64.
+- Pad both to size sum dims -1 for linear convolution.
+- Compute FFTs.
+- Multiply conj(A_fft) * B_fft.
+- Inverse FFT => correlation map.
+- Find argmax indices.
+- Compute shift = (peak - (size-1))? Need offset mapping.
+- Apply shift via ndimage.shift on B with mode='constant', cval=0.
+- Return shifted B or maybe the shift vector? Problem likely expects shifted array as solution.
+
+Check edge cases: If images are same size but shifted by subpixel? Our method gives integer shift only if peak at integer grid. For subpixel, could refine via interpolation but not required.
+
+Also handle negative shifts correctly: ndimage.shift expects shift in order (shift_y, shift_x).
+
+Compute shift_y = peak_y - (B.shape[0]-1), etc.
+
+But careful: correlation map size = shapeA + shapeB -1. Peak index relative to zero-based indexing of that map. The true offset between A and B is (peak_index - (shapeB -1)). For example if B is shifted right by 3 relative to A, correlation peak at index shapeB-1+3? Actually if B = A shifted right by 3, then correlation peak at offset +3 in x direction meaning index shapeB-1+3 in correlation map. So offset = peak_index - (shapeB -1). That yields positive shift of B relative to A? Actually we want shift vector applied to B to align with A: subtract offset? Let's test small example mentally: A [0 1 0], B = A shifted right by 1 -> [0 0 1]. Correlation of A and B gives peak at lag +1 (i.e., index 1). shapeB-1=2? Wait shapes both 3; shapeB-1=2; peak index maybe 3? Actually correlation length = 5 (3+3-1). Peak at index 3? Let's compute quickly: cross-corr of [0 1 0] and [0 0 1] yields values at lags -2,-1,0,1,2. At lag +1 we get maximum at index corresponding to lag +1 => index lag+len(B)-1 = 1+2=3. So peak index=3; shapeB-1=2; offset=3-2=1 -> correct shift of B relative to A is +1 in x direction. So apply ndimage.shift(B, (-offset_y,-offset_x))? Wait we want shifted_B such that it aligns with A; since B is right-shifted by +1 relative to A, shifting it left by -1 will align it back. So new_shift = (-offset_y,-offset_x). So final result is ndimage.shift(B, (-offset[0], -offset[1])).
+
+Thus implement accordingly.
+
+Also ensure dtype float64 for accuracy.
+
+Return dictionary maybe containing 'shifted_image': result and 'shift': offset? Problem spec unknown; but reference solver likely returns the solution object of type ShiftSolution with attributes image and shift perhaps. But we can just return the shifted array as output because run_solver must match baseline output exactly else wrong answer.
+
+Need to check baseline output type: Shift2D().solve(problem) likely returns a numpy array of same shape as input image after shifting? Or returns a tuple?
+
+Assume baseline returns a numpy array of same shape as input image after applying computed optimal integer shift that maximizes correlation between two images provided in problem dict under keys 'src' and 'tgt'. We'll mimic that.
+
+So run_solver(problem): read problem['src'], problem['tgt']; compute optimal integer shift using FFT cross-correlation; apply ndimage.shift on tgt with computed negative offset; return result array.
+
+Also add logging info minimal.
+
+Edge cases: if shapes differ? Assume same size for simplicity.
+
+If correlation peak ambiguous due to symmetry? Use np.argmax on flattened array then unravel_index.
+
+Also consider memory usage: large images may cause memory issues but okay.
+
+Now produce final design outline:
+
+```
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    src = np.asarray(problem['src'], dtype=np.float64)
+    tgt = np.asarray(problem['tgt'], dtype=np.float64)
+    # compute linear cross-correlation via FFT
+    s_shape = src.shape
+    t_shape = tgt.shape
+    # pad sizes
+    pad_shape = tuple(s + t - 1 for s,t in zip(s_shape,t_shape))
+    src_fft = np.fft.rfftn(src, pad_shape)
+    tgt_fft = np.fft.rfftn(tgt, pad_shape)
+    corr = np.real(np.fft.irfftn(np.conj(src_fft) * tgt_fft, pad_shape))
+    # find peak
+    max_idx = np.unravel_index(np.argmax(corr), corr.shape)
+    # compute offset
+    offset_y = max_idx[0] - (t_shape[0]-1)
+    offset_x = max_idx[1] - (t_shape[1]-1)
+    # apply negative offset
+    shifted_tgt = scipy.ndimage.shift(tgt, shift=(-offset_y,-offset_x), order=3, mode='constant', cval=0)
+    return shifted_tgt
+```
+
+Need order parameter maybe cubic interpolation order=3 for quality but cost high; could use order=0 nearest neighbor for speed but less accurate; choose order=3 maybe fine.
+
+Add logging debug statements optional but minimal overhead.
+
+Make sure no loops used except maybe numpy functions internal loops fine.
+
+Edge cases: if max_idx equals center when no shift needed -> offset zero -> no change returned same as tgt after shifting zero -> should be same as original because shifting by zero returns copy but okay.
+
+Large images may cause memory blow due to padding double size; but that's unavoidable for linear conv via FFT unless using direct convolution but slower for large sizes due to O(n^2). But acceptable for moderate sizes typical in tasks (~512x512).
+
+Potential alternative design using scipy.signal.correlate2d which does direct convolution without padding overhead but slower for large images due to naive algorithm O(n^4)? Actually correlate2d uses direct algorithm O(n^4) not good for large images >256x256; so FFT better.
+
+Consider using np.real(np.multiply(...)) etc fine.
+
+Also consider using rfftn/irfftn for real input speeds up memory by half along last axis only if last axis real? rfftn reduces size along last axis only not full real transform optimization across all axes except last one? For multi-dim real transform use rfftn which computes full real-to-complex transform reducing dimension along last axis only; still okay though memory savings modest compared to full complex transform across all axes which would double memory anyway because complex numbers are double precision anyway... But rfftn reduces memory along last axis only so not huge difference but still fine.
+
+Alternatively use np.fft.fftn which uses complex transforms across all axes doubling memory each axis dimension times 2 => bigger than rfftn's half dimension along last axis only? Actually rfftn returns half-size along last axis because of symmetry; good enough if last axis is largest dimension maybe not huge benefit but okay.
+
+So keep rfftn/irfftn as above.
+
+Need also handle case where src or tgt have different shapes leading pad_shape accordingly computed pairwise sum minus one each dimension ensures correct linear conv size covering all possible lags including negative ones up to -(shape_tgt-1). Good.
+
+Now final check:
+
+Edge case where shapes are zero-dim arrays? Not relevant.
+
+Edge case where problem keys missing -> raise KeyError automatically ok.
+
+Return type matches baseline likely array shape same as tgt after shifting within bounds due mode constant zeros outside boundaries may reduce energy but okay baseline might also use same method?
+
+If baseline uses simple integer brute force search over possible shifts within [-max_shift,max_shift] limited maybe smaller range than full range; our method finds global optimum over all possible shifts including beyond boundaries resulting zeros outside domain which may reduce correlation magnitude vs baseline's limited search inside domain only maybe produce different optimum if best occurs outside range considered baseline didn't consider. But baseline probably considered all possible integer shifts within bounds defined by image dimensions such that overlap non-zero region fully inside both images else truncated overlap considered zero outside domain because they used convolution too maybe with zero padding too. So our method should match baseline exactly if both use zero padding outside boundaries implicitly through convolution approach like scipy.signal.correlate2d with mode='full' default zero padding outside boundaries too. So should match baseline results exactly except potential tie-breaking differences when multiple peaks equal magnitude leading different chosen offsets due argmax flatten ordering vs brute force scanning order differences might produce different chosen offsets when tie occurs. But ties unlikely unless symmetrical patterns like uniform arrays produce flat correlation everywhere leading argmax first element vs brute force scanning might pick different one e.g., zero shift vs other equal values difference small numeric noise though uniform arrays produce constant correlation values causing argmax picks first index always same as brute force scanning starting from origin scanning row-major may also pick first element depending on implementation details... Might be okay but risk small mismatch on pathological inputs like all zeros arrays where correlation all zeros -> argmax picks first element (0) while brute force might also pick first element depending on scanning order but could differ if scanning start from negative shifts then positive etc might pick something else like (-max_shift,...). But difference negligible testcases probably avoid such degenerate cases or accept any valid solution since objective is maximizing correlation maybe any equally good solution accepted?
+
+But requirement says return optimal solution exactly matching reference solver output presumably unique optimum else they might compare values within tolerance allowing any optimal solution? Hard guess but assume unique optimum typical random data ensures unique maximum location except ties improbable due floating rounding differences small enough not causing tie exactly equal within tolerance > machine epsilon leads slight differences but still unique maximum location determined by floating noise random pattern improbable equal maxima across many points unless symmetrical patterns like checkerboard rotated etc could produce symmetric peaks at two positions symmetrical around center producing identical value due symmetry exactly equal within floating precision because values computed exactly symmetrical due integer arithmetic results identical floating values because operations deterministic symmetric produce identical values exactly representable maybe yes e.g., two peaks equal amplitude due symmetrical pattern will produce identical numeric values exactly because operations involve sums of identical terms arranged sym sym so results identical within machine precision exactly equal floats thus tie occurs exact equality leading argmax picks first occurrence while brute force scanning may choose another based on loop ordering perhaps different orientation leading mismatch output difference possibly accepted if they compare arrays directly not just objective value? They likely compare entire solution image equality which would differ due different chosen offsets resulting different shifted image though both maximize objective equally but not equal arrays => test fails! So need deterministic tie-breaking consistent with baseline's tie-breaking logic used in reference solver when multiple offsets give same maximum correlation value (likely due integer search loop nested over y then x increasing). That would pick smallest y then smallest x among ties since loops iterate y outer then x inner starting from min_shift_y .. max_shift_y etc perhaps starting from lower bound inclusive increasing step 1 then inner loop over x increasing yields first found optimum lowest y then lowest x among ties when scanning ascending order of y then x starting from lower bound inclusive negative shifts first then positive etc depending on how they set ranges. Usually they'd iterate y from min_shift_y..max_shift_y inclusive ascending starting from negative minShift perhaps -maxShift etc giving lower y first then x ascending from minShiftX..maxShiftX ascending giving lower x first among ties with same y coordinate found earlier break early after found better > current best else continue scanning entire range updating only when > current best not >= . If tie > current best not triggered so earlier found remains chosen even if later tie occurs at higher y or x coordinates causing earlier chosen remains optimum consistent with scanning order ascending y then x starting from minShiftY lowest negative value etc . So tie-breaking chooses minimal y then minimal x among ties given ascending loops starting from lower bound inclusive ascending step 1 . Our argmax flatten will choose first occurrence in flattened array row-major order meaning index smallest overall row-major order i.e., smallest y first then smallest x among ties . That matches ascending loops starting from top-left corner of correlation map corresponding to negative shifts largest magnitude?? Wait mapping between correlation indices and shifts needs careful mapping of coordinate system orientation:
+
+Correlation map indices correspond lags ranging from -(shape_tgt-1) ... +(shape_src-1). Flatten row-major means smallest y corresponds topmost row i.e., most negative lag in y direction . That matches ascending loop over y starting from minShiftY (negative) upward . Good . Similarly smallest x corresponds leftmost column i.e., most negative lag in x direction . So argmax picks minimal y and minimal x among ties -> matches baseline tie-breaking if loops iterate over negative shifts first ascending . Good . So safe .
+
+Thus design stands fine .
+
+Now finalize chain-of-thought with detailed reasoning exploring alternatives etc until conclusion ready for handoff sentence "OK..."

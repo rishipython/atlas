@@ -1,0 +1,19 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm? But we cannot call directly? We can use SciPy's expm which is already fast. The problem likely expects using scipy.linalg.expm. But might want to implement scaling and squaring with Pade approximant. But easiest: from scipy.linalg import expm. So just call expm(A). But we must ensure dtype float64. We can just import and call.
+
+But note: the reference uses only numpy. But we can import SciPy. The instructions allow SciPy. So simplest: def expm_fast(A): from scipy.linalg import expm; return expm(A). Ensure dtype. That will be correct and fast.
+
+But maybe the evaluator expects not to import SciPy? It says may import SciPy. So fine.
+
+Thus implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But to be safe, ensure dtype float64. expm returns same dtype as input. So fine.
+
+Edge: A may be not float64? But signature says float64. We'll trust.
+
+Let's produce file.

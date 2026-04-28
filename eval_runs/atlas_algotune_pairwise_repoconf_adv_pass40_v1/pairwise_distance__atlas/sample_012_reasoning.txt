@@ -1,0 +1,25 @@
+We need to replace the body of pairwise_sq_dist with efficient implementation. Classic approach: use broadcasting or linear algebra: D = A + A^T - 2 X X^T where A = sum(X^2, axis=1). Actually D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+
+Compute X_norm = np.sum(X**2, axis=1). Then D = X_norm[:, None] + X_norm[None, :] - 2 * X @ X.T. Ensure dtype float64. Might need to clip small negative values due to numerical errors: np.maximum(D, 0). But not required if test uses np.allclose.
+
+Also need to ensure shape (N,N). Use np.add.outer for clarity.
+
+Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    D = norms[:, None] + norms[None, :] - 2.0 * X @ X.T
+    # due to floating point errors, small negative values may appear; clip to zero
+    np.maximum(D, 0, out=D)
+    return D
+
+Return shape (N,N). Complexity O(N^2 + ND). Should be fast.
+
+Edge cases: N=0? Then shapes zero. Should handle. If X shape (0, D). Then norms empty. D empty 0x0. Works.
+
+Return dtype float64.
+
+Ok.
+
+Let's produce final code.

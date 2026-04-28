@@ -1,0 +1,164 @@
+We need to rewrite the solve method to be faster. The baseline uses scipy.ndimage.affine_transform directly. That's already vectorised, but maybe overhead of Python call? Could use numba or JAX? But we need to keep same signature and return dict with transformed_image.
+
+Goal: speed up. We can consider using scipy's affine_transform but maybe with float32 to reduce memory and speed. Also could precompute matrix inverse? Actually scipy.ndimage.affine_transform expects matrix that maps output coordinates to input coordinates. The input matrix is 2x3; we need to feed its inverse? Wait: In scipy.ndimage.affine_transform, the matrix argument is the transformation matrix that maps output coordinates to input coordinates. So if the user gives a forward transform, we need to invert it? But baseline uses same matrix directly, so they assume it's correct.
+
+We can accelerate by using np.float32 image and matrix, set order=1 maybe? But must match reference output exactly within tolerance. So we can't change order; must keep order=3.
+
+Maybe use numba JIT on a custom interpolation implementation? That would be heavy.
+
+Alternatively, we can use SciPy's affine_transform but cast to float32 then back to float64 for output? Might not change speed much.
+
+Could use SciPy's ndimage.map_coordinates with precomputed grid coordinates, which might be faster? We can generate coordinate arrays once and then use map_coordinates with order=3. That might be faster because we avoid computing inverse inside each call?
+
+Let's think: For each pixel in output grid (same shape), we compute source coordinate via matrix multiplication: [x', y'] = M * [x, y, 1]. Then sample input image at those coordinates with cubic interpolation. We can vectorise this: create meshgrid of indices, add ones, multiply by matrix.T perhaps. Then use map_coordinates which accepts array of coordinates shape (ndim, N). That might be faster than affine_transform because it avoids per-pixel transform overhead.
+
+But we need to ensure mode='constant' padding 0. map_coordinates has mode param too.
+
+So design: convert image and matrix to numpy arrays dtype float32 or float64? Use float64 for accuracy. Use np.indices or np.meshgrid to get coordinates arrays shape (H,W). Flatten them to 1D arrays, stack into coords array shape (2,N). Compute transformed coords: coords_out = M @ [x,y,1] -> shape (2,N). Then call scipy.ndimage.map_coordinates(image, coords_out, order=3, mode='constant', cval=0.0). This returns flattened result; reshape back to H,W.
+
+This should be vectorised and maybe faster because fewer function calls inside loops.
+
+We need to test performance: For large images (say 512x512), this should be okay.
+
+Edge cases: image may not be square? Problem says n x n but could be rectangular; handle general shape.
+
+Also need to ensure dtype of output matches input type? Baseline returns same dtype as input? Probably float64.
+
+We also need to keep same tolerance in is_solution; our result should match within rtol=1e-5 atol=1e-7.
+
+Potential numerical differences due to different interpolation path: map_coordinates vs affine_transform might produce slightly different results due to how they compute inverse mapping and boundary handling. But likely close enough within tolerance. We should test quickly mentally: affine_transform uses the provided matrix as mapping from output coords to input coords; map_coordinates expects coordinates in input space; if we compute same mapping via M @ [x,y,1], that yields input coords; so should match exactly if both use same interpolation algorithm (Cubic spline). Should be identical.
+
+But there might be differences due to how they treat the origin offset; but both treat coordinates as pixel indices starting at 0 for top-left corner center of pixel? Both treat coordinates as continuous index positions relative to array center at integer indices. Should match.
+
+We must ensure that our mapping uses correct shape: For each output pixel at index (i,j), we compute input coordinate (x_in,y_in) = M @ [i,j,1]. Then sample image at that coordinate using cubic interpolation with constant mode.
+
+Thus implement:
+
+def solve(problem):
+    image = np.asarray(problem["image"], dtype=np.float64)
+    M = np.asarray(problem["matrix"], dtype=np.float64)
+    h,w = image.shape
+    # create grid
+    y_coords, x_coords = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+    ones = np.ones_like(x_coords)
+    # stack
+    out_coords = np.vstack((x_coords.ravel(), y_coords.ravel(), ones.ravel()))
+    # transform
+    in_coords = M @ out_coords
+    # sample
+    transformed_flat = scipy.ndimage.map_coordinates(image, in_coords, order=3, mode='constant', cval=0.0)
+    transformed_image = transformed_flat.reshape(h,w)
+    return {"transformed_image": transformed_image}
+
+Check shapes: out_coords shape (3,N). M shape (2x3). Multiply yields (2,N). Good.
+
+Potential performance improvement: precompute M transpose? Not needed.
+
+Also could use np.einsum for speed but not necessary.
+
+We should consider using float32 for intermediate arrays to reduce memory traffic; but then conversion back may lose precision slightly but within tolerance probably fine. But safer keep float64 as baseline uses default dtype float64 for image array from problem list likely floats; converting list -> numpy array default dtype float64 anyway.
+
+Thus implement as above.
+
+Edge cases: If image empty or shape zero -> return empty list? Our code will fail on meshgrid with zero dims. We can check if image.size==0 then return {"transformed_image": []}. Keep consistent with baseline error handling.
+
+Also ensure problem["matrix"] shape is 2x3; if not raise error gracefully.
+
+Also ensure dtype of output matches expected: baseline returns numpy array of floats maybe float64; our code returns float64 too.
+
+Thus final design: import numpy as np; import scipy.ndimage; from typing import Dict, Any
+
+Define class AffineTransform2D with __init__ setting order=3 mode="constant". solve method implements above logic with error handling similar baseline but simpler.
+
+No loops except vectorised operations.
+
+Return dict accordingly.
+
+Also keep is_solution unchanged maybe unchanged or minimal changes?
+
+But requirement only modify solve method; is_solution remains same referencing self.order etc. It will still compare our output with reference computed by scipy.affine_transform which may produce slightly different due to algorithm differences but within tolerance hopefully passes tests.
+
+Potential risk: difference > tolerance due to small rounding differences between map_coordinates vs affine_transform's internal implementation of cubic spline (maybe different coefficients). Might exceed atol 1e-7 or rtol 1e-5? Probably safe since difference small (<1e-6). Might need adjust tolerance but cannot modify is_solution as it's part of reference code not changed by us? Wait is_solution belongs inside class AffineTransform2D defined earlier; we can modify it if needed because it's part of solver file. The task says "replace its body with a faster implementation" but not restrict modifying other methods. We could leave is_solution unchanged or adapt if needed for correctness. But easier keep unchanged expecting our output matches within tolerance given algorithm equivalence.
+
+However I'm concerned about slight differences due to boundary handling between affine_transform and map_coordinates when using mode='constant'. Both use constant mode same cval=0.0 by default; so fine.
+
+Now think about performance: generating meshgrid of size N may allocate large arrays (~N*8 bytes each) plus ones ~N bytes etc. For large images like 2048x2048 (~4M) that's ~32MB per array times few arrays ~100MB - okay maybe high but acceptable. Could reduce memory by computing coordinates on the fly using vectorized operations without storing full grids? We could compute x_coords and y_coords via broadcasting without storing full grid separately: e.g., x_coords = np.arange(w)[None,:] repeated across h rows via broadcasting when flattening? Actually we can compute flattened indices via np.arange(N) then convert back using divmod or reshape operations without storing two full grids simultaneously:
+
+N = h*w
+indices = np.arange(N)
+y_flat = indices // w
+x_flat = indices % w
+
+Then stack these plus ones into coords array shape (3,N). This uses only one int array size N and two int arrays derived from it via arithmetic operations which produce new arrays though still size N each. But still memory similar but fewer large arrays simultaneously maybe smaller overhead than meshgrid which creates two separate arrays of size N each anyway plus ones array size N etc similar count though meshgrid may create two separate arrays anyway plus ones etc similar memory usage anyway.
+
+Probably fine either way.
+
+Let's adopt simpler approach with meshgrid for readability though performance difference negligible relative overhead of map_coordinates call itself which dominates time anyway.
+
+Now consider potential optimization: Use np.linalg.inv(M) then call affine_transform directly might be faster because SciPy's implementation may have optimizations internally like using BLAS for matrix multiplication on grid generation etc. But our custom approach also vectorises entire operation similarly but may have less overhead than calling internal loops inside affine_transform for each pixel individually? Actually SciPy's affine_transform internally computes inverse mapping per pixel using vectorised operations too I think; but not sure if it's slower due to extra steps like computing offset etc. Our approach might still be comparable or faster due to fewer function calls overhead and less intermediate memory usage maybe similar though both allocate intermediate coordinate arrays anyway.
+
+Given time constraints let's stick with map_coordinates approach as described earlier because it's straightforward and likely fast enough given no loops and uses compiled C routines for interpolation as well.
+
+Now think about numeric precision issues: Inverse mapping may produce negative coordinates outside bounds leading to constant padding zeros correctly handled by map_coordinates mode='constant'.
+
+Also consider potential integer overflow when computing y_flat,y_x_flat for huge images >2^31 - 1 indices causing overflow in int32 default dtype of arange maybe int64 on 64-bit python default int type used by numpy is int64 so fine even for huge images up to billions entries memory wise unrealistic anyway.
+
+Edge case empty image: If h==0 or w==0 return empty list else proceed normally returning zeros shape accordingly perhaps all zeros due to constant padding outside bounds leads all zeros anyway; map_coordinates would produce zeros too since all out-of-bounds coordinates produce cval zero value -> fine even if empty dims produce empty array no issue though meshgrid fails on zero dimension? Let's check: np.meshgrid(np.arange(0), ...) returns array shape (0,) etc okay no error I think fine. So we don't need special case unless want early return for speed small images maybe fine anyway.
+
+But there might be problem when h==0 or w==0 causing out_coords shape (3,N) where N=0 -> map_coordinates returns empty array fine reshape(0,w) yields empty 2D array shape (h,w) which matches input shape maybe zero dims okay else baseline returns [] maybe mismatch expectation from is_solution expecting shape equality etc but empty array considered finite etc ok passes maybe yes because .size==0 will cause .reshape(0,w) -> error because w>0 cannot reshape 0 elements into non-zero dims -> would raise ValueError. So better handle zero dims case separately returning empty list like baseline did when exception occurs earlier?
+
+Thus add check:
+
+if h==0 or w==0:
+    return {"transformed_image": []}
+
+Because baseline would produce empty list on failure scenario e.g., invalid transformation leading exception in affine_transform then catch and return []. So mimic that behavior for consistency with validation logic expecting empty list possible solution only if reference also fails/produces empty result else considered wrong solution causing error logs earlier referencing failure case detection logic that compares shapes etc expecting same length maybe mismatch triggers error logs earlier 'Output shape mismatch' etc causing failure incorrectly if our method returns [] while reference returns valid result causing false negative in tests where solution expected correct transformation but our method returned []. That would fail tests incorrectly! So better not handle zero dims specially unless necessary for actual data scenario where image could legitimately have zero dimensions leading valid result being all zeros perhaps expected []? The problem statement says n x n array of floats typical positive n so ignore zero dimension case likely never used in tests except potential edge-case invalid inputs where reference fails too leading both solutions empty acceptable per validation logic earlier 'if proposed_list == [] ... reference solver also fails/produces empty result accept'. But reference solver will fail only if something wrong like invalid matrix dimension or something else leading exception thrown inside affine_transform raising ValueError perhaps caught by try except returning []. In such scenario our method would also raise exception maybe due to invalid dimensions leading ValueError from matmul etc catch and return {}?? Actually we don't catch exceptions currently except final generic try except returning {} raising e again causing failure test expecting {}??? Wait baseline solve wraps everything in try except catching any exception e logging error then raise e again after returning {} ??? Actually baseline code:
+
+try:
+   ...
+   transformed_image = scipy.ndimage.affine_transform(...)
+except Exception as e:
+   logging.error(...)
+   return {"transformed_image": []}
+...
+return solution
+
+So if exception occurs during transform it returns {}?? No it returns {"transformed_image": []}. Good.
+So our solve should mimic this behavior: wrap transform in try/except returning {"transformed_image": []} on any exception else return dict with transformed_image array.
+
+Thus implement try/except around whole block including coordinate generation etc catching any Exception and returning []. That covers zero-dim case automatically raising ValueError from reshape perhaps caught and returned []. Good.
+
+Now finalize design accordingly:
+
+class AffineTransform2D:
+   def __init__(self): self.order=3 self.mode="constant"
+
+   def solve(self, problem):
+        try:
+            img = np.asarray(problem["image"], dtype=np.float64)
+            M = np.asarray(problem["matrix"], dtype=np.float64)
+            h,w = img.shape
+            # generate grid
+            y,x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+            ones = np.ones_like(x)
+            out_coords = np.vstack((x.ravel(), y.ravel(), ones.ravel()))
+            in_coords = M @ out_coords
+            flat_res = scipy.ndimage.map_coordinates(img, in_coords,
+                                                     order=self.order,
+                                                     mode=self.mode,
+                                                     cval=0.0)
+            res_img = flat_res.reshape(h,w)
+            return {"transformed_image": res_img}
+        except Exception:
+            logging.error("Failed during transform")
+            return {"transformed_image": []}
+
+This meets design brief no loops aside from vectorised ops inside numpy functions which are compiled C loops internally – good no Python-level loops aside from building small arrays via arange which are internal C loops too but not explicit Python loops – acceptable per brief "no Python-level loops".
+
+Now check imports needed: numpy as np; scipy.ndimage; logging already imported earlier; typing Dict Any optional not used but okay import anyway per brief mention "from typing import Dict, Any" used maybe for type hints though not required but include as brief says imports include typing Dict Any . We'll include them at top though they are unused now maybe linter complains but fine compile wise no issue since unused imports allowed unless strict warnings not relevant here.
+
+Also ensure run_solver function uses solver.solve(problem).
+
+Now final step check edge cases:
+
+- Non-square images handled

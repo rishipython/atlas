@@ -1,0 +1,101 @@
+We need to rewrite the solver so it runs fast but still returns the correct solution for the “shift_2d” task.  
+The original reference implementation is slow because it probably does a brute‑force search over all possible integer shifts or uses Python loops to compute a cross‑correlation matrix element‑by‑element.  
+To get a speedup we should look at the most heavily‑used numerical routines in NumPy/Scipy that can do the heavy lifting in C/C++ under the hood and expose a clean Python API.
+
+First thought: just call `scipy.ndimage.shift` on the second image with a given offset supplied by the caller.  
+But the problem description hints at *finding* the optimal shift rather than applying a known one – otherwise there would be no algorithmic challenge at all.  
+So we likely have two 2‑D arrays `A` and `B` and we need to determine how much `B` must be translated (in both axes) so that it best matches `A`.  
+That’s essentially an image registration problem solved by cross‑correlation or phase correlation in Fourier space – far faster than any exhaustive search in spatial domain.
+
+Let’s sketch out the algorithm:
+
+1. **Cross‑correlation via FFT** – compute `C = ifft2(fft(A) * conj(fft(B)))`.  
+   The peak of `C` gives us the displacement that aligns `B` with `A`.  
+   This is O(N log N) and vectorised; no Python loops at all.
+2. **Determine integer shift** – locate the index of maximum value in `C`, subtract half of each dimension to get signed offsets `(dy, dx)`.  
+   For even dimensions we have to decide whether to round up or down; usually subtracting `shape//2` works fine because the correlation is symmetric.
+3. **Apply shift** – use `scipy.ndimage.shift` (or `scipy.ndimage.affine_transform`) with order 1 (linear interpolation) or higher if needed, mode='constant', cval=0 so that pixels moved out of bounds are filled with zeros.
+4. **Return** – output a dictionary containing the computed shift tuple and the shifted version of `B`.
+
+Potential pitfalls:
+
+- **FFT size** – if we use `np.fft.rfftn`, we get real‑to‑complex transforms which are slightly faster for real inputs but then we must use `irfftn` for inverse; easier is just use full complex transforms (`fft2`, `ifft2`) because our arrays are typically not huge.
+- **Data type** – perform FFT in float64 for numerical stability even if inputs are float32; cast back at the end.
+- **Edge handling** – `ndimage.shift` uses spline interpolation (`order`). Using order=1 keeps it fast while still giving decent quality; higher orders add overhead without much benefit for this simple alignment task.
+- **Negative shifts** – careful with sign convention: if peak is at index `(p_y, p_x)`, then shifting B by `(p_y - h//2, p_x - w//2)` aligns it with A; but when calling `ndimage.shift`, the sign is reversed because positive shift moves array down/right.
+- **Large shifts** – if the true offset exceeds half of each dimension, our method will wrap around due to circular correlation inherent in FFTs; however typical use cases keep shifts small relative to image size.
+- **Performance budget** – pure NumPy + SciPy calls are already highly optimised; adding Numba or JAX would add compilation overhead that may outweigh benefits unless we were doing iterative refinement which we’re not.
+
+Alternative designs considered:
+
+- **Direct spatial convolution** (`scipy.signal.correlate2d`) – still O(N^2), slower than FFT for large arrays; also requires explicit padding which adds overhead.
+- **Numba JIT loop over all possible shifts** – would avoid Python overhead but still quadratic in number of candidate shifts; not competitive with FFT.
+- **Using PyTorch or JAX** – could leverage GPU acceleration but introduces dependency on CUDA drivers and increases code complexity; unnecessary for typical CPU workloads here.
+- **Custom Cython kernel** – could hand‑write convolution but again overkill when SciPy already provides highly optimised routines.
+
+Thus settling on an FFT‑based cross‑correlation followed by SciPy’s `ndimage.shift` seems like the cleanest, fastest path that satisfies all constraints (no Python loops, vectorised, uses SciPy).
+
+Implementation details:
+
+```python
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def _compute_shift(a: np.ndarray, b: np.ndarray) -> tuple[int, int]:
+    # Ensure float64 for accuracy
+    fa = np.fft.rfftn(a.astype(np.float64))
+    fb = np.fft.rfftn(b.astype(np.float64))
+    corr = np.fft.irfftn(fa.conj() * fb)
+    # Locate peak
+    max_idx = np.unravel_index(np.argmax(corr), corr.shape)
+    # Convert to signed offsets
+    dy = max_idx[0] - a.shape[0] // 2
+    dx = max_idx[1] - a.shape[1] // 2
+    return dy, dx
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Expected problem format:
+        {
+            'a': 2D numpy array,
+            'b': 2D numpy array,
+        }
+    Returns:
+        {
+            'shift': (dy, dx),
+            'aligned': shifted version of b,
+        }
+    """
+    a = problem['a']
+    b = problem['b']
+    dy, dx = _compute_shift(a, b)
+    # ndimage.shift expects shifts as (shift_y, shift_x); sign convention reversed
+    aligned_b = scipy.ndimage.shift(
+        b,
+        shift=(-dy, -dx),
+        order=1,
+        mode='constant',
+        cval=0,
+        prefilter=False,
+    )
+    return {'shift': (dy, dx), 'aligned': aligned_b}
+```
+
+This skeleton respects all constraints:
+
+- Only imports from standard library plus NumPy and SciPy (`scipy.ndimage`).
+- No Python‑level loops—everything vectorised via NumPy/FFT.
+- Uses SciPy functions (`rfftn`, `irfftn`, `ndimage.shift`) as required.
+- Keeps code short enough (~8600 characters including comments) while being clear and maintainable.
+
+Edge cases checked:
+
+- If either input is empty or has zero dimensions → will raise ValueError from NumPy/FFT automatically.
+- If shapes differ → our implementation assumes same shape; could add assertion or reshape logic if needed.
+- Very small arrays (<3x3) still work because FFT handles them correctly though performance gains are negligible.
+- Negative or large shifts are handled naturally by circular correlation; if wraparound occurs this method still returns a consistent offset within ±shape/2 range.
+
+OK, I think I have the design. Time to write it.

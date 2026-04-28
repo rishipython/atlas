@@ -1,0 +1,19 @@
+We need to implement fast convolution. Use numpy. Use numpy.fft. For real input, we can use np.fft.fft and ifft. For 1D arrays, we need length at least N+M-1. Compute next power of two? But can just use np.fft.fft with length L = N+M-1. That is fine but may be less efficient due to zero padding. For large arrays, use np.fft.fftpack? Actually numpy.fft is fine. Use np.fft.rfft? But since real input, we can use rfft for speed. But implement simple.
+
+Implementation: L = N + M - 1; use np.fft.fft(x, L) * np.fft.fft(h, L); np.real(ifft). That's the convolution. Ensure dtype float64. Use np.fft.ifft. Then take real part.
+
+Edge cases: N or M could be 0? But arrays length >0? Might be. If zero-length arrays, convolution result length? For empty input? np.convolve handles. Let's just rely on numpy's behavior: if either is empty, result empty. Our implementation should produce empty array. If N==0 or M==0: return empty array of dtype float64.
+
+Also ensure using float64.
+
+Implement conv1d accordingly. Should match np.convolve behavior exactly for float64. Use np.fft.fft and ifft. But for small arrays, maybe slower; but it's fine.
+
+Let's code. Use np.fft.fft, np.fft.ifft. Use dtype np.complex128. Then take real part.
+
+Also check rounding errors: np.allclose will allow tolerance. Real part should be fine.
+
+Let's produce final code.
+
+Also import numpy as np.
+
+We'll implement conv1d function. Done.

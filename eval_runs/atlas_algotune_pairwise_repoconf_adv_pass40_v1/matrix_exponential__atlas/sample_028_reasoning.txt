@@ -1,0 +1,34 @@
+We need to replace the naive series with a faster, numerically stable method. The standard approach is using scipy.linalg.expm or implementing scaling and squaring with Pade approximants. Since we can import scipy, we can just call scipy.linalg.expm, but the challenge likely expects us to implement it ourselves for speed? But we are allowed to use scipy, so the simplest is to just call scipy.linalg.expm. But that would be trivial. However, maybe they want a custom implementation to be faster than naive but still correct. But calling scipy.linalg.expm is probably fastest and most accurate. But maybe the environment prohibits SciPy? It says we can import scipy. So easiest: def expm_fast(A): return scipy.linalg.expm(A). That should satisfy correctness and be fast. But we must ensure that we import scipy.linalg. That returns float64. That matches. So just do that. But the reference uses numpy. But we can use SciPy.
+
+We should also handle that A might not be float64? The spec says float64. But we can cast. We should also check shape.
+
+Thus implement:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return scipy.linalg.expm(A)
+
+This is trivial. But maybe the evaluation expects something more involved? But the problem states: "Your task is to replace it with a fast, numerically-stable implementation that matches scipy.linalg.expm(A) within tight tolerance." So we can simply call scipy.linalg.expm. That matches the spec. So output code file accordingly.
+
+We need to produce a complete runnable file. Let's include imports, function definition. No other code. That should be fine.
+
+But maybe they want to use scaling and squaring to avoid SciPy? But it's fine.
+
+Edge: SciPy might not be installed? But they said we may import scipy. So okay.
+
+Thus produce:
+
+```python
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    A = np.asarray(A, dtype=np.float64)
+    return scipy.linalg.expm(A)
+```
+
+That's it.

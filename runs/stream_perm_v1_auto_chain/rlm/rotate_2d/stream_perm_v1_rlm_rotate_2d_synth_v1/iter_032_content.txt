@@ -1,0 +1,207 @@
+We need to speed up rotate_2d. Let's think.
+
+We have problem input format unknown. Likely problem dict contains image or array? Let's guess. The baseline uses Rotate2D class solve method. We need to implement run_solver that calls our fast solver.
+
+We must use scipy functions somewhere. Maybe use scipy.ndimage.rotate for rotation. That is vectorized and efficient.
+
+No Python-level loops: so we can't loop over images; but we can process batch if needed.
+
+We need to read problem input format: maybe problem dict has 'image' key with numpy array, 'angle' key, maybe 'axes' etc.
+
+Let's assume problem is a dict with 'data': numpy array of shape (H,W) or (N,H,W). We can just call scipy.ndimage.rotate on each slice if 3D.
+
+But we can't loop over N slices. Could reshape to 2D by stacking? But rotation expects 2D array; for 3D we can apply axis param? Actually scipy.ndimage.rotate can rotate multi-dimensional arrays around specified axes, but it will rotate entire array. For each image separately, we might need to loop.
+
+But requirement: no Python-level loops. So maybe problem only contains single image.
+
+Thus implement:
+
+def run_solver(problem):
+    img = problem['image'] # np.ndarray
+    angle = problem.get('angle', 0)
+    # Use scipy.ndimage.rotate
+    rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=1, mode='constant', cval=0.0)
+    return {'rotated': rotated}
+
+But baseline may expect specific output format. We need to check baseline code? Not given. But likely returns rotated image as numpy array.
+
+Also import random? Not needed but brief says import random. Maybe used for random seed? Could set random.seed(0) for reproducibility? Might not be necessary.
+
+Need to keep function name run_solver and signature (problem). So final file should include imports and function.
+
+Also need to ensure no loops; just vectorized call.
+
+Edge cases: angle 0 -> return original; negative angles; large angles >360; SciPy handles modulo? It rotates accordingly.
+
+Potential numeric issues: interpolation order 1 (bilinear) maybe fine; could use order=3 for smoother but slower.
+
+Also we might want to cast dtype float32 vs float64? Use same dtype as input.
+
+We might want to use scipy.ndimage.affine_transform for more control but rotate is fine.
+
+Let's think about alternative designs:
+
+1) Use numpy rotation matrix and apply via grid mapping with np.meshgrid and interpolation manually: too complex, slower than SciPy's implementation which uses optimized C code.
+
+2) Use JAX jit: would require converting array to jax.numpy and jax.image.rotate (not available). JAX's image rotation not built-in; could implement custom but heavy.
+
+3) Use numba: write custom rotation kernel with loops compiled by numba; still loops inside numba but not Python loops; could be fast but more code complexity.
+
+Given requirement to use scipy somewhere, simplest is using scipy.ndimage.rotate.
+
+We also need to consider memory usage: if image large, rotate may allocate new array; that's fine.
+
+Edge cases: if image is 1D or 0D -> error; we can check shape length >1 else return as is.
+
+Also ensure that output dtype matches input dtype; SciPy returns same dtype as input unless order changes? For order>0 may cast to float64 if input int. We can cast back using astype(original.dtype).
+
+So final code:
+
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    # Ensure angle numeric
+    angle = float(angle)
+    # Use SciPy rotate
+    rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=1,
+                                   mode='constant', cval=0.0)
+    # cast back if needed
+    if rotated.dtype != img.dtype:
+        rotated = rotated.astype(img.dtype)
+    return {'rotated': rotated}
+
+But we need to keep same function signature and maybe return same type as baseline expects. Baseline may return numpy array directly not dict? The reference says def run_solver(problem): return Rotate2D().solve(problem). So solve probably returns something like np.ndarray or list etc. So maybe better return the rotated array directly rather than dict.
+
+Let's assume baseline solve returns np.ndarray of same shape as input image after rotation. So we should just return rotated array.
+
+Thus:
+
+def run_solver(problem):
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    rotated = scipy.ndimage.rotate(img, angle,...)
+    return rotated
+
+No loops needed.
+
+But the brief says imports include random even if unused. We can add random.seed(42) at top for reproducibility though not used elsewhere.
+
+Ok final design ready. Let's produce chain-of-thought exploring alternatives etc until final design chosen.
+We need to rewrite the `solve` logic so that it runs fast and still passes the tests that compare against the reference `Rotate2D` implementation.  
+The reference code probably does a straightforward NumPy‑based rotation with a loop over each pixel or uses a naïve interpolation routine – that’s slow in pure Python and in C when called element‑wise in a loop.  
+
+The task says “Use **scipy** functions somewhere in the solution” and “No Python‑level loops”.  
+So the natural candidate is `scipy.ndimage.rotate`. It’s written in C/Cython, handles all the heavy lifting (interpolation, boundary handling), and is already vectorised – you give it an array and it returns a new one without any explicit Python iteration.  
+
+Let me sketch a few options before settling on this:
+
+---
+
+### Option A – Manual NumPy rotation
+
+I could build a grid of coordinates with `np.meshgrid`, apply the rotation matrix manually (`x' = x cosθ - y sinθ`, etc.), then interpolate using `scipy.interpolate.RegularGridInterpolator` or manual bilinear interpolation with vectorised ops.  
+Pros: full control over interpolation order, no external dependencies beyond SciPy anyway.
+Cons: Still requires constructing coordinate arrays that are huge for large images – memory heavy and slower than the built‑in routine which is heavily optimised in Cython/BLAS paths.  
+
+### Option B – Numba JIT
+
+Write a small kernel that loops over pixels in a compiled function (`@numba.njit`). No Python loops at runtime.
+Pros: Could be faster for very large images because it avoids overhead of calling into C libraries per pixel.
+Cons: Still needs explicit looping logic inside the JIT function – not truly “no loops” from the perspective of the requirement (though it's hidden). Also Numba’s interpolation routines aren’t as battle‑tested as SciPy’s `rotate`.  
+
+### Option C – JAX
+
+Use JAX’s `jax.numpy` and write a custom rotation with `jax.vmap` over pixels or use `jax.image.rotate` if available (it isn’t part of core JAX yet).  
+Pros: JIT compilation gives speedups.
+Cons: Requires converting data between NumPy and JAX arrays; overhead of setting up JAX context; not guaranteed faster than SciPy's highly optimised implementation for this simple operation.  
+
+### Option D – Direct SciPy call
+
+Just call `scipy.ndimage.rotate`.  
+Pros: Zero Python loops, one line of code, fully vectorised, already battle‑tested.
+Cons: Might change dtype from integer inputs to float64 because interpolation introduces non‑integer values – but we can cast back afterwards if needed.
+
+Given the constraints (“No Python-level loops”, “Uses **scipy** functions somewhere”, “Final solution ~6339 characters”), Option D seems best. It satisfies all requirements with minimal code and maximum speed.
+
+---
+
+#### Handling edge cases
+
+- **Angle normalization** – SciPy handles any float angle; negative angles work fine.
+- **Input shape** – If someone passes a 1‑D array or scalar by mistake, `rotate` will raise an error; I’ll guard against that by simply returning the input unchanged when its dimensionality is < 2.
+- **Data type preservation** – If the input is integer typed (e.g., uint8), rotating with bilinear interpolation will produce floats (`float64`). I’ll cast back to the original dtype so that downstream code sees exactly what it expects.
+- **Performance** – Setting `reshape=False` keeps output size equal to input size which avoids extra memory allocation for padding.
+- **Interpolation order** – Order 1 (bilinear) gives a good trade‑off between quality and speed; higher orders would slow things down without much perceptible gain for typical test data.
+- **Boundary handling** – Use `mode='constant'` with `cval=0` so pixels outside are zeroed out – matches typical behaviour of many rotation utilities.
+
+---
+
+#### Final design sketch
+
+```python
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+# Seed just in case some downstream logic relies on randomness
+random.seed(42)
+
+def run_solver(problem):
+    """
+    Fast rotation solver using scipy.ndimage.rotate.
+    
+    Parameters
+    ----------
+    problem : dict
+        Expected keys:
+            'image' : np.ndarray  # 2-D or higher dimensional image data
+            'angle' : float      # Rotation angle in degrees
+    
+    Returns
+    -------
+    np.ndarray
+        Rotated image data with same shape as input.
+    """
+    img = problem['image']
+    
+    # Guard against degenerate shapes – nothing to rotate
+    if img.ndim < 2:
+        return img
+    
+    angle = float(problem.get('angle', 0))
+    
+    # Perform rotation
+    rotated = scipy.ndimage.rotate(
+        img,
+        angle,
+        reshape=False,
+        order=1,
+        mode='constant',
+        cval=0.0,
+        prefilter=False   # skip prefiltering for speed when possible
+    )
+    
+    # Preserve original dtype if possible
+    if rotated.dtype != img.dtype:
+        try:
+            rotated = rotated.astype(img.dtype)
+        except Exception:
+            pass
+    
+    return rotated
+```
+
+This satisfies every bullet point from the brief:
+
+- Imports include `random`, typing helpers, NumPy and SciPy.
+- Uses a SciPy function (`scipy.ndimage.rotate`) inside the solution.
+- No explicit Python loops.
+- Code stays well below ~6339 characters while being fully vectorised and fast due to underlying C/Cython implementation of `rotate`.
+
+OK, I think I have the design. Time to write it.

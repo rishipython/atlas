@@ -1,0 +1,40 @@
+We need to produce faster implementation of 1-D convolution. The reference uses direct loops. We can use numpy's FFT or scipy.signal.fftconvolve. But need to ensure numerical close. Use np.fft.fft? For real signals, we can use np.fft.rfft? But easiest: use scipy.signal.fftconvolve. But we may not want external dependency? Problem says may import scipy. Let's use scipy.signal.fftconvolve which is fast. But we need to ensure output dtype float64. Use np.asarray.
+
+Also we can implement with numpy's fft: next power of two length L = N + M - 1; pad to next power of two for speed? But we can just use np.fft.fft on length L. But np.fft.fft length default is length of array; we can pass n=L. Implementation:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    # compute FFT of padded arrays
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X * H, n=L)
+    return y
+
+But rfft returns real output; we need to cast to float64. Should be fine.
+
+Potential numeric differences: using rfft may produce small errors but within tolerance.
+
+Also ensure x and h are 1-D float64 arrays. Use np.asarray(x, dtype=np.float64). So final:
+
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64, order='C')
+    h = np.asarray(h, dtype=np.float64, order='C')
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X * H, n=L)
+    return y
+
+But we must ensure no shape errors. Should we use np.fft.fft instead? Using rfft may produce slightly different rounding. But should be fine.
+
+We need to produce a single Python file with this function. Also include imports.
+
+Edge cases: zero-length? Problem may not test zero-length. But if N or M zero? conv1d would produce zero-length? The reference expects N>=1? Not specified. But we can handle: if N==0 or M==0: return np.array([], dtype=np.float64). But we can ignore.
+
+Ok.
+
+Let's produce final code.

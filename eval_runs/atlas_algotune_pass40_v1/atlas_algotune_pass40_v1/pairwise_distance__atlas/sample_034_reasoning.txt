@@ -1,0 +1,35 @@
+We need to provide a faster implementation. Use vectorized operations or broadcasting. For squared Euclidean distance: D = A + A.T - 2*X @ X.T, where A is vector of squared norms. But careful: A shape (N,) and we need outer addition. Use np.sum(X**2, axis=1).reshape(-1,1) to broadcast. Then compute D = sq_norms + sq_norms.T - 2*X@X.T. Ensure numeric stability: maybe clip to zero negative values. Use np.maximum(D, 0). This is fast.
+
+Edge cases: dtype float64. Should be fine.
+
+We should also support if X is not float64? Problem says dtype float64. We can cast.
+
+Return dtype float64.
+
+Also can use np.dot.
+
+We need to import numpy.
+
+Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    D = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # numerical errors may produce tiny negative values
+    np.maximum(D, 0, out=D)
+    return D
+
+Check shape.
+
+Return.
+
+Let's produce file.
+
+Also we can use np.dot instead of @. But @ works.
+
+Add if __name__ == "__main__": maybe not needed.
+
+Return.
+
+Ok.

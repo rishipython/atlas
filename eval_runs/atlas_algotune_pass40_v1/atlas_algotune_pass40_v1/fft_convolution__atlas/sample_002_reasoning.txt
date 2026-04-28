@@ -1,0 +1,33 @@
+We need to produce efficient convolution via FFT. Need to handle arbitrary lengths, dtype float64, no complex output.
+
+We can use scipy.signal.fftconvolve or numpy.fft.fft. For large arrays, use real FFT. Use numpy.fft.rfft for real-to-complex transform.
+
+The result must be same as np.convolve(x,h,mode='full'). We'll compute length L = N+M-1. Next power of 2 for efficient FFT: nfft = 1 << (L-1).bit_length() maybe. But for real FFT we can use rfft length nfft. Then y = irfft(fft(x, nfft) * fft(h, nfft), nfft)[:L].
+
+Edge cases: if either array length 0? In numpy convolve, empty input returns array of zeros? Actually np.convolve([], [], mode='full') returns array([], dtype=float64). We need to handle zero-length gracefully. If either empty, output empty. Similarly for one empty.
+
+Also if one array length 1, simple multiplication.
+
+Also we need to ensure dtype float64. Input dtype may be float64. We'll cast to float64.
+
+Let's implement conv1d with numpy.fft.rfft.
+
+Edge cases: length 0: return np.array([], dtype=np.float64). If len(x)==0 or len(h)==0: return empty.
+
+If len(x)==1: return x[0]*h. If len(h)==1: return h[0]*x.
+
+For general case: compute nfft = 1 << (N + M - 1 - 1).bit_length() maybe. But we can just use next_fast_len from numpy. There is numpy.fft.next_fast_len. Let's use that.
+
+So:
+
+nfft = np.fft.next_fast_len(N + M - 1)
+
+Use rfft(x, nfft) * rfft(h, nfft). Then irfft(..., nfft)[:N+M-1].
+
+Return as float64.
+
+Let's implement.
+
+Also we may want to use np.fft.rfft; but need to import numpy.fft.
+
+Let's produce final file.

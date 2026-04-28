@@ -1,0 +1,59 @@
+We need to produce a fast implementation of FFT convolution. Use numpy. Probably use np.fft.rfft for real signals. But we need to support arbitrary mode. We can implement direct convolution for small sizes. Use np.fft.fft. Use np.fft.fft2? Just 1D.
+
+We need to handle empty signals: if either empty, return empty array.
+
+Implement compute:
+
+If len_x * len_y small (< 5000?), use direct convolution via np.convolve? That uses direct algorithm. But maybe use np.convolve anyway.
+
+But need to return numpy array as per output? The original solver returns "convolution" key with list. But is_solution expects "convolution" key. So we keep same. But we can output numpy array? The is_solution expects list, but will convert to np.array. So we can return list or array. We'll output list.
+
+We need to produce efficient FFT. Use np.fft.rfft and irfft. Steps: Determine length for full convolution: L = len_x + len_y - 1. Next power of 2: n = 1 << (L-1).bit_length().
+
+Compute fft_x = np.fft.rfft(signal_x, n). fft_y = np.fft.rfft(signal_y, n). Multiply elementwise. Then irfft -> length n. Then slice accordingly for mode.
+
+For "full": take first L.
+
+For "same": output length len_x. Center. For even/odd? Use SciPy's definition: same returns len_x, aligning signals. For 1D, same = np.convolve(signal_x, signal_y, mode='same'). Equivalent to full then slice starting at floor((len_y-1)/2). So compute offset = (len_y-1)//2. Then start = offset; end = start + len_x. So slice.
+
+For "valid": length max(len_x, len_y)-min(len_x, len_y)+1? Wait earlier formula: max(len_x, len_y) - min(len_x, len_y) + 1. That's correct. Equivalent to len_x+len_y-1 - (len_x-1) - (len_y-1)? Actually valid: number of positions where full overlap: len_x - len_y +1 if len_x>=len_y else len_y - len_x +1. So compute start = max(len_y-1, len_x-1)? Let's just use np.convolve for small? For large use formula: start = max(len_y-1, len_x-1)? Let's derive: full convolution indices 0..L-1. For valid, we want indices where both signals fully overlap: i.e., i from len_y-1 to len_x-1 if len_x>=len_y. So start = len_y-1, end = len_x. Length = len_x - len_y +1. If len_y>len_x, start = len_x-1, end = len_y. So start = max(len_y-1, len_x-1). length = abs(len_x - len_y)+1? Wait if len_y>len_x, length = len_y - len_x +1. So length = abs(len_x - len_y)+1. start = max(len_y-1, len_x-1). So slice from start to start+length.
+
+Edge cases: if either empty, return empty.
+
+Also handle mode 'full' for empty: return empty.
+
+Ok.
+
+We can use np.fft.rfft for speed. For small arrays, direct conv. Use threshold 2000? Use np.convolve? But np.convolve uses direct algorithm, maybe slower than FFT for small? We'll set threshold 5000.
+
+Implement:
+
+if len_x == 0 or len_y == 0: return empty.
+
+if len_x * len_y <= 5000: use np.convolve(signal_x, signal_y, mode=mode). Convert to list.
+
+Else use FFT as above.
+
+Return solution dict with key 'convolution'.
+
+Also we might want to use np.fft.rfft and irfft to avoid complex.
+
+Ok.
+
+Also we need to import numpy.
+
+Let's code.
+
+Need to ensure result dtype float.
+
+We must preserve ordering. For real signals, rfft returns real output.
+
+Implement n = 1 << (L-1).bit_length().
+
+Compute fft_x = np.fft.rfft(signal_x, n). fft_y = np.fft.rfft(signal_y, n). prod = fft_x * fft_y. conv_full = np.fft.irfft(prod, n). Then slice conv_full[:L] for full.
+
+Ok.
+
+Return list.
+
+Let's write file.

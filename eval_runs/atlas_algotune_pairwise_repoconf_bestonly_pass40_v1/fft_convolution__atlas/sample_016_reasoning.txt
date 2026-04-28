@@ -1,0 +1,24 @@
+We need to replace body with efficient FFT-based convolution. Use numpy. For large arrays, we can compute via FFT. Need to handle any size. Use np.fft.fft with real input. Use np.fft.rfft for speed? But we need full convolution output. Use rfft of length L = next power of two >= N+M-1. Compute X = rfft(x, L), H = rfft(h, L). Then y = irfft(X*H, L) truncated to N+M-1. Ensure dtype float64. Might also use np.fft.fft with complex. rfft returns real-to-complex, but we can use it. Should be fine.
+
+Also for small arrays, maybe direct conv? But no need.
+
+We should also handle 1D arrays. Ensure shapes. Use np.fft.rfft. Implementation: L = N+M-1; compute next power of two? For speed maybe next power of two to reduce overhead. But can just use L directly; fft will do nlogn. But might be fine.
+
+We'll produce:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    L_fft = 1 << (L-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, n=L_fft)
+    H = np.fft.rfft(h, n=L_fft)
+    y = np.fft.irfft(X * H, n=L_fft)
+    return y[:L]
+
+Return float64.
+
+Edge cases: empty arrays? Convolution of empty arrays? Let's check: If N=0 or M=0, output length N+M-1 = -1? Not defined. But maybe not tested. Could handle: if N==0 or M==0: return np.array([], dtype=np.float64). But we can just assume non-empty.
+
+Add imports. Provide entire file.

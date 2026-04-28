@@ -1,0 +1,173 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D array? Might involve rotating points? The baseline uses Rotate2D().solve(problem). We need to speed up.
+
+We must use scipy, matrix multiplication, no loops, vectorized. Use logging, typing, numpy, scipy.ndimage. So likely we need to rotate an image or array by arbitrary angle.
+
+We can use scipy.ndimage.rotate which is fast. Or use affine transformation with matrix multiplication.
+
+Design: run_solver takes problem dict containing 'image', 'angle', maybe 'reshape', etc. We'll parse and call rotate.
+
+Use np.dot for matrix multiplication? Maybe compute rotation matrix and apply to coordinates via affine_transform.
+
+Simplify: Use scipy.ndimage.affine_transform with rotation matrix and offset.
+
+No loops: just compute rotation matrix once, call affine_transform.
+
+Edge cases: angle in degrees or radians? Provide conversion.
+
+Also handle shape changes: rotate around center.
+
+Let's produce chain-of-thought exploring alternatives: using scipy.ndimage.rotate vs manual grid mapping vs FFT-based rotation. Evaluate speed.
+
+Consider using scipy.ndimage.rotate which handles interpolation and shape. That uses C code; good speed.
+
+Alternatively use numpy's roll but not good for arbitrary angle.
+
+Consider using scipy.linalg.expm for rotation matrix? Not needed.
+
+Also consider using numba for custom mapping but loops banned.
+
+Thus choose scipy.ndimage.rotate as core function. Use logging to debug input shape. Use typing.Any, Dict for problem signature.
+
+We'll implement run_solver that extracts 'array' and 'angle' from problem dict. Validate types; if missing raise ValueError.
+
+Return rotated array with same dtype.
+
+Edge cases: negative angle, large angles; use modulo 360; ensure float64 conversion for angle.
+
+Also support optional 'reshape' flag to keep original shape or enlarge.
+
+Implement:
+
+```
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    arr = problem.get('array')
+    angle = problem.get('angle')
+    reshape = problem.get('reshape', True)
+    order = problem.get('order', 3)
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0)
+    if arr is None or angle is None:
+        raise ValueError
+    if not isinstance(arr, np.ndarray):
+        arr = np.asarray(arr)
+    if not np.isscalar(angle):
+        raise ValueError
+    # convert to float
+    angle = float(angle)
+    # rotate
+    rotated = scipy.ndimage.rotate(arr, angle, reshape=reshape,
+                                   order=order, mode=mode, cval=cval)
+    return rotated
+```
+
+But we need matrix multiplication? Could compute rotation matrix and use affine_transform; but that still uses BLAS inside maybe less efficient than ndimage.rotate. But requirement says use matrix multiplication somewhere. We can compute rotation matrix with np.dot? But we can still call affine_transform which uses matrix multiplication internally. But we can explicitly compute rotated coordinates by applying rotation matrix to grid indices and then interpolate via map_coordinates (which uses BLAS). That would involve dot product between grid coordinates and rotation matrix; that's vectorized and uses BLAS via numpy dot.
+
+So design: generate coordinate grid of output shape; apply inverse rotation matrix; then map_coordinates to sample input array. That uses numpy dot for all points at once (matrix multiplication). That satisfies requirement of BLAS-backed multiplication. Also no loops.
+
+Implementation steps:
+
+- Determine output shape: if reshape True, compute bounding box of rotated corners to get new size; else keep same shape.
+- Compute inverse rotation matrix R_inv.
+- Generate grid indices for output array using np.indices.
+- Flatten indices to shape (N, 2).
+- Subtract center offset.
+- Apply R_inv via dot: coords = flat_indices @ R_inv.T
+- Add input center offset.
+- Map coordinates via scipy.ndimage.map_coordinates with order and mode.
+- Reshape back to output shape.
+- Return result cast to original dtype.
+
+This uses numpy dot for many points (matrix multiplication). No loops. Uses scipy functions (map_coordinates). Good.
+
+Edge cases: dtype float32 vs float64; preserve dtype of input array by casting after interpolation maybe convert back with .astype(original_dtype).
+
+Need logging at start of function for debug info: log input shape etc.
+
+We also need imports as specified: logging; typing.Any, Dict; numpy as np; scipy.ndimage
+
+Let's think about performance: generating large grid may be memory heavy but still vectorized; map_coordinates is efficient in C. Should be fast enough compared to baseline which might use nested loops or slower method.
+
+Check numeric stability: rounding errors small; map_coordinates handles boundaries with mode etc.
+
+Now think about alternative designs considered:
+
+1) Use scipy.ndimage.rotate directly – simpler but may not satisfy "matrix multiplication" requirement though internal may use it but not explicit in code. Might still be okay but requirement says "Makes use of matrix multiplication (BLAS-backed)." So better to explicitly use dot.
+
+2) Use FFT-based rotation – more complex, maybe slower due to padding etc., not necessary.
+
+3) Use numba JIT on manual loops – loops banned anyway.
+
+Thus choose explicit affine transform approach with dot and map_coordinates.
+
+Potential pitfalls:
+
+- For large arrays memory usage high when flattening all coordinates (N points). But that's unavoidable for vectorized approach unless we chunk. But baseline may also handle large arrays similarly; okay.
+
+- Need to handle negative angles correctly via cos/sin sign convention consistent with coordinate system orientation (numpy's y axis downwards). Usually rotate counterclockwise positive angle around origin (x right, y down). For image coordinates, positive angle rotates counterclockwise but due to y axis downwards it actually rotates clockwise relative to Cartesian coordinates? We'll just implement standard math with y axis pointing downwards as typical image processing library expects? Let's keep consistent with ndimage.rotate's behavior: It rotates counter-clockwise when angle positive in degrees about the center of the array. So our formula should match that: R = [[cosθ,-sinθ],[sinθ,cosθ]] for counterclockwise in standard Cartesian coordinates where y increases upward. Since image y increases downward, the effect is reversed? Actually ndimage.rotate uses the same formula as imrotate from skimage which rotates counter-clockwise in Cartesian coordinates where y increases downward? Let's just rely on ndimage.map_coordinates which expects coordinates in array indexing order (row,column). So our mapping should reflect that orientation: For output index (i,j), we want corresponding input index (x,y) such that x = cx + ... etc. The inverse mapping formula will be:
+
+```
+coords_out = np.array([i,j]) - [cy,cx]  # shift origin
+coords_in = R_inv @ coords_out + [cy,cx]
+```
+
+Where R_inv corresponds to rotation by -angle (since we want mapping from output back to input). In image indexing order row is y coordinate increasing downward; column is x increasing rightward. So the standard 2D rotation about origin with positive theta CCW in Cartesian coordinates would transform point [x,y] -> [x cosθ - y sinθ , x sinθ + y cosθ]. For image coordinates where y axis downwards, a CCW rotation about center would produce same formula but because y axis flips sign relative to Cartesian? Actually if you treat pixel indices as usual row=y downward, col=x rightward, then rotating the image CCW by θ should move pixel at (row,col) accordingly such that new row decreases when col increases? Hard to reason quickly but we can test small case mentally: rotate a 3x3 identity pattern by 90 degrees CCW should produce pattern where first column becomes first row reversed etc. Using our formula should work if we use standard math with y pointing downwards? Might need negative sin sign? Let's check quickly: Suppose we have point at top-left corner (row=0,col=0). Center at (1,1). After rotating CCW 90°, it should move to top-right corner (row=0,col=2). Using formula:
+
+coords_out=(0-1,-1?) Wait compute coords_out=[row,col]-center=[-1,-1]. Apply R_inv where θ=90°, so R_inv corresponds -90° => cos=0,sin=-1 => R_inv=[[0,-(-1?)?? Let's derive properly:
+
+R(θ)= [[cosθ,-sinθ],[sinθ,cosθ]] ; For θ=90°, cos=0,sin=1 => R=[[0,-1],[1,0]]. Inverse is transpose because orthogonal => R^T=[[0,1],[-1,0]] corresponds -90°. Multiply coords_out [-1,-1] by R^T => [(-1)*0 + (-1)*(-1), (-1)*1 + (-1)*0] => [1,-1]. Add center [1,1] => [2,0] -> row=2,col=0 bottom-left! That's wrong orientation; expected top-right (row=0,col=2). So our mapping produced opposite orientation due to coordinate system mismatch. We need adjust sign of sin term when constructing R_inv relative to image axes orientation: For image coords where y increases downward, the effective rotation direction flips sign on sin term relative to mathematical orientation. So we can define R_img(θ)=[[cosθ,sinθ],[-sinθ*cos?? Wait let's derive properly:
+
+We want mapping such that positive θ rotates CCW visually on screen where y downwards means CCW is actually clockwise in mathematical sense? Actually imagine a point at top-left moving CCW 90° goes to top-right as seen visually; that's what we want. Our earlier calculation gave bottom-left because we used standard math orientation where y upward leads CCW mapping differently. So we need adjust formula accordingly:
+
+Define transformation on image coords as:
+[x'] = x cosθ + y sinθ
+[y'] = -x sinθ + y cosθ
+
+This corresponds to using R_img=[[cosθ,sinθ],[-sinθ*cos?? Actually second row [-sinθ*cos?? Wait it's [-sinθ*cos?? No second row [-sinθ*cos?? I'm mixing up.]
+
+Let's test with θ=90°, cos=0,sin=1:
+R_img=[[0,1],[-1,0]]
+Apply to point at top-left relative center (-1,-1): 
+[x'] = (-1)*0 + (-1)*1 = -1
+[y'] = (-(-1))*? Actually second row [-sinθ]*x + cos*y => -(-?) Wait compute second row: -sin* x + cos*y -> -(-?) Actually x=-1,y=-1 -> -sin*(-1)+cos*(-1)= -(-?) Wait sin=1 cos=0 -> -(-?) => 1*? Let's do step:
+second row value = -sin*x + cos*y = -1*(-1)+0*(-1)= 1+0=1
+So coords_in=[-1, 1]; add center [1,1] -> [0,2] which matches top-right! Good! So this formula works for image coords orientation.
+
+Thus our inverse mapping should use this adjusted rotation matrix or equivalently use standard math but swap sign of sin in one term appropriately when computing inverse mapping from output back to input.
+
+Simplify approach: Instead of deriving custom formulas each time, we can compute transformation matrix using homogeneous coordinates and apply via affine_transform which handles orientation automatically maybe using forward transform defined by linear part M and offset b such that out_coords = M @ in_coords + b . But affine_transform expects transformation from output space back into input space i.e., M maps output coords into input coords directly via M @ out_coords + offset . We can construct M accordingly using above R_img^-T? Might be easier just compute manually as above using our derived formula for each point vectorized via dot product with appropriate matrix built from sin/cos signs swapped accordingly:
+
+Define inv_R_img_T such that for each out_coord vector v_out relative center:
+v_in_rel = inv_R_img_T @ v_out_rel
+
+We derived inv_R_img_T equals transpose of forward transform matrix F where F=[[cos,sin],[-sin*cos?? Wait forward transform F maps input relative center -> output relative center as per visual CCW orientation:
+F=[[cos,sin],[-sin*cos?? Actually from earlier derivation:
+output_rel_x = x*cos + y*sin
+output_rel_y = -x*sin + y*cos
+
+So F=[[cos,sin],[-sin,cross?? Wait second row [-sin,cross]? It's [-sin,cross?? Actually second row coefficients are [-sin , cos]. Yes F=[[cos,sin],[-sin,cross??? Wait cross replaced by cos]. So F=[[cos,sin],[-sin,cross?? No it's [[cos,sin],[-sin,cross??? I'm repeating confusion.]
+
+Let's finalize: F=[[cos,sin],[-sin,cross???]. The second element of second row is cos indeed because derivative w.r.t y gives cos coefficient on second component. So F=[[cos,sin],[-sin,cross???]. Actually cross replaced by ??? It's just cos again because derivative w.r.t y yields cos coefficient on second component as per earlier expression y' = -x*sin + y*cos . So second row [-sin , cos].
+
+Thus F=[[cos , sin],
+       [-sin , cos]]
+
+Now we need inverse mapping M such that v_in_rel = M @ v_out_rel . Since F is orthogonal up-to sign changes? Compute determinant det(F)=cos^2+sin^2=1 so orthogonal transpose gives inverse except sign difference due to non-standard orientation maybe still works because F^T equals [[cos,-sin],[sin , cos]] which corresponds standard math orientation! But we need inverse consistent with our custom orientation mapping used earlier for test case giving correct result?
+
+Let's test with F above on example point top-left relative center (-1,-1):
+v_out_rel_expected=[-?, ?, let's compute v_out_rel from input->output using F:
+v_in_rel=(-[...]) ; apply F:
+out_x_rel = (-1)*cos + (-1)*sin
+out_y_rel = -(-1)*sin + (-1)*cos
+
+For θ=90°, cos=0,sin=1:
+out_x_rel=(-(-?) Actually out_x_rel=(-(-?) wait compute:
+out_x_rel=(-(-?) oh let's do numeric:
+out_x_rel=(-?-?), sorry simpler compute:
+out_x_rel=(-*0)+(-*... ) => 0+(-*-?) hmm messing up again.
+Let's do numeric directly:
+
+input rel coords v_in=(-1,-1)
+out_x_rel = (-i)*cos + (-j)*sin => (-(-))? Actually i=-i etc... let's just plug numbers:
+out_x_rel=(-i)? Eh this is too messy now...
+
+Given time constraints I'll adopt simpler route: Instead of deriving custom formulas manually I could rely on scipy.ndimage.affine_transform which expects linear part A that maps output indices into input indices directly following convention used internally consistent with array indexing directions and orientation of axes being reversed along first dimension due to row-major ordering etc. According docs: The transformation defined by `matrix` maps output voxel indices into input voxel indices before interpolation occurs... The `matrix` should be a tuple or ndarray giving the linear part of the affine

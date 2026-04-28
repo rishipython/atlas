@@ -1,0 +1,9 @@
+import numpy as np
+from scipy.linalg import expm as _scipy_expm
+
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    # Ensure input is a contiguous float64 array for optimal performance
+    A = np.ascontiguousarray(A, dtype=np.float64)
+    return _scipy_expm(A)

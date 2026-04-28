@@ -1,0 +1,233 @@
+We need to figure out how to implement base64 encoding efficiently. The problem is likely: given an input array of bytes, produce base64 string. The reference is slow; we want vectorized solution. Let's think: base64 encodes 3 bytes into 4 characters. We can use numpy to reshape into groups of 3, pad zeros, then compute indices via bit shifts. Then map indices to alphabet via a lookup table. Use vectorized operations.
+
+Edge cases: input length not multiple of 3; padding '='. Also maybe handle binary data from problem dict.
+
+We need to read problem format: likely a dictionary with 'data' key containing list of ints or bytes? Let's assume problem['data'] is a list of ints 0-255. We'll convert to np.array dtype uint8.
+
+Then compute length, compute padded length = ((len+2)//3)*3. Pad with zeros at end.
+
+Reshape to (-1,3). For each row, compute 4 6-bit groups:
+
+- first = (row[:,0] >> 2) & 0x3F
+- second = ((row[:,0] & 0x03) << 4) | (row[:,1] >> 4)
+- third = ((row[:,1] & 0x0F) << 2) | (row[:,2] >> 6)
+- fourth = row[:,2] & 0x3F
+
+Combine into shape (-1,4). Then map indices to chars via np.take(alphabet_array, indices). Alphabet array: b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.
+
+Then flatten and join as bytes or string.
+
+Then add padding: if original len %3 ==1 -> last two output chars replaced with '=='? Actually for len%3==1, we have two output chars from first two groups and then two '='. For len%3==2, we have three output chars and one '='.
+
+So after mapping, we get array of shape (n_groups*4,) of bytes. Convert to bytes and then replace last chars accordingly.
+
+Alternatively we can compute mask for padding: if mod==1: set last two indices to ord('='); if mod==2: set last one index to ord('='). But easier: after converting to string, slice and add '=' accordingly.
+
+But we want no loops; can use slicing operations.
+
+Let's think about performance: using numpy ops should be fast for large arrays.
+
+Also ensure dtype conversions efficient.
+
+Also consider memory: large data may exceed memory but okay.
+
+Edge cases: empty input -> return ''.
+
+Also handle non-list input? We can accept bytes directly.
+
+Now design final code structure:
+
+Imports: base64, numpy as np, typing.Any, Dict
+
+Define solve(problem): get data = problem['data'] maybe bytes or list. Convert to np.array dtype=np.uint8. Compute length n. If n==0 return ''. Compute padded_len = ((n+2)//3)*3; pad zeros using np.pad or np.concatenate with zeros array of length padded_len-n.
+
+Reshape into (-1,3). Compute groups via bit ops as above using vectorized bitwise ops on uint8 arrays -> produce uint8 array of shape (-1,4). Then use lookup table: alphabet = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8). Use np.take(alphabet, indices). That gives uint8 array of chars. Flatten and convert to bytes via .tobytes() or .view? Actually flatten then .tobytes() yields bytes.
+
+Then handle padding: if n%3==1 -> replace last two bytes with b'='; if n%3==2 -> replace last byte with b'='; else nothing.
+
+Return decoded string via .decode('ascii') maybe or keep as str by mapping ascii codes? We can convert final bytes to str by .decode('ascii').
+
+Check speed: no loops except maybe small slice operations.
+
+Now test with small example:
+
+data = b'foo' -> n=3 -> padded_len=3 -> reshape (1,3) -> compute indices -> mapping -> output b'Zm9v'? Wait base64('foo')= 'Zm9v'. Should match.
+
+Test mod cases:
+
+data=b'f' n=1 padded_len=3 pad zeros [102,0,0]. Compute groups -> mapping yields something like 'Zg=='? Actually base64('f')='Zg==' correct. Our padding logic will replace last two bytes with '=' after mapping result 'Zg??', but mapping might produce 'ZgA='? Let's check quickly mentally: f=102 decimal=01100110; groups:
+first byte >>2 => 001100 =>12 => 'M'? Actually index12 => 'M'? Wait alphabet index mapping: 0=A,...12=M. So first char 'M'. second char from bits (f&0x03)<<4 | next>>4 but next is zero => (102&3)=2 <<4=32 =>32 index => 'g'? Actually index32->'g'. third char from next bits etc all zeros => index0->'A'; fourth char index0->'A'. So mapping gives 'MgAA'. Then we replace last two with '=' giving 'Mg=='. But correct is 'Zg=='? Hmm our calculation wrong because we didn't shift properly? Let's recompute properly:
+
+For single byte f (102), pad zeros [102,0,0]. Bits:
+byte0=102
+byte1=0
+byte2=0
+
+Compute:
+first = byte0 >>2 = 102>>2 =25 => index25='Z'
+second = ((byte0 & 3)<<4)|(byte1>>4) = ((102&3)=2)<<4=32 |(0>>4)=32 => index32='g'
+third = ((byte1 &15)<<2)|(byte2>>6)=((0&15)=0)<<2| (0>>6)=0 => index0='A'
+fourth = byte2 &63=0=>index0='A'
+So mapping gives 'ZgAA'; replace last two '=' => 'Zg==' correct. Good.
+
+Thus logic works.
+
+Now implement solve accordingly.
+
+Also consider that problem might contain data as list of ints; convert accordingly via np.array(list).
+
+Also ensure that if data is already bytes or bytearray we handle directly by np.frombuffer(data,dtype=np.uint8).
+
+Now design final code file:
+
+import base64; import numpy as np; from typing import Any, Dict
+
+def solve(problem: Dict[str, Any]) -> str:
+    data = problem.get('data')
+    if data is None:
+        return ''
+    # Convert to numpy array
+    if isinstance(data, (bytes, bytearray)):
+        arr = np.frombuffer(data,dtype=np.uint8)
+    else:
+        arr = np.asarray(data,dtype=np.uint8)
+    n = arr.size
+    if n == 0:
+        return ''
+    # Pad
+    pad_len = (-n) % 3
+    if pad_len:
+        arr_padded = np.concatenate([arr, np.zeros(pad_len,dtype=np.uint8)])
+    else:
+        arr_padded = arr
+    # reshape
+    groups = arr_padded.reshape(-1,3)
+    # compute indices
+    first = groups[:,0] >> 2
+    second = ((groups[:,0] & 3) << 4) | (groups[:,1] >> 4)
+    third = ((groups[:,1] & 15) << 2) | (groups[:,2] >> 6)
+    fourth = groups[:,2] & 63
+    indices = np.stack([first,second third,fourth],axis=1).astype(np.uint8)
+    # lookup table
+    alphabet_bytes = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',dtype=np.uint8)
+    encoded_bytes = alphabet_bytes[indices]
+    encoded_flat = encoded_bytes.ravel()
+    # add padding
+    if pad_len ==1:
+        encoded_flat[-2:] = ord('=')
+    elif pad_len ==2:
+        encoded_flat[-1:] = ord('=')
+    return encoded_flat.tobytes().decode('ascii')
+
+But careful: encoded_bytes dtype uint8; setting equal sign requires int value ord('='). We need cast properly.
+
+Also need stack syntax correct comma between second and third elements missing earlier in snippet above; fix in final code later but not needed now because not writing code yet.
+
+Also consider memory overhead for large arrays; but fine.
+
+Now think about performance improvements: using bitwise ops on uint8 arrays is fast; using stack may allocate new array; could use view or direct concatenation but okay. Could avoid stack by constructing a flat array directly using np.column_stack or similar but fine.
+
+Also consider using base64.b64encode for small arrays? But requirement no Python loops but we can still call library? But vectorized approach likely faster for large inputs due to avoiding Python overhead. Might be slower for small due to overhead but acceptable for benchmark maybe large data sets typical in AlgoTune tasks which involve big arrays.
+
+Edge case: data type may be list of ints >255? Should cast modulo? But assume valid byte values.
+
+Check padding logic: pad_len computed as (-n)%3 gives number of zeros added (i.e., (3 - n%3)%3). For n%3==1 -> pad_len=2 ; we added two zeros; after mapping we need two '=' at end. For n%3==2 -> pad_len=1 ; need one '=' at end. Wait earlier logic reversed? Let's verify:
+
+If n%3==1 => need two padding '=' in output because only one byte left produce two output chars plus two '=' . Our pad_len would be (-n)%3 => -1%3=2 ; so we added two zeros ; after mapping will produce four chars where last two correspond to padded zeros producing 'AA'; replace last two with '=' good. So condition should check pad_len==2 then replace last two with '=' ; pad_len==1 replace last one with '=' . So earlier I had reversed but will fix in final design accordingly.
+
+Thus implement:
+
+if pad_len == 2:
+   encoded_flat[-2:] = ord('=')
+elif pad_len ==1:
+   encoded_flat[-1:] = ord('=')
+
+Check case when no padding needed pad_len==0 no change.
+
+Now think about performance of concatenation vs padding via zeros array creation each time; fine.
+
+Also consider that we could avoid reshaping by computing directly on flattened array using stride tricks but not necessary.
+
+Now consider the reference algorithm may use base64 module internally which might be slower due to Python loops over chunks; our vectorized approach should be faster for large inputs > few KBs perhaps up to MBs/GBs depending memory limits.
+
+Potential numeric issues none since only integer ops within uint8 range safe no overflow due bit shifts within bounds because shifting beyond width yields zero automatically in numpy? For uint8 shift left >7 yields zero due modulo? Actually shifting left beyond width results in zero bits beyond width lost but that's fine because we only shift within bounds (<6 bits). So safe.
+
+Now think about possible alternative designs considered:
+
+- Use JAX JIT compiled function performing same operations on jax.numpy arrays; could speed up on GPU/TPU but overhead converting data maybe high.
+- Use numba @njit function operating on raw Python lists/bytes loops compiled C-level loops might be fast too.
+- Use scipy's base64 implementation? None.
+- Use built-in base64.b64encode which is C-coded and fast; maybe simpler and faster than our vectorized approach for many sizes due C speed and minimal overhead. But requirement says no Python-level loops and vectorised solution maybe expected but built-in uses C loops anyway no Python loops so allowed? But they want custom implementation probably for learning vectorization.
+- Could also use pandas.Series.apply etc but slower.
+Thus choose numpy vectorized approach as described above seems reasonable tradeoff between speed and simplicity while meeting brief constraints (no Python loops).
+
+Edge cases check:
+
+- Empty input returns ''.
+- Input length <128 etc works.
+- Data type conversion ensures dtype uint8.
+- Padding logic correct.
+- Return string type ascii decoded correctly.
+- No loops used except possibly stack which uses internal loops but not Python-level loops.
+- All operations vectorised across whole array.
+- Using numpy's broadcasting ensures efficient BLAS-like performance though bit ops are simple scalar operations per element executed in C loops anyway efficient.
+- Memory usage O(n).
+
+Potential improvement: avoid creating separate arrays for each group by computing all four indices in one go using bitwise ops on entire array without stacking then indexing into alphabet via advanced indexing which also creates new array shape (-1*4,) anyway similar cost. Might be fine.
+
+Consider performance on very large input > hundreds MB may cause memory high due intermediate arrays but still okay given typical limits maybe few hundred MB max memory allowed ~512MB etc. Our approach uses several arrays each ~size(n), so ~5*n bytes ~5*input size ~5MB per MB input ~5MB per MB input good enough up to say few hundred MB within memory limit maybe okay.
+
+Now finalize design summary mentally ready for coding later.
+We need a fast Base64 encoder that stays pure‑Python‑free except for NumPy calls – the brief wants no Python‑level loops at all and full vectorisation.  
+The classic Base64 algorithm turns every three input bytes into four ASCII characters by extracting six‑bit groups:
+
+```
+b00 b01 b02   →   c00 c01 c02 c03
+```
+
+where each `c` is an index into the standard alphabet  
+`ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`.  
+The only tricky part is the padding when the input length isn’t a multiple of three – the output must end with `=` characters so that the total number of Base64 characters is a multiple of four.
+
+
+
+### Data ingestion
+
+The `problem` dict will contain a key `data` that holds either a `bytes`/`bytearray` object or an iterable of integers in `[0,255]`.  
+We normalise this into a NumPy `uint8` array once:
+
+```python
+if isinstance(data,(bytes,bytearray)):
+    arr=np.frombuffer(data,dtype=np.uint8)
+else:
+    arr=np.asarray(data,dtype=np.uint8)
+```
+
+If the input is empty (`arr.size==0`) we immediately return the empty string.
+
+
+
+### Padding strategy
+
+Let `n` be the original length and `pad_len=(-n)%3`.  
+This gives `pad_len∈{0,1,2}` – how many zero‑bytes we need to append so that `n+pad_len` becomes divisible by three.  
+We create the padded view simply by concatenating a small zero buffer when required:
+
+```python
+if pad_len:
+    arr_padded=np.concatenate([arr,np.zeros(pad_len,dtype=np.uint8)])
+else:
+    arr_padded=arr
+```
+
+
+
+### Reshaping and bit extraction
+
+With `arr_padded` ready we reshape it into rows of three bytes:
+
+```python
+groups=arr_padded.reshape(-1,3)      # shape (m,3), m=(n+pad_len)/3
+```
+
+Using NumPy’s vectorised bitwise operators we pull out the four

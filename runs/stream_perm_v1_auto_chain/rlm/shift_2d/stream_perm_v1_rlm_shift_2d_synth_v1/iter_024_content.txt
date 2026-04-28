@@ -1,0 +1,58 @@
+We need a fast way to compute the best 2‑D integer pixel shift between two images that are given in the `problem` dictionary – the baseline does it in a slow Python loop over all possible displacements.  
+Let’s think about what the solver really has to do:
+
+* Take two arrays `x` and `y` of identical shape.
+* Find the displacement `(dy , dx)` that maximises the cross‑correlation between them.
+* Return the displacement and an aligned version of `y`.
+
+The obvious brute force would be two nested Python loops over `dy` and `dx`, each time shifting `y` by a candidate offset and computing a dot product or sum of squared differences – clearly too slow for anything beyond toy sizes.  
+So we need a vectorised approach that relies on fast C or Fortran kernels under the hood.  
+
+**FFT based correlation**  
+The first idea that comes to mind is an FFT‑based cross‑correlation:  
+```
+F = fft(x) * conj(fft(y))
+corr = ifft(F)
+```
+That’s O(N log N) instead of O(N²) and would be great if it were a pure linear correlation.  
+But there’s a catch – the discrete Fourier transform gives *circular* convolution/correlation unless we pad the inputs appropriately so that wrap‑around doesn’t interfere with the result.  
+Padding both images to twice their size before taking the FFT would fix that, but it doubles memory usage and still requires careful cropping afterwards.  
+Moreover, for moderately sized images (say up to a few thousand pixels per side) a straightforward C implementation of linear correlation can actually be faster because it avoids the overhead of an FFT plus extra memory traffic.  
+
+**Linear correlation via SciPy**  
+SciPy’s `signal.correlate2d` implements exactly what we want – a linear 2‑D cross‑correlation computed in C without any Python loops.  
+It supports modes `'full'`, `'valid'`, `'same'`.  Using `'full'` gives us an output array whose dimensions are `(M+N-1 , P+Q-1)` when the inputs are `(M,P)` and `(N,Q)`.  The centre of this output corresponds to zero displacement between the two images; any other peak tells us how many pixels one image must be shifted relative to the other.  
+
+So the plan is:
+
+```
+corr = scipy.signal.correlate2d(x, y, mode='full')
+peak_idx = np.unravel_index(np.argmax(corr), corr.shape)
+dy = peak_idx[0] - (x.shape[0]-1)
+dx = peak_idx[1] - (x.shape[1]-1)
+```
+
+If `y` has been shifted by `(dy , dx)` relative to `x`, then aligning `y` back requires applying the opposite shift:
+
+```
+aligned_y = scipy.ndimage.shift(y, shift=(-dy,-dx), mode='constant', cval=0)
+```
+
+`scipy.ndimage.shift` is also written in C/Cython so it will be fast enough for our purposes while keeping everything vectorised – no explicit Python loops at all.
+
+**Edge cases & numerical details**
+
+* **Odd vs even dimensions** – The centre index in `'full'` mode is always `(M-1 , P-1)`, regardless of parity, so subtraction works uniformly.
+* **Zero‑padding vs interpolation** – `ndimage.shift` uses spline interpolation (`order=3` by default).  If sub‑pixel accuracy were required we could tweak this parameter or switch back‑to‐nearest‐neighbour (`order=0`).  For integer pixel alignment this default is fine.
+* **Data type** – The input arrays may be `float32` or `float64`.  All SciPy functions preserve dtype where possible; however `ndimage.shift` promotes data internally so we just cast back after shifting if strict dtype consistency is needed.
+* **Performance budget** – With large images (`>10⁶` pixels) `correlate2d` still outperforms naive Python loops by orders of magnitude because it delegates work entirely to optimized BLAS/LAPACK kernels under the hood.
+* **Return format** – The baseline returns whatever structure its own solver produces; here we’ll return a dictionary containing the displacement tuple and the aligned image so downstream code can consume it easily.
+
+**Putting it together**
+
+We’ll write a minimal module that follows the required imports (`__future__ annotations`, typing hints), defines a `Shift2D` class with a single `solve(problem)` method implementing the logic above, and exposes a top‑level `run_solver(problem)` function that simply forwards to an instance of this class – matching exactly what the reference code does but replacing its body with our vectorised implementation.
+
+No Python‑level loops appear anywhere in this design; all heavy lifting is done by SciPy’s highly optimised C routines (`correlate2d` for finding the best displacement and `ndimage.shift` for applying it).  
+This satisfies every constraint in the brief while delivering a substantial speedup over any naive implementation.
+
+OK, I think I have the design. Time to write it.

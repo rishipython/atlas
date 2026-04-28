@@ -1,0 +1,136 @@
+We need to speed up the affine transform. Let's think: The baseline uses scipy.ndimage.affine_transform, which is already pretty fast but maybe overhead from Python and data conversion. We can try to replace with a custom implementation that uses SciPy's map_coordinates or maybe use OpenCV? But only allowed packages include numpy, scipy, etc. We can't use cv2. So we stick to scipy.
+
+We could use scipy.ndimage.affine_transform but maybe we can reduce interpolation order from 3 to 1 or 0 for speed. But the problem statement says cubic spline interpolation (order=3). So we must keep order=3? The reference uses order=3. But the optimization brief says we can try lower order for speed, but must keep same function signature and produce valid solution. But does the validator check for exact output? It uses is_solution that compares against reference output with rtol=1e-5, atol=1e-7. If we change order, the output will differ beyond tolerance. So cannot change interpolation order.
+
+Thus we need to keep order=3. So speed improvement must come from something else: maybe using JIT compiled version of affine_transform? SciPy's affine_transform uses underlying C code, so it's already fast. Maybe overhead is reading input dict and converting to numpy arrays? The image is given as list of lists; we convert to numpy array inside solve. That is fine.
+
+Maybe we can avoid calling affine_transform twice: once in solve, once in is_solution for verification. But that's fine.
+
+The main overhead might be memory allocation for large images; but no loops.
+
+Potential improvement: Use np.array(image, dtype=np.float32) instead of default float64 to reduce memory and speed up C code? SciPy's affine_transform likely expects float64 by default; but it may cast internally. We could cast to float32 and let SciPy handle it; but SciPy may convert back to float64 anyway.
+
+Another idea: Use scipy.ndimage.affine_transform with precomputed inverse matrix to avoid repeated inverse calculation? It expects matrix as transformation matrix mapping output coordinates to input coordinates; SciPy will compute inverse inside if needed? Let's check docs: The "matrix" argument is the transformation matrix applied to coordinates of output image; it expects the inverse mapping? Actually scipy.ndimage.affine_transform applies the inverse mapping by default: It multiplies coordinates by matrix and adds offset. If we provide matrix directly, it expects it as linear part of transformation from output to input coordinates (i.e., M). So if we want forward transform, we need to invert matrix. But baseline passes matrix directly; so baseline uses forward transform? Wait baseline code:
+
+```
+transformed_image = scipy.ndimage.affine_transform(
+    image, matrix, order=self.order, mode=self.mode
+)
+```
+
+So they pass matrix directly; SciPy will treat it as transformation from output coords to input coords (i.e., inverse). That means they are applying the forward transform incorrectly? But it's consistent with baseline.
+
+Thus our implementation should match that behavior.
+
+Maybe we can use a more efficient method like using `scipy.ndimage.map_coordinates` with precomputed grid of coordinates and then apply map_coordinates once per axis? But map_coordinates also uses C loops.
+
+Alternatively, use `scipy.ndimage.affine_transform` but supply an `offset` argument separately for translation part instead of embedding into 2x3 matrix? Might reduce overhead? Probably not significant.
+
+Another idea: Use `scipy.ndimage.affine_transform` but pass `output_shape` same as input shape explicitly; maybe reduces internal calculation of shape? Might be micro-optimization.
+
+Also can preallocate output array with zeros and pass `output` argument to avoid new allocation inside function. According docs: there is an 'output' parameter in ndimage.affine_transform where you can provide an array to fill in. This might reduce memory allocation overhead.
+
+Let's consider that: We could allocate out = np.empty_like(image) or np.zeros_like(image) and pass output=out. That might avoid creating new array inside function; but I think affine_transform returns a new array anyway unless you pass output param.
+
+So design: In solve(), convert image list-of-lists into numpy array dtype float32 (maybe). Compute out = np.empty_like(image). Call scipy.ndimage.affine_transform(image_np, matrix_np, order=3, mode='constant', cval=0.0, output=out). Then return out as list-of-lists via .tolist() or just return out (the solver returns numpy array?). The interface expects dictionary with key "transformed_image": array-like; but is_solution will convert if needed.
+
+But is_solution expects proposed_list possibly numpy array or list; if it's numpy array it will convert .tolist() earlier only if size==0 else leave as list? Wait:
+
+```
+proposed_list = solution["transformed_image"]
+if isinstance(proposed_list, np.ndarray):
+    if proposed_list.size == 0:
+        proposed_list = []
+    else:
+        proposed_list = proposed_list.tolist()
+```
+
+So if we return numpy array, it will be converted to list-of-lists before validation. So returning numpy array is fine.
+
+But conversion overhead might be small relative to transform cost.
+
+Now performance: For large images (say 1024x1024), SciPy's affine_transform might be okay but still heavy due to cubic interpolation per pixel (~9 multiplications per pixel?). We could accelerate by using Numba JIT compiled custom interpolation on GPU-like vectorization using numba's prange loops across pixels? But loops would be Python-level loops if not using numba parallelization; but numba can compile loops efficiently.
+
+However implementing full cubic spline interpolation manually is complex and error-prone; better rely on SciPy's optimized C code.
+
+Thus maybe best improvement is minimal: use dtype float32 and output param preallocation + cval param set explicitly.
+
+Also ensure matrix passed as np.array dtype float64 because SciPy expects double precision for coordinates calculation; passing float32 may cast internally anyway.
+
+Alternatively use `scipy.ndimage.affine_transform` with `order=3`, `mode='constant'`, `cval=0`. That matches baseline except they didn't specify cval explicitly; default cval=0 anyway for constant mode.
+
+We could also attempt using `scipy.ndimage.geometric_transform` which allows custom mapping function but slower likely.
+
+Thus maybe no huge speedup possible beyond small improvements above. But requirement says final solution ~5285 chars; that's a lot of code though for simple function?
+
+Wait final solution length ~5285 characters seems huge for such simple code... Maybe they expect more elaborate design like JIT compiled kernel with numba that does bilinear interpolation manually etc., plus some vectorization tricks like using im2col or FFT-based convolution?
+
+But note that affine transform is essentially resampling image at transformed coordinates; could implement via grid sampling using vectorized coordinate generation and map_coordinates which uses interpolation internally. That might be similar speed as affine_transform though maybe slightly faster because map_coordinates has fewer overhead steps? But not sure.
+
+Another approach: Use `scipy.ndimage.shift` after rotation etc., but that's not general enough.
+
+Could use `scipy.signal.warp` from skimage? Not available.
+
+Maybe we can use JAX jitted function performing interpolation via jax.scipy.ndimage.affine_map or jax.image.transform? JAX has jax.image.resize etc., but not sure about affine transform support. Could write custom JAX kernel performing bilinear interpolation manually on GPU/CPU with jit compilation which might be faster than SciPy for large arrays due to vectorization and no Python overhead per pixel. JAX would compile entire loop into XLA graph which may produce high performance on CPU too (vectorized). That could yield significant speedup compared to SciPy's C code due to better vectorization and caching?
+
+But JAX requires installation of jaxlib which may not be available on this environment? It's listed in allowed packages: jax yes! So we can use JAX.
+
+We could implement a JIT-compiled function that takes image and matrix and returns transformed image using linear indexing via jax.vmap over coordinates generating source indices then interpolating via cubic spline manually implemented via jax.lax functions like lax.conv_general_dilated or direct interpolation formula?
+
+Implementing cubic spline interpolation manually would be heavy but doable: For each target pixel coordinate (x', y'), compute source coordinate (x,y) = invM * [x';y'] + offset part etc., then compute floor indices i,j and fractional parts dx,dy then perform cubic interpolation along x then y using Catmull-Rom or B-spline weights formulas requiring 4 points each direction -> 16 source pixels per target pixel -> heavy but vectorized by JAX should still be okay maybe slower than SciPy though?
+
+But maybe easier: Use jax.scipy.ndimage.map_coordinates which supports order=3 interpolation built-in! Yes JAX provides jax.scipy.ndimage.map_coordinates similar API as SciPy's map_coordinates. That would allow us to compute transformed coordinates grid then call map_coordinates once per axis? Actually map_coordinates takes coordinates array shape (..., ndims) where each slice gives coordinate positions for each point in output grid. We can generate grid of shape (n,n,2) representing target coords transformed back into source coords using inverse transform. Then call map_coordinates(image_np, coords.reshape(-1,2).T?) Wait map_coordinates expects coordinates shape (ndim,N) where N number of points flattened along last axis? Let's check typical usage:
+
+```
+coords = np.mgrid[0:n,0:n] # shape (2,n,n)
+coords = invM @ coords.reshape(2,-1) + offset
+output = map_coordinates(image_np, coords.reshape(2,-1), order=3)
+output = output.reshape(n,n)
+```
+
+But generating full grid might require large memory but fine for moderate sizes.
+
+Using JAX's map_coordinates will compile into XLA graph performing interpolation efficiently across all points simultaneously without Python loops—could be faster than SciPy due to better vectorization across CPU SIMD registers perhaps also GPU support if available (but environment likely CPU only).
+
+Thus design: In solve(), convert image list-of-lists into np.array dtype float32 or float64 depending on requirement (float64 likely needed for accurate cubic). Use jax.numpy as jnp for operations within jit function; build coordinate grid using jnp.meshgrid or jnp.indices then apply transformation matrix inversion manually using jnp.linalg.inv or precompute inverse outside jit (since constant per call). Then call jax.scipy.ndimage.map_coordinates with order=3 constant mode cval=0. Return result as np.array via .copy() or .numpy() conversion because JAX arrays are DeviceArray objects convertible via .numpy() on CPU backend.
+
+Potential issues: JAX may not support all features like constant mode 'constant'? It does support 'constant' mode with cval parameter in map_coordinates? I think yes similar API as SciPy's map_coordinates has mode='constant', cval=0.0 default constant mode value 0 when outside bounds. Should work.
+
+Also need to ensure that the computed coordinates are correct orientation: For each target pixel location (i,j) in output grid of shape (n,n), compute corresponding source coordinate x_src,y_src via inverse affine transformation:
+
+Given forward transform defined by 2x3 matrix M_fwd = [[a,b,c],[d,e,f]] mapping input coords [x,y] -> [a*x + b*y + c , d*x + e*y + f]. The inverse transform mapping output coords [i,j] -> [x_src,y_src] satisfies [x_src,y_src] = M_inv * ([i,j] - offset?) Actually M_fwd maps input->output so its inverse maps output->input: [x_src,y_src] = inv(M_fwd_linear_part) @ ([i,j] - translation_vector). Where translation_vector = [c,f]. So compute inv_mat = inv([[a,b],[d,e]]). Then x_src = inv_mat[0,:] @ ([i - c , j - f]) ; y_src similarly.
+
+So algorithm:
+
+```
+matrix_np = np.array(matrix)
+A = matrix_np[:,:2]
+t = matrix_np[:,2]
+invA = np.linalg.inv(A)
+# create grid indices i,j
+rows = np.arange(n)
+cols = np.arange(n)
+# Using broadcasting:
+I,J = np.meshgrid(rows, cols,indexing='ij') # shape n,n
+# subtract translation
+src_coords_x = invA[0,0]*(I - t[0]) + invA[0,1]*(J - t[1])
+src_coords_y = invA[1,0]*(I - t[0]) + invA[1,1]*(J - t[1])
+# stack into shape (2,n*n)
+coords = np.vstack([src_coords_x.ravel(), src_coords_y.ravel()])
+# call map_coordinates
+out_flat = jax.scipy.ndimage.map_coordinates(image_jnp.astype(jnp.float32), coords.astype(jnp.float32), order=3, mode='constant', cval=0.)
+out_img_jnp = out_flat.reshape(n,n)
+return out_img_jnp.numpy()
+```
+
+But careful about axis ordering: In image array shape (n,n), first axis row index i corresponds y coordinate; second axis column index j corresponds x coordinate typically in image processing context where y increases downward. The affine_matrix given likely uses standard Cartesian coordinates where x horizontal axis corresponds columns index j and y vertical axis corresponds rows index i. In SciPy's affine_transform default orientation uses first dimension as row index corresponding y coordinate and second dimension as column index x coordinate when computing mapping based on matrix applied to index vector [y,x]? Actually SciPy's affine_transform documentation says that the input array's axes correspond directly to dimensions of the transformation matrix columns correspondingly starting from last dimension... Wait details:
+
+From docs:
+
+> The input array’s axes are ordered such that the first axis corresponds to the first dimension of the transformation matrix etc... Actually easier approach: replicate what baseline does by feeding same matrix into our method and verifying result matches baseline via is_solution test after implementing our method accordingly.
+
+Thus our implementation should produce same result as baseline when given same inputs; so we just mimic baseline logic exactly by computing same mapping used by scipy.affine_transform under hood when given same parameters.
+
+But implementing exact mapping ourselves may lead subtle differences due to rounding differences between our manual computation vs internal algorithm used by SciPy's affine_transform which may do different rounding or treat axes differently (e.g., treating first dimension as row index?). However since our method will produce same result when tested against baseline via is_solution check with tolerance 1e-5/1e-7 numeric closeness—they compare arrays element-wise after conversion—so small differences are allowed within tolerance if difference < rtol*abs(ref)+atol <= ~ few e-5 *255 ~ ~0.025 maybe okay if differences small due rounding errors less than that threshold.
+
+Thus our manual method may produce slightly different values due rounding errors from computing inverse A separately vs internal algorithm maybe computing inverse differently or performing rounding at different stages leading difference > tolerance possibly failing test if difference bigger than ~1e-5 relative (~255*1e-5 ~ 0.00255). That's tight relative error requirement! Our manual method must match reference within 1e-5 relative error (~<~

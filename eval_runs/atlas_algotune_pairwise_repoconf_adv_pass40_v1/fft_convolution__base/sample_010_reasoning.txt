@@ -1,0 +1,41 @@
+We need to implement conv1d with FFT. Must be correct on float64 arrays. Use numpy. Use np.fft.fft. For linear convolution, we can zero-pad both to length L >= N+M-1, compute FFT, multiply, inverse FFT, take real part. For float64, we can use np.fft.rfft maybe. But simplest: use np.fft.fft of length L. Use np.fft.ifft. Need to cast to float64. Might need to round small imaginary parts. Use np.real.
+
+Also must handle potential small rounding errors. Use np.allclose with default tolerance. We can just return real part.
+
+Edge cases: zero-length arrays? Not likely but maybe. If either empty, convolution length? Convolution of empty array with something? In numpy, np.convolve([], []) returns array([0])? Let's check. But typical usage: arrays have length >=1.
+
+We can implement:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+    # Next power of two for speed? Use np.fft.next_fast_len
+    L_fft = np.fft.next_fast_len(L)
+    X = np.fft.rfft(x, n=L_fft)
+    H = np.fft.rfft(h, n=L_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L_fft)
+    return y[:L]
+
+Return dtype float64.
+
+Edge case: if L == 0? Not possible since N>=1, M>=1.
+
+Check performance: Use numpy's FFT.
+
+Return array of shape (L,). Use dtype float64.
+
+Let's produce file.
+
+We need to import numpy as np.
+
+Also include docstring.
+
+We need to ensure function signature matches: conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray.
+
+Return dtype float64.
+
+Ok.
+
+Let's produce code.

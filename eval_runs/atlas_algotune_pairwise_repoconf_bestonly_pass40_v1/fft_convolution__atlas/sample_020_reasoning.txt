@@ -1,0 +1,36 @@
+We need to implement fast conv1d using FFT. We can use numpy. We can use np.fft.fft or scipy.signal.fftconvolve. But we need to ensure same output shape, dtype float64. For large inputs, FFT is faster.
+
+We need to handle small lengths too? We can choose to use direct method for small N+M-1 <= threshold, else use FFT. But we can just always use FFT. Should produce same result within tolerance. Use numpy.fft.rfft? Since input real. Use np.fft.fft with length = next power of two >= N+M-1. Or we can use np.fft.fft with size = N+M-1. That is fine, but not necessarily power of two. Still fine. Use numpy.fft.fft(x, n=fftlen). Multiply with h's fft, then inverse. Then take real part. Use np.real. Ensure dtype float64.
+
+Edge cases: inputs may be 1-d arrays but could be scalars? Problem says 1-D float64 arrays. So fine.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    conv_len = N + M - 1
+    # choose fft length as next power of 2? We can just use conv_len.
+    # But to be safe for speed, we can use next power of two.
+    fftlen = 1 << (conv_len - 1).bit_length()
+    X = np.fft.rfft(x, n=fftlen)
+    H = np.fft.rfft(h, n=fftlen)
+    y = np.fft.irfft(X * H, n=fftlen)
+    return y[:conv_len]
+
+But need to ensure dtype float64. rfft returns complex128 if input float64. So fine.
+
+Return y[:conv_len].
+
+Also we can use np.fft.fft. But rfft/irfft uses real transform.
+
+Edge: if conv_len is 0? Not possible.
+
+Should we handle small lengths? Not necessary.
+
+We need to import numpy. Provide file.
+
+Return array of dtype float64.
+
+Let's produce.
+

@@ -1,0 +1,29 @@
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    """Return the (N, N) pairwise squared Euclidean distance matrix.
+
+    This implementation uses the identity
+        ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 * x_i·x_j
+    to compute all pairwise distances efficiently with NumPy
+    operations.
+
+    Args:
+        X: np.ndarray of shape (N, D), dtype float64.
+
+    Returns:
+        np.ndarray of shape (N, N), dtype float64.
+    """
+    # Compute squared norms of each row vector
+    sq_norms = np.sum(X * X, axis=1, keepdims=True)  # shape (N, 1)
+
+    # Compute pairwise dot products
+    dot_products = X @ X.T  # shape (N, N)
+
+    # Apply the distance formula
+    dist_sq = sq_norms + sq_norms.T - 2.0 * dot_products
+
+    # Numerical errors might produce tiny negative values; clip to zero
+    np.maximum(dist_sq, 0.0, out=dist_sq)
+
+    return dist_sq

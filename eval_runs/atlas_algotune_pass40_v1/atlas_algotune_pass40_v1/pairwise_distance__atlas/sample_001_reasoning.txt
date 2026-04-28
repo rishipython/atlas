@@ -1,0 +1,39 @@
+We need to write a fast implementation for pairwise squared Euclidean distances. Standard method: compute dot product: (X^2 sum) + (X^2 sum). Use broadcasting: dist^2 = ||x||^2 + ||y||^2 - 2x·y. For numeric stability, ensure no negative small numbers due to rounding. Use np.dot or np.matmul. Implementation: sumsq = np.sum(X**2, axis=1). Then use outer addition: out = sumsq[:,None] + sumsq[None,:] - 2*X.dot(X.T). Ensure dtype float64. Possibly clip negative zeros. Also need to handle large arrays but fine.
+
+Also we might use scipy.spatial.distance.cdist? But we implement ourselves.
+
+Edge cases: N=0? Possibly. But shape (0,D). Should return (0,0). The algorithm works: sumsq shape (0,), then out shape (0,0). dot returns (0,0). So fine.
+
+Also we might use numba for speed but not necessary.
+
+Let's produce code.
+
+Also we can use np.einsum for dot: X @ X.T.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.einsum('ij,ij->i', X, X)
+    # compute distances
+    dists = sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T
+    # due to floating point, set small negatives to zero
+    np.maximum(dists, 0, out=dists)
+    return dists
+
+Return dtype float64.
+
+That should produce same results. Use np.dot instead of @.
+
+Testing: For random arrays, compare with reference. Should be close.
+
+Edge: negative due to rounding might produce small negative values; clip to zero.
+
+Return.
+
+Now produce the full file with imports and function.
+
+Also maybe include __all__? Not needed.
+
+Let's craft final code.
+

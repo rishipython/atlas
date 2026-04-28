@@ -1,0 +1,78 @@
+We need to produce a faster implementation of FFT convolution. The baseline uses scipy.signal.fftconvolve which is fast but might be slower for small signals due to overhead. But we can use numpy.fft.fft or rfft. We also need to support modes: full, same, valid. Should handle empty inputs.
+
+We can implement custom logic: compute convolution via FFT of appropriate length. For real signals, we can use rfft to reduce size. For small signals, use direct convolution via np.convolve which is also optimized. But we need speed for large signals.
+
+Given constraints: we have numpy, scipy, etc. But we can use numpy.fft.fft. But numpy.fft is slower than scipy.signal.fftconvolve? Actually scipy.signal.fftconvolve uses FFTW or similar. But we can try to optimize by using np.fft.rfft which is faster for real input.
+
+We'll implement solve that:
+
+- Convert inputs to np.array
+- Check lengths
+- If either empty: return empty list
+- Determine output length per mode
+- For small sizes (maybe len_x * len_y < 5000) use np.convolve
+- Else use FFT: compute conv_len = len_x + len_y - 1
+  - Determine next power of 2? We can use np.fft.next_fast_len from scipy.fft (but not sure available). We can use scipy.fft.next_fast_len from scipy.fft if available. But we can implement simple next_pow2.
+
+- Use rfft: x_fft = rfft(x, n=fft_len); y_fft = rfft(y, n=fft_len); conv = irfft(x_fft * y_fft, n=fft_len). Then take conv[:conv_len] or adjust for mode.
+
+But need to handle 'same' and 'valid'.
+
+- full: conv[:conv_len]
+- same: conv[(conv_len - len_x)//2 : (conv_len - len_x)//2 + len_x] (if len_x >= len_y?). Actually for same mode: output length is max(len_x, len_y). For np.convolve, same mode is defined as central part of full convolution of length max(len_x, len_y). Implementation: start = (conv_len - max_len)//2, end = start + max_len.
+
+- valid: output length is max(0, len_x + len_y - 1 - max(len_x, len_y) + 1?) Actually standard: For valid, output length is max(len_x, len_y) - min(len_x, len_y) + 1. For len_x >= len_y, valid length = len_x - len_y + 1. For len_y > len_x, valid length = len_y - len_x + 1. And start index: max_len - min_len? For len_x >= len_y, start = len_y -1? Wait full conv indices: output length conv_len. For valid with len_x >= len_y: start = len_y - 1, length = len_x - len_y + 1. For len_y > len_x: start = len_x - 1, length = len_y - len_x + 1.
+
+So we can compute start accordingly.
+
+Edge cases: if either empty, return [].
+
+Also ensure result is list of floats.
+
+We also need to match expected key name: In original solve returns {"convolution": convolution_result.tolist()}. The is_solution expects key "convolution". But the problem description says output key "result". But the solver uses "convolution". We'll keep "convolution" as original.
+
+So implement solve accordingly.
+
+Also we can use np.fft.rfftn? but 1D.
+
+Also we might use scipy.fft.fft? But we have numpy.
+
+Performance: use np.fft.rfft and irfft.
+
+Also maybe use np.real for numeric.
+
+We should also handle input arrays as list of floats.
+
+Let's implement next_fast_len: we can import scipy.fft next_fast_len if available, else simple power of 2.
+
+But for speed, we can use np.fft.next_fast_len? Not in numpy. Use scipy.fft.next_fast_len if available. Let's import from scipy.fft import next_fast_len. That requires scipy.fft (scipy>=1.4). We'll try.
+
+Implementation:
+
+```
+from scipy.fft import next_fast_len
+```
+
+If fails, fallback.
+
+Compute fft_len = next_fast_len(conv_len) if available else 1 << (conv_len-1).bit_length()
+
+We also need to handle dtype.
+
+Use np.array(signal_x, dtype=np.float64) etc.
+
+Edge: small signals: threshold 5000? We can use np.convolve which uses direct method.
+
+Ok.
+
+Let's write solve accordingly.
+
+Also we should maybe use np.fft.rfft, irfft.
+
+We need to ensure no extra overhead.
+
+Also we can use np.real for final.
+
+Return list.
+
+Ok. Let's produce final code.

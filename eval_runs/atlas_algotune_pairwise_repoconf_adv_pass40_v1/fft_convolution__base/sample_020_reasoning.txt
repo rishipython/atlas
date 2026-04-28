@@ -1,0 +1,47 @@
+We need to implement fast conv1d using FFT. We can use numpy. We can use np.fft.fft or scipy.signal.fftconvolve. But we need to ensure same output shape, dtype float64. Use np.fft.fft with size N+M-1. Use next_fast_len for performance. Let's implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size = N+M-1
+    nfft = 1 << (size-1).bit_length() # next power of 2
+    X = np.fft.rfft(x, n=nfft)
+    H = np.fft.rfft(h, n=nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, n=nfft)
+    return y[:size]
+
+But careful: np.fft.rfft returns real FFT length n//2+1. Works. Use np.fft.irfft. That returns length n. We then slice. Use dtype float64.
+
+Potential accuracy: Should match np.convolve. For small arrays, use direct? But not necessary.
+
+We need to handle possible empty inputs? Not given. But we can handle zero length? If N=0 or M=0, conv length 0? np.convolve returns empty. Our method: size = N+M-1: if either 0, size=-1? Actually if one zero, length -1? But not used.
+
+Assume lengths >=1.
+
+Let's implement.
+
+Also we might use numpy.fft.fft if we want general. Use rfft.
+
+Edge: if size > 1e6, we may want to use np.fft.rfft.
+
+Implement:
+
+import numpy as np
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size=N+M-1
+    nfft=1<< (size-1).bit_length()
+    X=np.fft.rfft(x, n=nfft)
+    H=np.fft.rfft(h, n=nfft)
+    Y=X*H
+    y=np.fft.irfft(Y, n=nfft)
+    return y[:size]
+
+Also cast to float64.
+
+Test with sample.
+
+Return.
+
+Let's produce final code.

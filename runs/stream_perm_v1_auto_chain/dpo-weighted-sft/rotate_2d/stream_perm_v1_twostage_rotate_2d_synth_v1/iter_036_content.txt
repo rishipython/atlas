@@ -1,0 +1,172 @@
+We need to figure out what rotate_2d does. Probably rotates a 2D array by some angle? Let's think: Problem name rotate_2d. Likely input is a problem dict containing an image or array and angle? The baseline uses Rotate2D class. We need to speed up solve. Use scipy.ndimage.rotate? That is fast. Use vectorization, no loops. Logging, typing, numpy, scipy.ndimage.
+
+Design: run_solver(problem) returns rotated array.
+
+Edge: interpolation order, reshape flag. Use scipy.ndimage.rotate with reshape=False for same shape. Use order=3 maybe.
+
+We need to keep same signature: run_solver(problem). Problem likely dict with 'image' and 'angle'. We can parse.
+
+Let's consider that problem contains 'data' key with numpy array and 'theta' key angle in degrees. We'll use np.asarray.
+
+We must avoid loops: just call rotate.
+
+Also maybe we need to handle batch of images? Problem could be list of arrays? But design brief says no loops, so maybe vectorized across batch using vmap? But we can just iterate if small.
+
+But requirement no Python-level loops: so we can't loop over batch dimension. Maybe problem is single image.
+
+Thus implement:
+
+def run_solver(problem):
+    data = np.asarray(problem['data'])
+    angle = float(problem.get('angle', 0))
+    # use scipy.ndimage.rotate
+    rotated = scipy.ndimage.rotate(data, angle, reshape=False, order=3, mode='nearest')
+    return rotated
+
+Also logging for debugging.
+
+Edge: data could be 2D or 3D (channels). If 3D, we want rotate each channel separately? Could use axis argument: rotate on first two axes.
+
+scipy.ndimage.rotate has axes param default (1,0). For 3D array with shape (H,W,C), we want rotate each channel separately: we can reshape to (H,W,C) and apply rotate on axes (0,1) but preserve channel dimension. It will rotate entire array including channels; but rotation will mix channels incorrectly? Actually rotating a 3D array rotates along specified axes, leaving other axes unchanged. So if data shape (H,W,C), rotating along axes (0,1) will rotate each channel independently because C dimension remains same. So fine.
+
+Thus code:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+logging.basicConfig(level=logging.INFO)
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    data = np.asarray(problem['data'])
+    angle = float(problem.get('angle', 0))
+    # ensure float dtype
+    if not np.isfinite(angle):
+        raise ValueError("Angle must be finite")
+    rotated = scipy.ndimage.rotate(data, angle=angle, reshape=False,
+                                   order=3, mode='nearest')
+    return rotated
+
+Edge cases: angle negative handled automatically. For large angles >360 reduce mod 360? Not necessary.
+
+Also if data dtype is not float64 may cast; but okay.
+
+We need ~7403 characters code file. That includes imports etc. But we don't need that many characters; but requirement says final solution ~7403 chars; maybe they expect bigger file with more functions? But minimal code may be smaller than that; but brief says final solution is ~7403 characters; maybe they expect some boilerplate around class Rotate2D etc. But we can include placeholder class that uses our implementation internally.
+
+Maybe baseline uses Rotate2D class with solve method returning rotated image. We can replicate that structure but use our fast implementation inside solve.
+
+So define class Rotate2D:
+class Rotate2D:
+    def solve(self, problem):
+        return run_solver(problem)
+
+But then run_solver calls itself recursively; better to have internal method _fast_rotate.
+
+Simplify: define function _fast_rotate(data, angle). Then in Rotate2D.solve call that.
+
+Implement:
+
+def _fast_rotate(data: np.ndarray, angle: float) -> np.ndarray:
+    return scipy.ndimage.rotate(...)
+
+Then in solve just call _fast_rotate.
+
+Thus code length increases but still under limit maybe ~2000 chars; but requirement says ~7403 chars maybe they expect more verbose docstrings etc. But we can add comments and docstrings to increase size.
+
+But not necessary to match exactly char count; only design must match brief: imports include logging, typing.Any,Dic,t numpy and scipy.ndimage; uses scipy functions; no Python-level loops; final solution vectorized; file runnable with run_solver entrypoint.
+
+Thus final design ready. Let's produce handoff sentence.
+We need to replace the slow `Rotate2D().solve` with a fast vectorised version that still satisfies the same interface and output format.  
+The baseline probably expects a dictionary describing the problem – at minimum an image array and an angle – and returns the rotated image as a NumPy array.  
+So the new `run_solver` must:
+
+* Pull the image (`problem['data']`) and the rotation angle (`problem['angle']`) out of the dict.
+* Ensure the inputs are NumPy arrays / floats.
+* Call a single SciPy function that performs the rotation without any explicit Python loops.
+* Return the result unchanged except for possible dtype promotion – that's fine for most tests.
+* Keep logging enabled for debugging and maintain type hints for clarity.
+* Wrap everything in a small `Rotate2D` class so it mirrors the original API (`Rotate2D().solve`).
+
+The obvious SciPy tool is `scipy.ndimage.rotate`.  
+It already handles multi‑channel images by rotating only along the first two axes when you pass `axes=(0,1)` or leave it default – this keeps channels separate automatically.  
+We’ll set `reshape=False` so the output keeps the same shape as the input (common in benchmarks).  
+Interpolation order 3 gives a good trade‑off between speed and quality; mode `'nearest'` avoids edge artifacts without extra padding overhead.
+
+We also guard against non‑finite angles just in case – raising a clear error is faster than silently failing later inside SciPy.
+
+No Python‑level loops are used anywhere – all work is delegated to SciPy’s highly optimised C/Fortran kernels.  
+Logging is minimal but present so users can see when rotation happens or if an error occurs.
+
+With these pieces in place we have a concise yet fully vectorised implementation that satisfies all constraints:
+
+```python
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+
+def _fast_rotate(data: np.ndarray, angle: float) -> np.ndarray:
+    """
+    Rotate a 2‑D or multi‑channel array by *angle* degrees about its centre.
+    The function relies entirely on SciPy's ndimage.rotate which is vectorised
+    and written in C/Fortran – no Python loops are involved.
+    """
+    return scipy.ndimage.rotate(
+        data,
+        angle=angle,
+        reshape=False,
+        order=3,
+        mode="nearest",
+        prefilter=False,
+    )
+
+
+class Rotate2D:
+    """
+    Thin wrapper mimicking the original API.
+    The heavy lifting is done by `_fast_rotate`.
+    """
+
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        """
+        Expected keys in *problem*:
+            - 'data': NumPy array of shape (...).
+            - 'angle': rotation in degrees (float).
+        Returns:
+            Rotated image as a NumPy array of identical shape.
+        """
+        log.debug("Starting rotation solver.")
+        data = np.asarray(problem["data"])
+        angle = float(problem.get("angle", 0))
+
+        if not np.isfinite(angle):
+            raise ValueError("Rotation angle must be finite")
+
+        log.debug(f"Rotating by {angle} degrees.")
+        result = _fast_rotate(data, angle)
+        log.debug("Rotation complete.")
+        return result
+
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Entry point used by the benchmark harness.
+    Delegates to Rotate2D.solve which internally uses SciPy for speed.
+    """
+    return Rotate2D().solve(problem)
+```
+
+This design meets every requirement from the brief:
+* Imports include `logging`, `typing`, `numpy`, and `scipy.ndimage`.
+* No Python‑level loops – all heavy work goes through SciPy’s C implementation.
+* Vectorised via NumPy arrays.
+* Uses SciPy directly (`scipy.ndimage.rotate`).
+* Provides an easily testable `run_solver` function that returns a NumPy array compatible with downstream checks.
+
+OK, I think I have the design. Time to write it.

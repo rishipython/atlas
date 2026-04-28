@@ -1,0 +1,173 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a problem dict: image, matrix. We need to output transformed_image array same shape. The baseline uses scipy.ndimage.affine_transform with order=3, mode='constant'. That's probably slow due to cubic interpolation. We can lower order to 1 or 0. But we must match reference? The is_solution will compare with reference output computed again with same order=3. So if we change order, we must produce same result? Wait, is_solution recomputes reference using self.order which is 3. So our solution must produce the same as scipy's default order 3. But maybe we can cheat by using a different algorithm that yields identical output? That seems hard.
+
+But maybe we can use SciPy's affine_transform but with precomputed inverse matrix? The function expects matrix mapping output coordinates to input coordinates? Actually scipy.ndimage.affine_transform applies a linear transformation to the input array and returns output of given shape. It uses matrix as linear transformation mapping output coordinates to input coordinates (i.e., input = matrix @ output + offset). But the problem gives a 2x3 matrix that presumably maps input to output? Need to confirm. In baseline they just pass matrix directly; so we keep that.
+
+The main bottleneck is cubic interpolation. Maybe we can use SciPy's map_coordinates with order=3 but that is similar.
+
+Alternatively, use OpenCV cv2.warpAffine which is fast but not allowed? cv2 not in allowed packages.
+
+Maybe use JAX or Numba for custom interpolation: implement bilinear or nearest but then adjust to match cubic? Not possible.
+
+Wait: The is_solution uses np.allclose with rtol=1e-5, atol=1e-7. That means small differences are allowed but must be close. If we use bilinear interpolation, errors might be > tolerance.
+
+So maybe we can't change interpolation order.
+
+But perhaps we can speed up by using vectorized coordinate generation and SciPy's map_coordinates on flattened array? That still uses C loops.
+
+Maybe the performance issue is not interpolation but overhead of Python loops inside solve? The baseline just calls affine_transform once; that's fine.
+
+Maybe the slow part is reading problem dict and converting lists to numpy arrays; we can avoid converting if already np array? But problem likely passes lists.
+
+We can convert image and matrix via np.asarray with dtype=np.float32 to reduce memory and speed up? But SciPy expects float64 for coordinates? It might cast internally.
+
+But maybe the main time is in generating output shape same as input; that's trivial.
+
+Could we use SciPy's affine_transform but supply precomputed inverse matrix and offset separately for speed? The function signature: affine_transform(input, matrix, offset=0.0, output_shape=None, order=3...). If you provide matrix as inverse of transformation from output to input coordinates, you get correct mapping. Baseline passes matrix directly; maybe that's correct already.
+
+We could compute inverse once and use it; but that adds overhead of computing inverse each call; but small cost relative to transform.
+
+Maybe the main slowdown is due to constant mode padding causing many boundary checks per pixel. Could we prepad image once and then use nearest neighbor indexing? That would be complex.
+
+Alternatively, use SciPy's ndimage.shift + rotate etc separate operations which are faster individually? But composition may not be exact same as affine transform.
+
+Another idea: Use FFT-based convolution for shear transforms? Too complex.
+
+Maybe the actual speed difference is minimal; but requirement says need ~4412 characters code file; meaning moderate size code including imports etc. So design likely uses simple approach: convert lists to numpy arrays, call scipy.ndimage.affine_transform, return list of lists. That would be short code (~200 chars). But brief says final solution ~4412 chars - large file indicates more elaborate logic like caching, type checking, etc.
+
+Thus maybe they want us to implement custom JITed interpolation using Numba for speed while maintaining accuracy within tolerance by using cubic interpolation formula manually (B-spline). That's doable: implement cubic B-spline interpolation via convolution along each axis separately (separable). That would be vectorized and fast in Numba because loops compiled in C-level loops over image dimensions - but still Python-level loops over axes maybe minimal.
+
+Alternatively use SciPy's spline interpolation via ndimage.map_coordinates with order=3 which is already vectorized in C. So why need custom?
+
+Maybe they want us to replace scipy.ndimage.affine_transform with a custom implementation that uses SciPy's map_coordinates on flattened indices computed via vectorized grid generation: create meshgrid of output coordinates, compute corresponding input coords via inverse transform, then call map_coordinates on whole array at once (vectorized). That reduces overhead of calling function per pixel vs internal loops in affine_transform? But map_coordinates also loops internally but receives array of coordinates all at once; might be faster if we avoid per-pixel overhead of computing offsets inside C loop?
+
+Let's examine complexity: affine_transform does nested loops over output pixels calling _affine_transform_c module which handles all at once anyway.
+
+Maybe the overhead is from Python converting lists to arrays each time inside solve; but that's trivial relative to transform time for typical image sizes (maybe 512x512). Might not be major.
+
+Thus maybe the main improvement expected is lower-order interpolation because they mention in brief about lower-order tradeoffs. But test harness expects same result as reference; if we lower order it fails validation because error too high beyond tolerance. Unless tolerance large enough for differences between cubic and linear? For 0-255 range, linear vs cubic difference could be > few units maybe >1e-5 relative tolerance relative small values near zero though... Might exceed tolerance of 1e-5 relative (i.e., relative error). For values ~100, 1e-5 relative means 0.001 difference max -> too strict for linear vs cubic differences ~1-5 units > tolerance -> fail.
+
+Thus cannot change order.
+
+What else can speed up without changing result significantly? We could use float32 instead of float64; this might reduce memory traffic and speed up computations slightly while still producing close results within tolerance since rounding errors small relative to tolerance 1e-5 relative (~0.001). Using float32 may introduce errors up to ~1e-7 relative maybe fine. So convert image and matrix to float32 before passing into affine_transform which will cast internally maybe back to float64 anyway though?
+
+Actually scipy.ndimage.affine_transform uses float64 by default for computation even if input dtype float32? I think it casts inputs to float64 for accuracy then back; so no benefit unless we modify underlying function ourselves using float32 operations via numba or jax.
+
+So perhaps we should implement custom affine transform using numba where all arithmetic done in float32 or float64 depending on dtype, with cubic spline interpolation implemented via separable convolution using precomputed coefficients per pixel (like using B-spline basis functions). This would be faster than scipy's generic implementation due to fewer branches and better memory locality.
+
+But implementing full cubic B-spline manually is complex but doable: For each axis, compute fractional part t = x - floor(x), then compute weights w[4] = [B0(t), B1(t), B2(t), B3(t)] where Bk are cubic B-spline basis functions defined piecewise polynomial of degree 3. Then for each pixel compute weighted sum over 4 neighboring pixels along axis sequentially (separable). This requires nested loops over axes but numba will compile them into efficient code without Python overhead. For an n x n image (~512x512), loops over n^2 * 4 * 4 operations ~512^2*16 ~4M ops per axis -> fine.
+
+We need also handle boundary conditions constant zero outside domain: if index out-of-bounds return zero weight contributions accordingly (just skip those neighbors).
+
+Thus design:
+
+- In solve: convert problem["image"] list -> np.asarray dtype=np.float32
+- Convert problem["matrix"] -> np.asarray dtype=np.float32
+- Compute inverse transform matrix M_inv = np.linalg.inv(np.vstack([matrix.T[:2,:], [0,0,1]]))[:2,:] ??? Wait need mapping from output coords y_out = M @ x_in + t? Let's derive: Given affine transform matrix A (2x3) mapping input coords x_in -> x_out = A @ [x_in_x, x_in_y, 1]. We want mapping from output coords y_out back to input coords x_in = A_inv @ [y_out_x,y_out_y,1]. So compute full 3x3 homogeneous matrix H = [[a,b,c],[d,e,f],[0,0,1]] where first two rows are matrix rows plus translation column third element c,f respectively. Then invert H => H_inv gives mapping from output coords back to input coords: [x_in_x,x_in_y] = H_inv[:2,:] @ [y_out_x,y_out_y,1].
+
+Thus compute H_inv easily via numpy.linalg.inv on 3x3 array built from matrix and [0,0] row [0,0,1].
+
+Then generate grid of output coordinates indices i,j ranging 0..n-1 each axis: use np.arange(n) create meshgrid X,Y shape (n,n). Flatten arrays or keep shape for vectorization inside numba loops over indices i,j directly reading X[i,j], Y[i,j].
+
+Inside numba function:
+
+def _affine_transform_numba(img_in: np.ndarray,
+                            H_inv: np.ndarray,
+                            n:int):
+    out = np.empty_like(img_in)
+    # iterate over i,j
+    for i in range(n):
+        for j in range(n):
+            # compute source coord
+            y = H_inv[0,0]*j + H_inv[0,1]*i + H_inv[0,2]
+            x = H_inv[1,0]*j + H_inv[1,1]*i + H_inv[1,2]
+            # Now perform bicubic interpolation on img_in at (x,y)
+            # Compute integer floor
+            ix = int(np.floor(x))
+            iy = int(np.floor(y))
+            tx = x - ix
+            ty = y - iy
+            # compute weights along x
+            wx = _cubic_weights(tx)
+            wy = _cubic_weights(ty)
+            # accumulate weighted sum over k,l from -1..2
+            val=0.
+            for m in range(-1,3):
+                xm = ix + m
+                if xm < 0 or xm >= n:
+                    continue
+                wxm = wx[m+1] # index shift
+                for n_ in range(-1,3):
+                    yn = iy + n_
+                    if yn < 0 or yn >= n:
+                        continue
+                    wyn = wy[n_+1]
+                    val += img_in[yn,xm]*wxm*wyn
+            out[i,j]=val
+
+Return out
+
+Need _cubic_weights(t): returns array length4 weights for k=-1..2:
+
+B-spline basis functions:
+B_{-1}(t) = ((-t+3)*t*t -6*t)/6 ??? Wait correct formulas:
+
+For cubic B-spline basis functions:
+B_{-1}(t) = ((-t+3)*t*t -6*t)/6   ??? Actually standard formulas:
+Let s=t
+w[-1] = ((-s+3)*s*s -6*s)/6
+w[0]   = ((s+3)*(s+2)*(s+1))/6
+w[1]   = (-((s+3)*(s+2)*(s+5)))/6??? Not sure.
+Better use known formulas from Wikipedia:
+
+For cubic B-spline basis functions:
+B_0(t) = (t^3)/6
+B_1(t) = (-t^3 + 4*t^2 -6*t +4)/6
+B_2(t) = (t^3 -4*t^2 +6*t)/6
+B_3(t) = (-t^3 + t^2)/6
+
+But these correspond to support [0..4]? Actually those are B-splines shifted such that support length 4 covering indices k=0..3 for t in [k,k+4]. However our indices m=-1..2 correspond offset shift by -1 so t' in [ -something]. Might simpler: Use standard cubic kernel used in scipy.ndimage.interpolation._cubic_coefficients(t):
+
+coeffs[4] defined as:
+coeffs[0] = ((-t+5)*t-8)*t/6
+coeffs[1] = ((12-(9*t+t)*t)*t)/6
+coeffs[2] = ((12-(9*(t)+8)*t)*t)/6 ??? I'm mixing.
+Let's look up typical formulas used in scipy:
+
+From scipy.ndimage.interpolation._cubic_coefficients(t):
+```
+if t < 0:
+    t += 4
+coeffs[0] = ((-t+5)*t-8)*t/6
+coeffs[1] = ((12-(9*t+t)*t)*t)/6
+coeffs[2] = ((12-(9*(t)+8)*t)*t)/6 ??? 
+```
+Not confident.
+
+Alternate approach: Use spline kernel from OpenCV or other library known formula:
+
+Weights w[-1], w[0], w[1], w[2]:
+Let s=t
+
+w[-1] = ((-s+3)*s*s -6*s)/6?
+Better derive manually:
+
+Cubic B-spline basis functions defined piecewise:
+For u in [0,1): 
+B(u)= (u^3)/6
+For u in [1,2):
+B(u)= (-u^3 +4*u^2 -6*u +4)/6
+For u in [2,3):
+B(u)= (u^3 -8*u^2 +24*u -24)/6 ? hmm
+
+Actually easier: Use standard Catmull-Rom spline kernel used by many libraries:
+weights:
+w[-1] = (-p/2)*(|u|**3 - |u|**2)
+w[0]   =(p/2)*(|u|**3*...?) Not good.
+
+Time low.
+
+Alternate plan: Use scipy.ndimage.map_coordinates directly on entire grid of coordinates computed by vectorized operation without implementing weights manually! That might be simpler and still fast because map_coordinates processes whole coordinate array at once in C loop without Python overhead per pixel like our custom loop would have anyway? But map_coordinates also has overhead computing weights per point inside C loop similar complexity as affine_transform though maybe less due to avoiding separate offset calculation?
+
+Actually map_coordinates takes coordinate arrays shape (... , ndim). We can create arrays X,Y flattened shape (n*n,) then stack into coords shape (ndim,n*n). Then call map_coordinates(image_flattened?? Actually image shape (n,n)). Provide coordinates as floats arrays X_flat,Y_flat . Then map_coordinates returns flattened result length n*n . Then reshape back . This avoids explicit Python loops entirely! Good idea! And map_coordinates supports mode='constant', cval=0 etc. It also supports order=order param exactly like ours! So this may be faster because

@@ -1,0 +1,14 @@
+We need to provide faster implementation. Use scipy.signal.fftconvolve or numpy. But need to ensure same dtype and same output. Use np.fft.fft to compute convolution. For real arrays, we can use np.fft.rfft? For speed, use np.fft.fft of size next power of two? But easier: use scipy.signal.fftconvolve. But we need to ensure availability. Usually SciPy available. We'll implement using np.fft.fft.
+
+Implementation: compute size = N + M -1. Choose nfft = 1 << (size-1).bit_length() maybe next power of two >= size. Compute fft_x = np.fft.rfft(x, nfft); fft_h = np.fft.rfft(h, nfft); y = np.fft.irfft(fft_x*fft_h, nfft); return y[:size] as float64.
+
+Edge cases: zero length? But arrays length >0 likely. Use dtype float64.
+
+Let's implement conv1d accordingly.
+
+Also consider using np.fft.fft for full complex but rfft better.
+
+Return dtype float64.
+
+Ok. Provide file.
+

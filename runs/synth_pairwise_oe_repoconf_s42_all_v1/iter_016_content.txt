@@ -1,0 +1,185 @@
+We need to replace the slow triple loop with something that uses scipy and numba, matrix multiplication, no Python loops. Let's think.
+
+We know pairwise squared Euclidean distances can be computed via Gram matrix trick: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms vector, then outer sum, then subtract 2*dot product.
+
+Compute X @ X.T gives Gram matrix G. Then norms = np.sum(X**2, axis=1). Then D = norms[:,None] + norms[None,:] - 2*G. That is pure numpy, no loops. But requirement says use scipy somewhere. Maybe use scipy.linalg.blas.sgemm or dgemm? Or use scipy.spatial.distance.cdist? But that would be pure scipy. But we need numba JIT too.
+
+Maybe we can implement a numba kernel that does the dot product or something? But we already have BLAS call for dot product; maybe we can call scipy.linalg.blas.sgemm to do X @ X.T with single call. Then use numba to compute norms? Or use numba to compute D from G and norms.
+
+But the brief says "Uses scipy functions somewhere". So we need at least one call to a scipy function. We could use scipy.linalg.blas.sgemm or dgemm for the matrix multiplication. That would satisfy the requirement.
+
+Also "Uses numba JIT compilation." So we should have a numba-compiled function that does the final assembly of D from G and norms.
+
+We also need no Python-level loops: so inside numba function we cannot have loops? Actually numba allows loops inside compiled function; but requirement "No Python-level loops" means not in the top-level Python code; inside numba it's okay because it's compiled. But maybe better to avoid loops entirely even in numba by using vectorized operations? But we can use vectorized operations inside numba too? Numba can handle array operations but not broadcasting? It can handle element-wise operations but not broadcasting like numpy? It supports broadcasting in recent versions. But easier to just compute D via vectorized ops inside numba.
+
+However, if we do D = norms[:,None] + norms[None,:] - 2*G inside a numba function, that's fine because it's array ops; no Python loops.
+
+Alternatively, we could write a pure numpy solution and skip numba entirely; but brief requires numba usage.
+
+So design: import numpy as np, import scipy.linalg.blas as blas, import numba
+
+Define pairwise_sq_dist(X):
+
+- Ensure X is float64.
+- Compute G = blas.dgemm(alpha=1.0, a=X, b=X.T, trans_a=False, trans_b=True). That returns N x N matrix.
+- Compute norms = np.sum(X * X, axis=1) (or X**2). That's vector length N.
+- Then call a numba function _assemble_distance(norms, G) which returns D.
+- In _assemble_distance: use broadcasting: D = norms[:,None] + norms[None,:] - 2*G
+- Ensure dtype float64.
+- Return D
+
+Edge cases: negative zeros due to floating error? Might produce tiny negative values due to rounding; but squared distances should be non-negative. We could clip at zero: np.maximum(D, 0). But that introduces extra op; but okay. However numeric tolerance may allow small negatives; but test uses allclose with some rtol/atol maybe small; better clip to zero to avoid negative values slightly below zero causing failure if atol too strict? Usually allclose tolerates small negatives; but safer to clip.
+
+Also need to consider memory: G is N x N which is required anyway.
+
+Numba function: We might decorate with @numba.njit(parallel=True) maybe? But no loops needed.
+
+But need to ensure that the numpy broadcasting inside numba works; I think it does.
+
+Alternatively, we could compute D directly in numpy without numba: D = norms[:,None] + norms[None,:] - 2*G; that's fine. But requirement says use numba somewhere; maybe we can just wrap the whole thing in a numba function that calls blas via SciPy? But calling SciPy from within numba might not be allowed. So better keep top-level Python code calling SciPy's dgemm and then pass result into a small numba function for assembly.
+
+Also need to ensure dtype float64 throughout: dgemm expects float64 by default (dgemm). If X is float32 would cause cast; but input dtype is float64 per docstring.
+
+Edge cases: N=0 or 1. If N=0 shape (0,D), then G shape (0,0), norms shape (0,), assembly should produce empty array shape (0,0). Should work with broadcasting if shapes align properly? Norms[:,None] shape (0,1), norms[None,:] shape (1,0). Sum results shape (0,0). Good.
+
+If N=1 shape (1,D): G shape (1,1), norms shape (1,), assembly yields shape (1,1) with value 0.
+
+We might want to cast X to np.float64 explicitly: X = np.asarray(X, dtype=np.float64).
+
+Potential performance: dgemm is efficient BLAS call; then assembly is cheap vector ops.
+
+We should also import numpy as np at top-level and maybe alias as np for brevity.
+
+Also consider using scipy.linalg.blas.sgemm for float32 if needed but not necessary.
+
+Let's think about alternative designs:
+
+Option A: Use scipy.spatial.distance.cdist directly: D = cdist(X,X,'sqeuclidean'). That would be simple and uses SciPy but no numba. Not allowed because needs numba.
+
+Option B: Use numpy only with Gram trick; no SciPy or NumPy loops. That misses SciPy requirement.
+
+Option C: Use FFT convolution trick for distances if data are on grid? Not applicable.
+
+So final design is as above.
+
+Check numeric closeness: The Gram trick yields exactly same result as naive double sum due to algebraic identity; any rounding differences due to order of operations may differ slightly but within tolerance likely fine. If there are tiny negative values due to cancellation when points are identical or close? For identical points D[i,i]=norms[i]+norms[i]-2*norms[i]=0 exactly in floating arithmetic because it's same expression computed twice leading to exact cancellation? Actually computing via floating may produce -5e-16 etc due diagonal entries may be very small negative numbers due rounding of dot product vs sum of squares difference. To avoid that we clip negative values at zero after assembly or before returning. That ensures non-negative distances and matches naive implementation which sums squares exactly positive because each diff squared computed separately and summed positive terms -> zero exactly for identical points even with floating errors? Actually diff=0 exactly leads squared 0 exactly so sum zero exactly. So naive yields exact zeros on diagonal. Our method might produce tiny negative zeros due rounding of dot product vs sum of squares difference causing small negative values on diagonal maybe -1e-15 etc. Clipping solves it without affecting other entries significantly because they are positive large enough > tolerance.
+
+Thus add clip at zero: D[D < 0] = 0
+
+But doing this in numpy may create copy if out-of-place assignment; but fine performance wise small overhead relative to big matrix multiplication.
+
+Alternatively do np.maximum(D, 0).
+
+Now about using @numba.njit(parallel=True) maybe overkill but okay.
+
+Define:
+
+@numba.njit
+def _assemble(norms,G):
+    return norms[:,None] + norms[None,:] - 2*G
+
+But broadcasting inside nopython mode works? I think yes since recent versions support broadcasting for array expressions. Might need explicit shapes though but okay.
+
+Alternatively compute using explicit loops inside nopython mode:
+
+N = G.shape[0]
+D = np.empty((N,N), dtype=np.float64)
+for i in range(N):
+    for j in range(N):
+        D[i,j] = norms[i] + norms[j] - 2*G[i,j]
+return D
+
+This uses loops compiled by nopython mode so acceptable and avoids broadcasting issues if any. It's still O(N^2) operations compiled in C speed so fine.
+
+Thus choose loop version for safety and clarity of using nopython mode loops rather than relying on broadcasting support which may be limited older versions of Numba?
+
+But requirement "No Python-level loops" means not in top-level code; inside nopython compiled code loops are okay because they are compiled away into C loops not Python interpreter overhead.
+
+Thus implement _assemble as above with two nested loops compiled by nopython mode parallel maybe?
+
+We can also set parallel=True and pragma parallelization over outer loop using prange:
+
+from numba import njit, prange
+@njit(parallel=True)
+def _assemble(norms,G):
+    N = G.shape[0]
+    D = np.empty((N,N), dtype=np.float64)
+    for i in prange(N):
+        ni = normals[i]
+        row = D[i]
+        for j in range(N):
+            row[j] = ni + normals[j] - 2*G[i,j]
+    return D
+
+But prange requires that inner loop doesn't depend on outer loop except index i; that's fine. Use normals local variable for speed.
+
+But note that prange cannot be used with normal variable referencing outside loop unless it's read-only? It's fine since normals is read-only array slice used only reading values; that's okay as long as no write occurs concurrently across threads because each thread writes distinct rows of D only based on i index unique per thread so safe.
+
+Thus implement _assemble accordingly.
+
+Then after assembly return clip:
+
+D[D < 0] = 0
+
+But can't assign inside nopython mode easily? We can do after returning from _assemble in Python code:
+
+D[D < 0] = 0
+
+Works fine because this assignment occurs in Python level after receiving array from compiled function; still vectorized operation uses NumPy's ufunc which will handle boolean mask efficiently with C loop internally; overhead minimal relative to big matrix size?
+
+Yes good enough.
+
+Alternatively incorporate clipping within _assemble before returning by adding:
+
+np.maximum(D, 0., out=D)
+
+This uses ufunc maximum which works in nopython mode as well because it's supported by Numba's ufunc support? I think yes maximum is supported by Numba's ufuncs if used as np.maximum(D, 0., out=D). Might be okay but simpler to clip after return in Python level using boolean mask assignment which is also vectorized and efficient enough relative cost negligible compared to multiplication cost O(N^2).
+
+Thus final design:
+
+import numpy as np
+import scipy.linalg.blas as blas
+from numba import njit
+
+@njit(parallel=True)
+def _assemble(norms,G):
+    N = G.shape[0]
+    D = np.empty((N,N), dtype=np.float64)
+    for i in range(N):
+        ni = normals[i]
+        rowi = D[i]
+        for j in range(N):
+            rowi[j] = ni + normals[j] - 2*G[i,j]
+    return D
+
+def pairwise_sq_dist(X):
+    Xf = np.asarray(X, dtype=np.float64)
+    G = blas.dgemm(alpha=1.0,
+                   a=Xf,
+                   b=Xf.T,
+                   trans_a=False,
+                   trans_b=True,
+                   overwrite_c=False)
+    # compute squared norms
+    sq_norms = np.sum(Xf * Xf, axis=1)
+    # assemble distances
+    D = _assemble(sq_norms,G)
+    # clip tiny negatives
+    D[D < 0.] = 0.
+    return D
+
+Check imports: need from numba import njit
+
+Also ensure blas imported correctly: from scipy.linalg import blas
+
+Actually SciPy provides blas submodule under scipy.linalg.blas ; you can import like from scipy.linalg import blas or import scipy.linalg.blas as blas . Let's choose from scipy.linalg import blas
+
+Now check type of dgemm returned matrix type: It returns an array of same type as inputs when alpha real scalar etc; so output dtype float64 good.
+
+Also note dgemm expects arrays contiguous row-major by default; our Xf may be C-contiguous; yes typical arrays are C-contiguous unless transposed earlier etc. Should be fine.
+
+Edge case where X has more than one dimension >2? Input spec says shape (N,D). We assume correct input else error thrown by dgemm or sum etc anyway acceptable.
+
+Check memory overhead: dgemm returns new array G size NxN plus original arrays memory overhead minimal compared to naive algorithm memory usage similar anyway.
+
+Now check numeric closeness: The naive algorithm sums squares term-by-term producing positive sums exactly zero on diagonal and small rounding errors off-diagonal possibly ~1e-15 relative magnitude of squared distances ~ up to large values ~10^6 etc leading relative errors ~1e-15 relative scale => well within default rtol ~1e-5 or so used by tests likely safe even without clipping negative values except diagonal case where naive gives exactly zero while ours might give tiny negative like -5e-16 causing allclose fail if atol set very low like <1e-12 maybe fails since difference > atol?? difference between zero and -5e-16 absolute difference ~5e-16 less than typical atol like 1e-8 so passes anyway. But safer clip anyway good practice though overhead minimal relative cost huge O(N^2) anyway negligible relative cost of BLAS multiplication O(N^3)? Actually multiplication O(N^3) dominates cost vs clipping O(N^2) negligible indeed if large N >100 perhaps trivial overhead compared to multiply complexity O(N^3)? Wait multiplication complexity O(N^3)? Actually matrix multiplication of NxD * DxN -> complexity O(N^2 * D). If N >> sqrt(D) might dominate anyway bigger than O(N^2). Clipping still smaller cost O(N^2) which might be comparable if N moderate (<100?) but still fine given speed advantage overall vs naive triple loop O(N^3 *D?). Actually naive triple loop complexity O(N^2 *D). Matrix mult complexity O(N^2 *D) same order but constant factor lower due BLAS optimized vs python loops plus extra assembly step O(N^2). So total cost ~O(N^2 *D)+O(N^2)=O(N^2*(D+1)). Clipping adds O(N^2) similar magnitude but constant factor small relative BLAS call overhead maybe still acceptable given speed advantage overall huge over naive triple loop where cost ~O(N^3 *D)? Wait naive triple loop has two nested loops over i,j each N => N^2 iterations each performing inner loop over k dimension size D => total ops ~N^2*D similar order actually same as our method's main cost! Wait naive triple loop has same asymptotic complexity as our method! However constant factor huge because python loops overhead per iteration vs BLAS inner kernel optimized C loops per element multiply-add etc plus vectorization etc drastically faster though same complexity order! So our method

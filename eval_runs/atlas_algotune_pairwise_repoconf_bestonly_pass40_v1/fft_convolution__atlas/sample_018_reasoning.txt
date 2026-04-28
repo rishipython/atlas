@@ -1,0 +1,43 @@
+We need to replace slow implementation with FFT-based convolution. Use numpy. Ensure same output shape, dtype float64. Use numpy.fft.fft. For real inputs, we can use np.fft.rfft? But easiest: use np.fft.fft with length L = next power of 2? But can use np.fft.fft directly; size is N+M-1. Use np.fft.fft(x, n=L), np.fft.fft(h, n=L). Then inverse. Use np.real? Since inputs real, result should be real. But due to round-off, we can round small imaginary parts. Use np.fft.ifft. Ensure dtype float64. Use np.fft.fftshift? No. We'll use np.fft.fft. Should handle large arrays.
+
+We can also use np.fft.fft with length L = N+M-1. That may not be power of two but fine. Complexity O(N log N). We'll implement conv1d as:
+
+def conv1d(x, h):
+    N = x.size
+    M = h.size
+    L = N + M - 1
+    # compute FFT of size L
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    y = np.fft.ifft(X * H).real
+    return y.astype(np.float64)
+
+But ensure dtype float64. The ifft returns float64 dtype if inputs are float64. Use .real.
+
+Edge cases: x, h may not be 1D? But signature says 1-D arrays. We'll flatten.
+
+We can also use np.fft.fft(x, L) and if x/h not float64, cast.
+
+Also consider using np.fft.rfft to speed but not necessary.
+
+Also consider using np.fft.fft for real to avoid complex? It's fine.
+
+Make sure to import numpy.
+
+Also we can use np.fft.fft with n= L. That returns complex array of length L. Multiply, inverse, take real. That's fine.
+
+Add small epsilon to avoid negative zero? Not needed.
+
+Return as np.ndarray float64.
+
+Edge: if N or M is 0? Not allowed? We'll assume >0.
+
+Ok produce file.
+
+Potential improvement: use np.fft.fft to compute with next power of two for speed. But not necessary.
+
+We'll implement.
+
+Add docstring.
+
+Ok.

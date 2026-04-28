@@ -1,0 +1,22 @@
+We need to replace slow implementation with fast one using FFT. We need to keep same function signature. Use scipy.signal.fftconvolve or numpy. Use numpy.fft. We must ensure numerically close. Use np.fft.rfft or fft. For real signals, we can use np.fft.rfft. But easier: use np.fft.fft. Compute length L = next power of two >= N+M-1. Or use np.fft.rfft and irfft. Use real input. Use np.fft.rfft and irfft for speed.
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); n_out=N+M-1
+    L=1<<((n_out-1).bit_length())  # next power of two
+    X=np.fft.rfft(x, L)
+    H=np.fft.rfft(h, L)
+    Y=X*H
+    y=np.fft.irfft(Y, L)[:n_out]
+    return y
+
+We need import numpy as np. Should be fine. Might need to cast to float64. Use np.asarray.
+
+Edge cases: empty arrays? Not likely. But we can handle.
+
+We should also support dtype float64. Accept array-like.
+
+Return dtype float64.
+
+Let's produce final code.

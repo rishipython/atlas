@@ -1,0 +1,26 @@
+We need to replace the slow loop‑based Rotate2D implementation with a vectorised version that still uses SciPy somewhere. The simplest way to rotate a 2‑D array (or image) is to call `scipy.ndimage.rotate`, which is already heavily optimised in C and handles all the interpolation internally. That satisfies the “use SciPy” requirement and keeps everything vectorised—no Python loops at all.
+
+The `problem` dictionary will contain the data to rotate and the angle in degrees. We’ll just pull those out, cast the angle to a float (in case it comes as a string), and pass them straight to `ndimage.rotate`. We keep `reshape=False` so that the output has the same shape as the input (this matches most test cases that expect a fixed‑size output). The rotation order is left as the default (order=1) which gives bilinear interpolation—fast enough for most use cases while still being reasonably accurate.
+
+Finally we return a dictionary containing the rotated array under the key `'rotated'`. No loops are used anywhere; everything is handled by NumPy/SciPy under the hood.
+
+Here’s how that looks in code:
+
+```python
+import numpy as np
+import scipy.ndimage
+from typing import Any, Dict
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    # Extract inputs
+    arr = np.asarray(problem["array"])
+    angle = float(problem["angle"])
+    
+    # Perform rotation using SciPy's fast implementation
+    rotated = scipy.ndimage.rotate(arr, angle, reshape=False)
+    
+    # Return result in expected format
+    return {"rotated": rotated}
+```
+
+This design meets all constraints: it imports only NumPy and SciPy (plus typing), uses SciPy for rotation, has no Python‑level loops, and is fully vectorised. OK, I think I have the design. Time to write it.

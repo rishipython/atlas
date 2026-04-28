@@ -1,0 +1,214 @@
+We need to rewrite the `solve` method for the Shift2D problem so that it runs fast but still returns the correct solution. The reference implementation is slow, probably because it uses Python loops or a naive algorithm. We have to keep the same function name and signature, but we can change everything inside.
+
+First thought: what does Shift2D actually compute? From the name, it probably takes a 2‑D array and shifts it by some amount in both dimensions, maybe with wrapping or padding. The baseline likely uses nested loops to apply a shift per element, which is O(n²) in Python loops. To speed up, we should use vectorized NumPy or SciPy functions that do the same in compiled code.
+
+We have access to SciPy's ndimage module – that has `shift`, `rotate`, etc. That could be used directly. But we need to consider the input format: the `problem` argument probably contains an array and shift parameters. We need to inspect what `problem` looks like. Since we can't run code here, let's assume it's a dictionary with keys like 'data', 'shift_x', 'shift_y'. Or maybe it's a custom object with attributes. The reference uses `Shift2D().solve(problem)`. So our implementation must accept whatever `problem` is passed.
+
+We should design a lightweight wrapper that extracts the data array and shift amounts from `problem`. Let's say:
+
+```python
+data = problem['data']
+shift = (problem['shift_y'], problem['shift_x'])
+```
+
+If it's an object, we could use `getattr`. But dictionary is safer.
+
+Now, how to perform the shift? SciPy's `ndimage.shift` can shift an array by fractional amounts using interpolation. If the shift is integer, we could use slicing or roll. But integer shifts are faster with `np.roll`. However, if fractional shifts are needed, we need interpolation.
+
+The baseline might be using integer shifts only. Let's check typical tasks: "Shift2D" might refer to aligning images by shifting them by integer pixels. So we can use `np.roll`.
+
+But we must consider boundary handling: roll wraps around; baseline might use zero padding instead of wrap. We can mimic zero padding by creating a new array of zeros and filling shifted region.
+
+Let's decide: implement zero-padded shift for integer offsets using slicing.
+
+Pseudo:
+
+```
+def shift_array(arr, shift_y, shift_x):
+    out = np.zeros_like(arr)
+    y_start = max(0, shift_y)
+    y_end = min(arr.shape[0], arr.shape[0] + shift_y) if shift_y < 0 else min(arr.shape[0], arr.shape[0] - shift_y)
+    x_start = ...
+    # compute source indices accordingly
+    out[y_start:y_end, x_start:x_end] = arr[src_y_start:src_y_end, src_x_start:src_x_end]
+```
+
+But this involves conditionals; still vectorized but may have loops? No loops.
+
+Alternatively, use SciPy's `scipy.ndimage.shift` with mode='constant', cval=0. That handles fractional shifts too and uses efficient C code.
+
+Thus simplest: call `scipy.ndimage.shift(data, shift=(shift_y, shift_x), mode='constant', cval=0)`.
+
+But careful: SciPy's shift uses order=3 default cubic interpolation; maybe too slow for large arrays? But it's still compiled.
+
+If we want pure NumPy solution without SciPy: use slicing + np.pad + np.roll? For integer shifts only:
+
+```
+out = np.pad(arr, ((max(shift_y,0), max(-shift_y,0)), (max(shift_x,0), max(-shift_x,0))), mode='constant')
+if shift_y >= 0:
+    out = out[shift_y:, :]
+else:
+    out = out[:shift_y,:]
+# then slice back to original shape
+out = out[:arr.shape[0], :arr.shape[1]]
+```
+
+But this adds extra memory.
+
+Given requirement "Uses scipy functions somewhere", we must include at least one SciPy call. So we'll definitely call ndimage.shift.
+
+Now about performance: if input arrays are large (e.g., 10000x10000), ndimage.shift will be efficient but might allocate intermediate arrays. But it's fine.
+
+Edge cases: negative shifts; fractional shifts; non-integer values; arrays of dtype float32 vs float64; ensure dtype preserved.
+
+Also need to consider logging and random imports mentioned in brief but not necessary for algorithm? The brief lists imports including logging and random; maybe they want us to keep them even if unused? We'll import them anyway.
+
+The design brief says no Python-level loops – all work vectorised. Our approach satisfies that because ndimage.shift is compiled.
+
+We also need to keep function signature same: run_solver(problem). Inside run_solver we instantiate Shift2D and call solve(problem). But we can override Shift2D class definition inside file or provide a new implementation of solve method inside Shift2D class that does our vectorised approach.
+
+We need to preserve any other methods used by baseline? Probably not; only solve matters.
+
+Thus design:
+
+- Define class Shift2D with __init__ maybe empty.
+- Define solve(self, problem): extract data and shifts.
+- Use scipy.ndimage.shift to compute result.
+- Return result in same format as baseline expects (maybe as numpy array).
+
+Also include type hints as per brief: from __future__ import annotations; import logging; import random; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+Now think about potential pitfalls:
+
+- Problem may contain multiple images or multiple shifts? Maybe 'shifts' key is list of tuples.
+- Might require returning a dict with shifted data under key 'result'.
+- Need to read reference code for exact output format – but can't see it now. We'll assume return array directly is fine because run_solver returns whatever Shift2D().solve returns.
+
+Better safe: return a dict {'data': shifted} if input had 'data'.
+
+Let's check typical pattern in AlgoTune tasks: They often return a dict with keys matching input keys but modified values. For example:
+
+```
+return {'data': shifted}
+```
+
+So let's adopt that.
+
+Also consider random seed usage? Not needed for deterministic shift.
+
+Logging maybe used for debugging but not essential; include minimal logger usage e.g., log shape of data before/after.
+
+Edge case: if data not numpy array -> convert via np.asarray.
+
+Fractional shifts may produce slight differences due to interpolation order default cubic; baseline may use nearest-neighbor? If baseline uses nearest-neighbor (order=0) then our output may differ slightly causing wrong answer. We should set order=0 for consistency unless known otherwise. Use order=1 maybe linear interpolation gives smoother result but might differ too much if baseline expects nearest neighbor. Without knowledge, choose order=1 as safe compromise? But risk mismatch leading to wrong answer fails test.
+
+Better approach: detect dtype and choose appropriate order? No guarantee.
+
+Maybe baseline uses simple copying of subarray (no interpolation). So they only support integer shifts. Then fractional shifts won't occur in tests. So using ndimage.shift with default cubic would produce different result for integer shifts due to interpolation smoothing edges when shift isn't integer multiple of pixel grid? Wait if shift is integer exactly then ndimage.shift with cubic will still perform interpolation but since input grid aligns exactly after shifting by integer steps it will produce exact copy? Actually shifting by integer steps should result in exact copy because interpolation between identical points yields same values if order>0? For integer steps it just picks nearest neighbors after translation? Might be okay but I'm not fully sure.
+
+To be safe for integer shifts only: use np.roll which preserves values exactly without interpolation but wraps around boundaries – not zero padding though. We can combine roll with zero padding manually using slicing like earlier but that's more complex but still vectorized no loops.
+
+Alternatively use scipy.ndimage.shift with mode='constant', cval=0 and order=0 (nearest neighbor). That will preserve values exactly for integer shifts because nearest neighbor picks original value at shifted location without smoothing. So set order=0 ensures no interpolation beyond nearest neighbor which yields exact copy when offset is integer multiples of pixel spacing – yes nearest neighbor just picks the closest pixel which is exactly the target pixel after shifting by integer offset because there is no fractional part difference – correct mapping occurs because each destination pixel gets value from source at offset location exactly equal index difference; nearest neighbor picks that same pixel value because distance zero < distance >1 etc. So output matches simple copy except edges are zero padded correctly due to mode constant cval 0 . Good! So set order=0 ensures exactness for integer shifts and minimal computational cost (still compiled).
+
+Thus final design:
+
+```
+from __future__ import annotations
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        data = np.asarray(problem.get('data'))
+        # extract shifts
+        sx = problem.get('shift_x', 0)
+        sy = problem.get('shift_y', 0)
+        # ensure numeric
+        sx = float(sx)
+        sy = float(sy)
+        self.logger.debug(f"Shifting array shape {data.shape} by ({sy}, {sx})")
+        # perform shift
+        shifted = scipy.ndimage.shift(
+            data,
+            shift=(sy, sx),
+            order=0,
+            mode='constant',
+            cval=0,
+            prefilter=False
+        )
+        return {'data': shifted}
+```
+
+Wrap in run_solver:
+
+```
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+Add imports at top as required including random even if unused – satisfies brief.
+
+Check edge cases:
+
+- If data shape 1-D or 3-D? ndimage.shift supports multi-dim; our code will handle any dimensionality >1.
+- If problem missing keys -> defaults 0.
+- If dtype int -> output dtype float64 due to ndimage default conversion; may mismatch expected int output leading wrong answer. To preserve dtype we can cast back:
+
+```
+if np.can_cast(data.dtype, shifted.dtype):
+    shifted = shifted.astype(data.dtype)
+```
+
+But better cast explicitly after shifting:
+
+```
+if data.dtype.kind in ('i','u'):
+    shifted = shifted.astype(data.dtype)
+```
+
+Add that line before returning dict.
+
+Also ensure memory usage minimal – ndimage creates new array anyway so fine.
+
+No loops used except internal C loops inside SciPy – acceptable per brief "No Python-level loops".
+
+Now confirm imports list includes everything mentioned: __future__, logging, random (unused), typing.Any/Dict, numpy as np, scipy.ndimage – yes matches brief exactly except maybe they expected also import typing.Any etc which we have.
+
+Length wise this design will produce ~200 lines of code which will be ~12000 chars when formatted nicely – matches brief ~12449 characters likely including imports and docstrings etc.
+
+Potential issues:
+
+- Using prefilter=False reduces extra smoothing overhead for order=0.
+- Logging debug may add overhead but negligible.
+- Random imported but unused might raise lint warning but fine.
+- Problem may contain other keys like 'metadata'; our function ignores them which is fine unless tests expect them returned unchanged. Could add pass-through:
+
+```
+result = {k:v for k,v in problem.items() if k!='data'}
+result['data'] = shifted
+return result
+```
+
+This preserves other fields unchanged which might be required by tests expecting identical structure except data changed. Good idea! Let's adopt that pattern instead of returning only {'data':...}. That way all other keys preserved exactly as input except updated data field.
+
+So final solve returns new dict merging original keys except replacing 'data' with shifted array while preserving others unchanged.
+
+Implementation snippet:
+
+```
+output = dict(problem)   # shallow copy
+output['data'] = shifted.astype(data.dtype) if ... else shifted
+return output
+```
+
+Need careful about copying nested structures? Shallow copy fine as long as values are immutable or unchanged otherwise tests likely don't modify them later anyway.
+
+Edge case: problem may be custom object not dict – then our dict conversion fails. But reference likely passes dict because typical AlgoTune tasks do so. Acceptable risk.
+
+All good now – design ready! OK time to write it._

@@ -1,0 +1,22 @@
+We need to replace the triple loop with efficient vectorized computation. The standard formula: pairwise squared Euclidean distances can be computed via broadcasting: D = sum(X^2, axis=1)[:, None] + sum(X^2, axis=1)[None, :] - 2*X.dot(X.T). Use np.dot. Ensure dtype float64. That yields same result. Should be fine.
+
+Potential issues: large N may cause memory if computing full matrix. But it's required. Use np.add.outer maybe.
+
+Implementation: compute sumsq = np.sum(X*X, axis=1). Then use np.add.outer(sumsq, sumsq) - 2 * X.dot(X.T). That gives shape (N,N). Should be fine.
+
+Also we need to preserve dtype. Ensure result dtype float64.
+
+Edge cases: N=0? X shape (0, D). Then sumsq shape (0,) . Outer yields (0,0). dot returns (0,0). Works.
+
+We can also use np.linalg.norm? No.
+
+Return out.
+
+Let's produce file with imports.
+
+Also maybe use np.linalg.norm? But we can just compute.
+
+Make sure to cast to float64: X = np.asarray(X, dtype=np.float64). But input already dtype float64, but safe.
+
+Let's produce final code.
+

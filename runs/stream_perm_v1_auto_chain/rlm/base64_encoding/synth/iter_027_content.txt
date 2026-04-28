@@ -1,0 +1,48 @@
+We need to take whatever the input `problem` dictionary gives us and spit out a base‑64 string as fast as possible.  
+The reference solution probably walks over the data element by element and builds the output byte‑by‑byte – that’s slow in Python.  
+So the plan is to hand everything off to C code as soon as we can: `base64.b64encode` lives in C and will do all the heavy lifting for us.  
+
+First question: what shape does the data come in?  
+- It could already be a `bytes` object – that’s perfect.  
+- It might be a list of integers (0‑255) – we can turn that into a `numpy` array of type `uint8` and then call `.tobytes()` – that creates the buffer without any Python loops.  
+- It could even be a `numpy.ndarray` of arbitrary shape – we just flatten it and cast to `uint8`.  
+- If it’s a string we’ll just encode it as UTF‑8 before handing it off.  
+
+No matter what, once we have a contiguous `bytes` object we hand it straight to `b64encode`.  
+That returns a `bytes` object too; we’ll decode it once at the end so callers get a plain Python string (the reference probably does this).  
+
+Implementation sketch:
+
+```python
+import base64
+import numpy as np
+
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem.get('data')
+        if isinstance(data, bytes):
+            raw = data
+        elif isinstance(data, str):
+            raw = data.encode('utf-8')
+        else:
+            # assume iterable of ints or ndarray
+            arr = np.asarray(data, dtype=np.uint8)
+            raw = arr.tobytes()
+        encoded = base64.b64encode(raw).decode('ascii')
+        return encoded
+```
+
+Then the entry point:
+
+```python
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+That’s it – no explicit Python loops, just one conversion per data type and one call into C for the heavy lifting.  
+
+Edge cases:  
+- Empty input (`b''`) will produce an empty string – correct.  
+- Non‑integer values in an iterable would raise when converting to `uint8`, which is fine because the spec probably guarantees valid byte values.  
+
+All right, I think this design meets the constraints: fully vectorised (via NumPy), no Python loops, uses fast C libraries for encoding, and keeps the code concise enough for the ~3000 character target. Time to write it up.

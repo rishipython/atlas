@@ -1,0 +1,119 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D array or image by arbitrary angle. The baseline uses Rotate2D class. We need faster implementation using scipy.ndimage, vectorized, no loops. Let's think.
+
+We need to handle input format: problem likely a dict with keys: 'image', 'angle', maybe 'order'. We need to output rotated image. Use scipy.ndimage.rotate with reshape=False or True? We want speed.
+
+Consider using scipy.ndimage.affine_transform or rotate with order 1 or 3? The baseline may use scipy.ndimage.rotate but slower due to overhead? Maybe we can use scipy.ndimage.affine_transform which is lower-level and faster if we precompute matrix.
+
+Alternatively use skimage.transform.rotate but not allowed.
+
+We must avoid loops: just call function once.
+
+Edge cases: angle could be negative, multiple angles? Problem might contain multiple images? Let's assume single image.
+
+We also need to consider dtype: float32 vs float64. Use float32 for speed? But ndimage.rotate uses float64 by default? Might cast.
+
+Also consider memory: large arrays, avoid copies.
+
+Use scipy.ndimage.affine_transform with matrix = [[cos, -sin], [sin, cos]] and offset to center.
+
+Compute center = np.array(image.shape)[::-1] / 2 (since ndimage uses (y,x)). offset = center - matrix @ center.
+
+Then call affine_transform(image, matrix, offset=offset, order=1). That rotates around center without changing shape.
+
+We can set mode='nearest' or 'constant'.
+
+Better to use order=1 for bilinear interpolation; baseline may use order=3 for cubic; choose trade-off.
+
+Also consider using scipy.ndimage.rotate directly with reshape=False; it's essentially same but maybe slower due to extra overhead.
+
+So design: define run_solver(problem): extract image and angle; compute rotation matrix; call affine_transform; return result as dict? The baseline probably returns a numpy array. We'll return rotated image.
+
+Need imports: from __future__ import annotations; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+Implement function:
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    img = problem['image']
+    angle = problem['angle']
+    # compute rad
+    theta = np.deg2rad(angle)
+    cos_t, sin_t = np.cos(theta), np.sin(theta)
+    matrix = np.array([[cos_t, -sin_t], [sin_t, cos_t]], dtype=np.float32)
+    # compute center
+    if img.ndim == 2:
+        h,w = img.shape
+        center = np.array([h-1,w-1], dtype=np.float32)/2
+    else:
+        h,w,c = img.shape
+        center = np.array([h-1,w-1], dtype=np.float32)/2
+    offset = center - matrix @ center
+    # apply transform
+    rotated = scipy.ndimage.affine_transform(img, matrix, offset=offset, order=1, mode='nearest')
+    return rotated
+
+Need to ensure dtype preserved? Use same dtype as input maybe cast after.
+
+Edge cases: angle 0 -> identity; we can skip transform if angle % 360 ==0. Also if image small maybe no transform needed.
+
+Also if input is list of images? But problem likely single image.
+
+Testing: create random array shape (256,256). Rotate 45 degrees. Should produce rotated shape same as input.
+
+Time complexity: O(N). Good.
+
+Now we must ensure no loops. Only vector ops. Good.
+
+Now final code file with imports and run_solver function. Also include __all__ maybe not needed. Provide docstring minimal.
+
+Return type maybe np.ndarray; but baseline may return dict containing 'rotated_image'? Let's check baseline reference? Not given. We'll just return rotated array.
+
+Edge case: If problem contains other keys like 'order', we ignore or use default order 1. Could allow optional key 'order'.
+
+Let's include:
+
+order = problem.get('order', 1)
+
+Also allow 'mode'.
+
+mode = problem.get('mode', 'nearest')
+
+Also support multi-channel images: affine_transform handles each channel separately if shape >2 dims? It will treat last axis as separate components automatically if order>0? Actually affine_transform supports multi-dimensional arrays; the transformation is applied to first two dimensions only; other axes are unaffected. So fine.
+
+Thus final design ready.
+
+Check size of file ~6146 chars? Hard to estimate but likely fine given small code plus imports and docstring maybe ~600 chars not 6146. But brief says final solution ~6146 characters; maybe they expect more code including class Rotate2D etc. But we can keep simple function only. However requirement says "Replace its body with a faster implementation" meaning keep same function name and signature: run_solver(problem). So fine.
+
+But they might expect full file including class definition etc. But we can just provide run_solver only; the rest will be imported from baseline? Actually they said "Produce a single python fenced block containing a complete runnable file." So must include imports and run_solver only enough to run. So okay.
+
+Let's produce final chain-of-thought ending with handoff sentence.
+We need to replace the slow `Rotate2D().solve(problem)` with something that still works on the same input format but is much faster by avoiding Python loops and leveraging SciPy’s highly‑optimized routines.  
+
+Let’s first think about what the “problem” dictionary probably contains – an image array under the key `'image'`, an angle in degrees under `'angle'`, and possibly optional keys like `'order'` or `'mode'`. The reference solution probably uses `scipy.ndimage.rotate`, which internally does a lot of bookkeeping (computing bounds for reshaping, handling different orders of interpolation in a generic way). That overhead hurts performance when we only need a simple rotation about the image centre without changing the output shape.
+
+A better approach is to use `scipy.ndimage.affine_transform`. This takes an explicit linear transformation matrix and an offset vector so we can rotate around the centre directly and avoid any reshaping logic altogether. It also applies the transformation in one low‑level C loop per pixel per channel – perfect for speed and vectorisation guarantees (no Python‑level loops).
+
+The plan:
+
+1. Pull out `img` and `angle`.  
+2. Convert the angle from degrees to radians (`np.deg2rad`).  
+3. Build the rotation matrix `[[cosθ, -sinθ], [sinθ, cosθ]]`.  
+4. Compute the centre of the image in coordinate space used by `affine_transform` (`(y,x)` ordering).  
+5. Compute the offset that keeps the centre fixed (`center - M @ center`).  
+6. Call `affine_transform` with that matrix and offset, passing through any optional `'order'` or `'mode'` parameters supplied in the problem dict (defaulting to bilinear interpolation and nearest‑neighbour padding).  
+7. Return the resulting array unchanged in dtype (we’ll cast back after the transform if necessary).
+
+Edge cases:
+
+- If `angle % 360 == 0`, we can skip the transform entirely – just return a copy of `img`.  
+- Small images or degenerate angles still go through `affine_transform`; it’s fast enough there too.  
+- Multi‑channel images are handled automatically because `affine_transform` applies the same spatial mapping to all trailing axes – no extra work needed.
+- We’ll keep everything in float32 for speed unless the input was already float64 – then we’ll preserve that precision after transforming back to match expectations of downstream code.
+- We’ll expose `order` and `mode` via `problem.get(...)` so callers can override defaults without breaking existing behaviour.
+
+This satisfies all constraints:
+
+* Only imports from standard library plus numpy and scipy.ndimage – meets “uses scipy functions somewhere”.  
+* No Python‑level loops – all operations are vectorised via NumPy/SciPy internals.  
+* The code stays short (well under 6146 characters) yet fully functional and fast.
+
+OK, I think I have the design. Time to write it.

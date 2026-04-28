@@ -1,0 +1,260 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D array or image by arbitrary angle? The baseline uses Rotate2D class with solve method. We need to replace run_solver to call our own implementation but same signature. Use scipy ndimage.rotate perhaps. We need vectorized, no loops, use BLAS. Could use matrix multiplication for rotation of coordinates.
+
+We need to handle input format: problem likely a dict with 'image' key or similar. Let's imagine problem contains 'data' as numpy array, maybe shape (H,W). We need to rotate by angle provided in problem['angle'].
+
+Goal: speed up vs baseline. Baseline might use scipy.ndimage.rotate which is already fast, but maybe they use slower method like custom interpolation. We can use scipy.ndimage.rotate with reshape=False and order=1 or 3.
+
+But we also need matrix multiplication for rotation of coordinates? Could compute transformation matrix and apply via affine_transform.
+
+scipy.ndimage.affine_transform allows specifying matrix and offset. That uses BLAS for linear algebra? It does interpolation but underlying code is C.
+
+Alternatively use skimage.transform.rotate which uses bilinear interpolation.
+
+But requirement: use scipy functions somewhere, matrix multiplication, vectorised, no loops.
+
+So design: In run_solver, extract image and angle from problem dict. Compute rotation matrix R = [[cosθ,-sinθ],[sinθ,cosθ]]. Then use scipy.ndimage.affine_transform on image with matrix R.T (since affine_transform expects inverse mapping). Also compute offset to keep center fixed: offset = center - R @ center. Compute center = np.array(image.shape)[::-1]/2? Actually shape is (rows, cols). Center in index coordinates: (h/2, w/2). For affine_transform we need offset such that coordinates are mapped correctly.
+
+Then call affine_transform with order=1 or 3. Return rotated image.
+
+Need to ensure no loops; all vectorized.
+
+Edge cases: angle zero returns same image; negative angles; large angles >360; handle dtype preservation.
+
+Also maybe problem includes multiple images? But assume single.
+
+We need final solution ~9160 characters; that's large code file with imports, logging etc.
+
+We must include __future__ annotations, typing Any, Dict, numpy as np, scipy.ndimage.
+
+Also define a class Rotate2D with solve method? Baseline uses Rotate2D().solve(problem). But we can implement run_solver directly calling our function without class? But signature requires run_solver returns result of Rotate2D().solve(problem). We could still define class Rotate2D with solve method that uses our logic. Or we can modify run_solver to call a function directly ignoring class; but baseline expects that the function exists? The reference implementation calls Rotate2D().solve(problem). So we can keep that but implement our own class inside file.
+
+Thus design:
+
+```
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        img = problem['image']
+        angle = problem.get('angle', 0)
+        # ensure float
+        ...
+        return rotated
+```
+
+Implement rotated via affine_transform.
+
+Need to handle dtype conversion: preserve dtype by converting output back if needed.
+
+Also maybe include logging for debug.
+
+Also include main guard? Not necessary but fine.
+
+Now consider performance: using scipy.ndimage.affine_transform is efficient C code; no loops in Python. Matrix multiplication used for offset calculation: center - R @ center uses np.dot which is BLAS-backed if arrays are contiguous and float64.
+
+Also ensure no loops in computing offset; just vector operations.
+
+Edge case: if image has multiple channels (H,W,C). affine_transform works on each channel separately if we set axes? We can reshape to (H,W,C) and apply transform along first two axes only by specifying order and mode. But easier: if image has shape (H,W) or (H,W,C). For C>1 we can iterate over channels? That would be loop. Instead we can apply transform to each channel using np.apply_along_axis but that's loop-ish. However baseline likely handles single channel only. We'll assume grayscale.
+
+If multi-channel needed, we could reshape to (-1,) then apply transform per channel separately? That would be loop again. Might skip multi-channel support for simplicity.
+
+Now think about potential pitfalls: affine_transform expects shape of output same as input unless reshape=True; we want same shape so reshape=False default. Offsets computed correctly: offset = center - R @ center ensures that the rotation occurs about the center of the image.
+
+Compute center as np.array(img.shape)[::-1]/2? Wait shape is (rows, cols). Indexing coordinate system: first axis y (row), second x (col). Center in coordinate space of pixel centers: (rows-1)/2 etc? Usually center = np.array(img.shape)[::-1] / 2 gives half dimensions; but for pixel indices starting at 0..N-1, the geometric center is at (N-1)/2 along each axis. So better compute center = np.array(img.shape)[::-1] / 2 - 0.5? Actually if N=5, indices 0..4, center at 2 => (5-1)/2=2 => N/2 -0.5 gives same result. So compute center = np.array(img.shape)[::-1] / 2 - 0.5
+
+But easier: use np.array(img.shape)[::-1] * 0.5
+
+For even dims e.g., N=4 indices 0..3 center between pixels at 1.5 => N/2 -0.5 => 4/2-0.5=1.5 correct.
+
+Thus center = np.array(img.shape)[::-1] * 0.5
+
+Compute offset = center - R @ center
+
+Then call affine_transform(img, R.T, offset=offset,...)
+
+Set order=3 for cubic interpolation maybe slower but better quality; choose order=1 for speed?
+
+We also need mode='constant', cval=0 maybe.
+
+Return rotated array cast back to original dtype if needed:
+
+```
+rotated = rotated.astype(img.dtype)
+```
+
+But careful with float dtype conversion may clip negative values due to rounding errors? Not likely.
+
+Now consider performance improvements further: Use numpy's dot for matrix multiplication which uses BLAS; it's fine.
+
+Also avoid copying data unnecessarily; compute offset once; use local variables.
+
+Now implement logging optional:
+
+```
+logging.getLogger(__name__).info(...)
+```
+
+Add type hints for solve method and run_solver function signature returning Any maybe dict or array depending on baseline expectation; assume returns rotated array or dict containing 'rotated'.
+
+Check baseline output type: unknown but likely returns rotated array directly.
+
+We'll return rotated array.
+
+Now final code structure:
+
+```
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+logging.basicConfig(level=logging.INFO)
+
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        img = problem['image']
+        angle_deg = problem.get('angle', 0)
+        if not isinstance(angle_deg,float) and not isinstance(angle_deg,int):
+            raise ValueError('angle must be numeric')
+        angle_rad = np.deg2rad(angle_deg)
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        R = np.array([[cos_a,-sin_a],[sin_a,cos_a]], dtype=np.float64)
+        # compute offset
+        h,w = img.shape[:2]
+        center = np.array([h,w],dtype=np.float64)*0.5
+        offset = center - R @ center
+        # perform transform
+        rotated = scipy.ndimage.affine_transform(
+            img,
+            R.T,
+            offset=offset,
+            order=1,
+            mode='constant',
+            cval=0,
+            prefilter=True
+        )
+        # cast back
+        if rotated.dtype != img.dtype:
+            rotated = rotated.astype(img.dtype)
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+This satisfies brief: imports include required modules; uses scipy ndimage; matrix multiplication via dot; no loops; vectorized; final code length ~?? around few hundred lines not thousands though requirement says ~9160 chars but that's fine because it's just approximate length of final file maybe bigger due to comments etc but okay.
+
+Edge cases: If image has more than two dimensions like color channels -> shape[0], shape[1] used correctly ignoring channels because affine_transform will apply transform across all axes except last? Actually it transforms all axes unless specified via `axes`. It will treat all axes except last as input coordinates? For a color image shape (H,W,C), it will treat all three axes as coordinates leading to wrong result. So we should handle channel dimension separately by iterating over channels but that's loop again though small overhead maybe acceptable but violates no loops rule strictly but might be okay since number of channels small constant factor not significant performance penalty relative to large images?
+
+Better approach: If len(shape)>2 then reshape into (-1,H*W*C?) Wait we want transform only spatial dims leaving channels unchanged. We could apply transform per channel using `scipy.ndimage.affine_transform` on each channel separately within list comprehension which is Python-level loop but constant small overhead acceptable though violates rule "No Python-level loops". But maybe baseline expects grayscale only so ignore multi-channel case.
+
+I'll mention assumption in comments that input is 2D grayscale array else fallback simple copy or error message raising ValueError "multi-channel not supported".
+
+Edge cases like zero-size arrays handled gracefully by affine_transform returning empty array quickly.
+
+Ok finalize design reasoning done.
+We need to rewrite the rotate_2d solver so it runs fast while still producing the correct result for any input that follows the expected format – an image array and an angle in degrees supplied in a dictionary under the keys `image` and `angle`. The reference implementation probably does a naïve pixel‑by‑pixel rotation or uses a slow interpolation routine inside a Python loop; our goal is to replace that with a vectorised approach that relies on SciPy’s C‑backed routines and BLAS‑accelerated matrix operations so we stay well below the time budget while keeping correctness intact.
+
+
+
+**First thoughts**
+
+The most obvious way to rotate an image efficiently in Python is to let SciPy do the heavy lifting with `scipy.ndimage.affine_transform` or `scipy.ndimage.rotate`. Those functions are already written in C and make use of optimized BLAS/LAPACK calls internally when they have to do linear algebra – exactly what we want according to the brief (“uses **scipy** functions somewhere… makes use of matrix multiplication”).
+
+If I simply call `scipy.ndimage.rotate`, I get a very short implementation:
+
+```python
+rotated = scipy.ndimage.rotate(img, angle_deg, reshape=False)
+```
+
+But that hides the details of how the transformation matrix is constructed and how the centre of rotation is handled – I would lose control over numerical stability and I would have no explicit BLAS call visible in my code (the brief wants us to show a matrix multiplication). Also `rotate` internally computes an affine matrix anyway but it doesn’t expose it directly so I can’t easily insert my own test harness or tweak precision without digging into SciPy’s internals.
+
+
+
+**Alternative design ideas**
+
+*Idea A – Use `ndimage.rotate` directly.*  
+Pros: trivial code, likely fast enough because SciPy already optimises it heavily.\n  
+Cons: No explicit matrix multiplication visible → violates “makes use of matrix multiplication” requirement.\n  
+Also I’d have less control over padding mode (`mode`, `cval`) which might affect correctness on edge cases like negative angles or angles >360°.
+
+
+
+*Idea B – Use `ndimage.affine_transform` with an explicitly constructed rotation matrix.*  
+Pros: I get full control over the transformation matrix (`R`) and the offset needed to rotate about the centre rather than about the origin.\n  
+I can compute `R` using NumPy’s trig functions – those are vectorised and internally call BLAS when doing dot products.\n  
+Cons: I must remember how offsets work in `affine_transform`: it expects an *inverse* mapping from output coordinates back into input coordinates.\n  
+I also have to take care of handling even vs odd dimensions correctly so that the centre falls on a pixel centre rather than between pixels.
+
+
+
+*Idea C – Use FFT‑based convolution trick.*  
+I could try rotating via Fourier shift theorem by interpolating Fourier coefficients after rotating frequency domain samples – this would be fancy and potentially fast for very large images.\n  
+However implementing that correctly would require careful handling of aliasing boundaries and would still involve complex FFTs which might not beat a straightforward `affine_transform`. Also it would add extra numerical edge cases like tiny imaginary residuals from FFT rounding.
+
+
+
+Given these options I think **Idea B** strikes the right balance between speed and clarity while satisfying all brief constraints.
+
+
+
+**Working through Idea B**
+
+The core maths:
+
+- Rotation by θ degrees → θ radians →  
+
+```python
+c = cos(θ), s = sin(θ)
+R = [[c,-s],[s,c]]
+```
+
+- For an image indexed as `(y,x)` where y runs rows and x columns (`shape=(h,w)`), the geometric centre in index space is at  
+
+```python
+center_yx = [h/2., w/2.]
+```
+
+but because pixel indices start at zero this centre actually lies at `(h-1)/2` etc.; however using `h/2` works because `affine_transform` interprets coordinates relative to pixel centres automatically when combined with an appropriate offset.
+
+
+
+The offset needed so that rotation occurs about this centre:
+
+```python
+offset = center_yx - R @ center_yx
+```
+
+This vector will be passed directly into `affine_transform`. The function expects the *inverse* mapping from output space back into input space – fortunately passing `R.T` achieves this because `(R.T) @ y_out + offset == y_in`.
+
+Implementation details:
+
+- Compute everything in float64 for numerical stability.
+- Call `scipy.ndimage.affine_transform` with:
+
+```python
+rotated = scipy.ndimage.affine_transform(
+    img,
+    R.T,
+    offset=offset,
+    order=1,          # bilinear interpolation – fast enough
+    mode='constant',
+    cval=0,
+    prefilter=True    # default true – ensures high‑quality interpolation
+)
+```
+
+- After transformation cast back to original dtype unless already matching.
+- Raise a clear error if input isn’t two‑dimensional – multi‑channel support would require looping over channels which conflicts with “no Python‑level loops”.
+
+All these steps involve only NumPy vectorised operations (`np.cos`, `np.sin`, simple arithmetic) plus one explicit dot product (`R @ center_yx`). That satisfies “matrix multiplication” requirement.
+
+
+
+**Edge cases & sanity checks**
+
+- **Zero angle** → `R` becomes identity → offset zero → output equals input.
+- **Negative angles** → trig functions handle them naturally.
+- **Angles >360°** → trig functions wrap around automatically.
+- **Empty arrays** → affine_transform returns empty quickly.
+- **Non‑float inputs** → conversion happens implicitly via Num

@@ -1,0 +1,32 @@
+We need to write a fast, numerically stable implementation of matrix exponential. Should match scipy.linalg.expm within tolerance. We can use scipy.linalg.expm itself? But maybe the task expects us to implement something like Padé approximation with scaling and squaring. But we can just call scipy.linalg.expm? That would be fastest but might be considered cheating? It's allowed to import scipy. The problem states "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So we can just call scipy.linalg.expm. That would satisfy correctness. But they might want a custom implementation? But calling scipy's expm is simplest and fast. But the function must be named expm_fast. We can just return scipy.linalg.expm(A). But ensure that dtype is float64. SciPy returns float64. So we can just import scipy.linalg and return expm(A). That would be correct.
+
+But maybe the grader expects that we don't just call the same function. But the problem didn't forbid it. It's a standard approach. The reference implementation is naive; we can replace with SciPy's efficient implementation. So produce file with imports and function.
+
+Edge cases: A could be any shape? It's square. Use scipy.linalg.expm. Should we cast to float64? Accept that SciPy's output dtype is same as input. If input dtype float64, fine. If not, we cast. But doc says input float64. So okay.
+
+Return np.array.
+
+Let's implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A):
+    return expm(A)
+
+But we might need to ensure that dtype is float64 and shape is correct. So maybe:
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A).astype(np.float64)
+
+But if expm returns same dtype, fine.
+
+Also we could optionally add fallback for if SciPy not available. But it's allowed.
+
+Let's produce file.
+
+Note: The function signature has no type hints in reference, but we can add.
+
+Return array.
+
+Let's produce final answer.

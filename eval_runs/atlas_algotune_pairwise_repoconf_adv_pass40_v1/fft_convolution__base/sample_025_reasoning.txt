@@ -1,0 +1,40 @@
+We need to replace with faster implementation: use scipy.signal.fftconvolve or numpy. But we must be careful about data types, shape, memory. Use numpy.fft.rfft? For real inputs, we can use np.fft.fft. But easier: use scipy.signal.fftconvolve. But to avoid dependency, maybe use numpy.fft.fft. Implementation: compute FFT of length L = next_pow2(N+M-1). Use rfft? but easier: use np.fft.rfftn? For 1D: use np.fft.rfft. But rfft returns half-length. We can compute y = ifft(fft(x_padded) * fft(h_padded)). But using complex numbers. Use np.fft.fft. length L. Then compute product, then real part. Ensure dtype float64.
+
+Edge cases: if arrays are empty? But lengths positive? We'll handle.
+
+We also need to ensure same numeric accuracy. Using FFT may produce small errors but np.allclose with rtol/atol typical maybe 1e-6? Use rfft for speed but careful with rounding errors.
+
+Let's implement:
+
+def conv1d(x,h):
+
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    out_len = N + M - 1
+    L = 1 << (out_len-1).bit_length()  # next power of two >= out_len
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:out_len]
+
+But this uses rfft for real input, but we need to ensure that result length is L. But irfft with n=L returns real array length L. Then slice.
+
+Alternatively, use fftconvolve from scipy.signal. But may not be installed? Usually yes. But we can implement ourselves.
+
+Better to use np.fft.fft for general. But rfft is faster.
+
+Potential pitfalls: For small sizes, the overhead might be high but still faster. Use np.fft.fft of length L.
+
+Return dtype float64.
+
+Edge: If arrays contain NaN? Not needed.
+
+Let's produce final code.
+
+Also handle case where out_len <= 1? But fine.
+
+Let's write the file.
+

@@ -1,0 +1,21 @@
+We need to provide a faster implementation. Use broadcasting or matrix multiplication: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+
+Compute squared norms vector of length N. Then use outer sum plus negative 2 times dot product. Use np.dot or np.matmul.
+
+Implementation: def pairwise_sq_dist(X): X = np.asarray(X, dtype=np.float64). Then compute norms = np.sum(X**2, axis=1)[:, np.newaxis] to shape (N,1). Then distances = norms + norms.T - 2 * X.dot(X.T). Ensure no negative small due to numerical errors: maybe clip at zero.
+
+Return distances.
+
+Edge cases: shape (0, D) -> return empty (0,0). Works.
+
+We must ensure dtype float64. Use np.float64.
+
+Return distances as np.ndarray.
+
+That's all.
+
+Let's produce code.
+
+Also ensure to import numpy as np at top.
+
+Ok.

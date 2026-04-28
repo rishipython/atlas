@@ -1,0 +1,11 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. We can use broadcasting or vectorized operations: compute X @ X.T etc. Standard formula: D_{ij} = ||x_i||^2 + ||x_j||^2 - 2 x_i^T x_j. So compute norms squared: sum over axis 1. Then compute Gram matrix: X @ X.T. Then compute D = norms[:,None] + norms[None,:] - 2*Gram. Ensure dtype float64. Also set negative small values to zero? But squared distances should be non-negative; due to floating errors might produce tiny negative. We can clip to zero: np.maximum(D, 0). Might not be necessary.
+
+Return np.array dtype float64.
+
+Let's implement. Use np.dot. Ensure memory usage ok. N up to maybe large. But fine.
+
+Return.
+
+Also maybe use np.inner? But dot is fine.
+
+Let's produce final code.

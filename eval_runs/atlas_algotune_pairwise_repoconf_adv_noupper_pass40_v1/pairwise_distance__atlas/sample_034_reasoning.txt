@@ -1,0 +1,11 @@
+We need to provide a faster implementation. Use vectorized operations: compute squared norms and use broadcasting: D = ||X||^2 + ||X||^2 - 2 X X^T. Use np.dot.
+
+Implementation: compute norms = np.sum(X**2, axis=1). Then D = norms[:,None] + norms[None,:] - 2 * X @ X.T. Ensure dtype float64. Might produce negative tiny due to numerical errors; set to max(0). Use np.maximum(D, 0.0). Return D.
+
+Edge cases: N=0? shape (0,D). Norms shape (0). X @ X.T yields (0,0). Works.
+
+Return D.
+
+We need to import numpy. Provide function pairwise_sq_dist. That's all. No other code.
+
+Let's produce final.

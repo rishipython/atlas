@@ -1,0 +1,169 @@
+We need to figure out what shift_2d problem is. Probably shifting a 2D array by some offset? Let's think: The reference uses Shift2D().solve(problem). So problem likely contains an image and shift parameters. Maybe we need to compute a shifted version of a 2D array using subpixel accuracy? Might involve interpolation. SciPy ndimage has shift function. We can use that. Avoid loops.
+
+We want to replace slow implementation with vectorized SciPy solution. Probably the slow one uses nested loops over pixels.
+
+We need to write run_solver that takes problem dict and returns result.
+
+Let's assume problem contains 'image': np.ndarray, 'shift': tuple of floats (dy, dx). Maybe also 'mode' etc.
+
+We need to design code accordingly.
+
+We should import from __future__ annotations; logging; typing.Any, Dict; numpy as np; scipy.ndimage as ndi.
+
+We should use ndi.shift with order=1 or something.
+
+No Python-level loops: just call ndi.shift once.
+
+Edge cases: shape, dtype. Use float64.
+
+Return maybe dictionary with 'shifted_image'.
+
+Let's think about potential numeric issues: negative shifts, large shifts, mode='constant', cval=0.
+
+Also we might need to handle batch of images? Maybe problem has 'images': list of arrays? But design brief says vectorized, no loops. Could use np.stack and apply shift via broadcasting? But ndi.shift doesn't accept batch.
+
+Maybe we can use scipy's affine_transform for batch? But that still loops internally.
+
+Better to assume single image.
+
+Ok design:
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    img = problem['image']
+    shift = problem.get('shift', (0., 0.))
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0.)
+    order = problem.get('order', 1)
+    shifted = ndi.shift(img, shift=shift, mode=mode, cval=cval, order=order)
+    return {'shifted_image': shifted}
+
+Add logging info.
+
+Edge cases: if img is not 2D raise error. If shift not tuple of length 2 raise error.
+
+Also consider dtype conversion: convert to float64 before shift then cast back to original dtype? Might lose precision but fine.
+
+Also could use scipy's map_coordinates for subpixel shift; but shift is fine.
+
+We must avoid loops. Good.
+
+Now check speed: using SciPy's C-optimized shift should be fast.
+
+Potential alternative: Use FFT-based shift for large images? But simpler to use ndi.shift.
+
+Edge case: Very large shifts > image size produce all zeros or constant mode; fine.
+
+If mode='nearest', no constant fill needed.
+
+Return format must match baseline? Baseline probably returns same type as input? Let's assume returning dict with 'output'.
+
+But design brief only says final solution is ~11502 characters; that's huge. But we just need chain-of-thought not final code length requirement. The design brief maybe refers to final file length but not relevant here.
+
+Ok we have plan.
+
+Now think about potential pitfalls: If problem contains multiple images under key 'images', we need to loop but can't loop python-level. Could use np.stack and apply shift via list comprehension? That's loop too. Could use scipy.ndimage.shift on each via vectorized mapping using np.apply_along_axis? Still loops in C but okay. But requirement no Python-level loops; using list comprehension counts as loop. So maybe problem only single image.
+
+Thus implement simple function accordingly.
+
+Edge case: If image is integer type, shifting will cast to float and then back; may cause rounding errors but acceptable within tolerance maybe rtol=1e-5?
+
+We can keep dtype same by converting back after shift: shifted.astype(img.dtype).
+
+Ok final design ready.
+We need to replace the slow `Shift2D().solve(problem)` with a fast vectorised routine that still respects the input format and returns a valid solution.  
+The only thing that changes is the internals of `solve`; the signature stays the same so the caller can keep using `run_solver(problem)` unchanged.  
+
+**First thought**  
+The reference implementation probably iterates over every pixel and applies a sub‑pixel translation manually – that's O(N²) in Python and will be slow for anything beyond tiny images.  
+Python loops are forbidden by the brief – we must do everything in compiled code or at least in a single NumPy/SciPy call.
+
+**Possible approaches**
+
+1. **Numba JIT** – write a small kernel that walks over the array and interpolates on the fly.
+   - Pros: pure Python interface, easy to call.
+   - Cons: still needs an explicit loop inside the kernel; may not beat SciPy’s highly tuned C implementation.
+   - Also requires careful handling of boundary conditions and interpolation order – re‑implementing `ndi.shift` logic is risky.
+   
+2. **SciPy ndimage.shift** – already does exactly what we want (sub‑pixel translation with various interpolation orders and boundary modes).
+   - Pros: written in C/Fortran, battle‑tested, supports all edge cases.
+   - Cons: accepts only one image at a time; if the input contains multiple images we'd have to loop – but we can assume a single image because the brief says “no Python‑level loops”.
+   
+3. **FFT‑based shift** – compute FFT of the image, multiply by phase ramp, inverse FFT.
+   - Pros: very fast for huge images.
+   - Cons: more complex code path, needs careful handling of padding and numerical precision; also requires `np.real` extraction because FFT output is complex.
+   - Overkill unless the baseline uses naive loops on very large arrays; but since baseline is “slow”, a single call to `ndi.shift` will likely be enough.
+   
+4. **scipy.ndimage.affine_transform** – general linear transform including translation.
+   - Similar trade‑offs as `shift`; slightly more overhead because it builds an affine matrix each call.
+   
+After weighing these options I lean towards **`scipy.ndimage.shift`** because it gives us:
+- One line of vectorised code,
+- Built‑in support for all interpolation orders (`order`),
+- Boundary handling (`mode`, `cval`),
+- And it's already part of SciPy which satisfies the “uses scipy functions somewhere” requirement in the brief.
+
+**Edge‑case considerations**
+
+- *Input type*: The image might be integer or float; `ndi.shift` casts to float64 internally and returns float64. To preserve original dtype we’ll cast back at the end (`astype(img.dtype)`), which keeps consistency with any downstream code expecting the same dtype.
+- *Shift values*: Must be a sequence of two floats (dy, dx). If missing or wrong shape we raise a clear ValueError.
+- *Mode*: Defaulting to `'constant'` with `cval=0.` mimics many typical implementations; allow overriding via `problem.get('mode')`.
+- *Interpolation order*: Defaulting to linear (`order=1`) balances speed and quality; higher orders are slower.
+- *Large shifts*: If the shift magnitude exceeds image dimensions SciPy will fill with boundary values – acceptable within tolerance budgets (`rtol/atol`).
+
+**Implementation sketch**
+
+```python
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage as ndi
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    # Pull mandatory fields
+    img = problem['image']
+    if img.ndim != 2:
+        raise ValueError("Only 2D images are supported")
+    
+    # Shift parameters
+    try:
+        dy, dx = problem['shift']
+    except Exception:
+        raise ValueError("Problem must contain 'shift' as a sequence of two floats")
+    
+    # Optional parameters
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0.)
+    order = problem.get('order', 1)
+    
+    # Perform sub‑pixel translation
+    shifted = ndi.shift(img,
+                        shift=(dy, dx),
+                        mode=mode,
+                        cval=cval,
+                        order=order)
+    
+    # Preserve original dtype
+    if img.dtype.kind in ('i', 'u'):
+        shifted = shifted.astype(img.dtype)
+    
+    return {'shifted_image': shifted}
+```
+
+This satisfies all constraints:
+
+- No Python loops – just one call into compiled SciPy code.
+- Uses SciPy (`scipy.ndimage`) explicitly.
+- Keeps imports minimal yet complete (`__future__`, `logging`, `typing`, `numpy`, `scipy.ndimage`).
+- Handles edge cases gracefully.
+- Returns a dictionary matching what callers expect (the baseline probably did something similar).
+
+**Sanity checks**
+
+- *Zero shift*: Should return identical image (within floating precision).
+- *Integer shifts*: Should align pixels exactly (with nearest or constant mode).
+- *Negative shifts*: Should move image up/left correctly.
+- *Large shifts*: Entire output becomes constant/corner value – acceptable.
+- *Different dtypes*: Integer input stays integer after shifting (rounded).
+
+With this design in place I can now write the full runnable file following the required style guidelines. OK, I think I have the design. Time to write it.

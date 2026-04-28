@@ -1,0 +1,33 @@
+We need to implement conv1d efficiently. Use numpy. We can use np.fft.fft convolution. Must be numerically close to direct. Use np.fft.rfft? But arrays are real. Use np.fft.fft with appropriate size. For full convolution, need size L = N+M-1. FFT length should be next power of two >= L. But we can also use np.fft.fft(x, n=L) and np.fft.fft(h, n=L). Then multiply and ifft. That gives result. Use np.fft.ifft. Real part. The result should be float64. Use np.real. Ensure rounding errors small.
+
+Edge cases: x or h could be empty? But lengths likely >0. Should handle.
+
+Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.size, h.size
+    L = N + M - 1
+    nfft = 1 << (L-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)[:L]
+    return y
+
+But ensure dtype float64. Use np.fft.irfft returns float64.
+
+Alternatively, use np.fft.fft with complex. But rfft better.
+
+Test numeric equality: np.allclose. Should be fine.
+
+We also could use scipy.signal.fftconvolve. But using numpy is fine.
+
+Edge: when N+M-1=1? Then nfft=1? bit_length of 0 is 0, so (L-1).bit_length() => 0? For L=1, L-1=0 bit_length=0, 1<<0 =1. Good.
+
+If N=0 or M=0? Might not happen. But we can handle: if N==0 or M==0 return empty array? But conv of empty with something is empty? np.convolve([], [1,2]) returns []? Let's test mentally: np.convolve([], [1,2]) returns array([]). So we can handle: if N==0 or M==0: return np.array([], dtype=np.float64). We can include.
+
+Implementation final.
+
+Let's produce code.

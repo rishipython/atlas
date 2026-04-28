@@ -1,0 +1,30 @@
+We need to write a fast implementation of 1D convolution. Use numpy. Use numpy.fft.fft or scipy.signal.fftconvolve. But we need to import numpy only. We can implement using numpy.fft.rfft? But since inputs are real, we can use real FFT. But to be safe, use np.fft.fft. Use zero-padding to next power of two maybe. But we can just use np.fft.fft of length N+M-1. Compute y = ifft(fft(x, L) * fft(h, L)). real part. Use dtype float64. Ensure result close. Use np.fft.fft, ifft. Implementation: L = N+M-1. We need to compute FFT of length L. That's fine.
+
+Potential issues: large arrays may cause memory but fine. Use np.fft.fft of length L. Might be slower than SciPy's fftconvolve but okay. Provide function conv1d.
+
+Add import numpy as np.
+
+Edge cases: if either array is empty? Usually convolution of empty array yields empty? numpy.convolve expects at least 1 element? Let's test: np.convolve([], [1,2]) raises ValueError. But we can assume non-empty.
+
+Return np.real of ifft. Use dtype np.float64. Use np.fft.fft(x, L) * np.fft.fft(h, L). Then np.fft.ifft(...).real.
+
+Better to use np.fft.rfft and irfft to reduce size by half. But it's okay.
+
+Also we can use np.fft.fftpack? No.
+
+Make sure to cast to float64. Use np.asarray with dtype float64.
+
+Return out[:N+M-1] maybe.
+
+Let's implement.
+
+Also handle case where x or h is not contiguous? That's fine.
+
+Potential numeric difference: ifft gives complex due to numerical errors, but real part is fine.
+
+Return dtype float64.
+
+Ok.
+
+We'll produce file.
+

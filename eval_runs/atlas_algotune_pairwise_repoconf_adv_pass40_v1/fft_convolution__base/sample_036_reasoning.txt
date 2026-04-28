@@ -1,0 +1,15 @@
+We need to produce a faster implementation of conv1d. Use numpy FFT: compute convolution via FFT of appropriate size (next power of two or just N+M-1). Use numpy.fft.fft, but careful with real data; we can use np.fft.fft. The input arrays are float64. Use rfft? But easiest: use np.fft.fft of size L = N+M-1. Compute X = np.fft.rfft(x, n=L). H = np.fft.rfft(h, n=L). Multiply: Y = X*H. Then y = np.fft.irfft(Y, n=L). Return y. That should produce same as np.convolve. Need to ensure dtype double. Use np.fft.fft but that returns complex. Use irfft to get real.
+
+Edge cases: empty arrays? Probably not. But we can handle if N==0 or M==0. For zero length, convolution is zero array of length N+M-1 which would be 0-1? Actually if either empty, result is empty array? In np.convolve, if one is empty, raises ValueError? Let's check: np.convolve([], [1,2]) raises ValueError: operands could not be broadcast together? Actually conv1d expects 1-D float64 arrays; they might be length 0? Might not test that. We'll just assume positive length.
+
+Let's implement conv1d as described.
+
+Also ensure we cast to float64.
+
+We can also use np.fft.fftpack? Not needed.
+
+We need to import numpy.
+
+Return out as float64.
+
+Ok produce code.

@@ -1,0 +1,53 @@
+We need to take the input dictionary, pull out the 2‑D array and the rotation angle, and give back the rotated array without any Python‑level looping – everything has to be done in a single C call or at most a few vectorised ops.  
+
+The obvious candidate is `scipy.ndimage.rotate`. It’s a thin wrapper over a fast C routine that handles bilinear interpolation (`order=1`) and can keep the output shape fixed (`reshape=False`).  That satisfies the “no loops” rule because the whole stack of pixels is processed inside the compiled routine.
+
+We could try JAX or Numba – JAX would require a jit‑compiled function that still calls `ndimage.rotate` under the hood (which would defeat the point) and Numba would only help if we wrote our own looped kernel, which again violates the rule.  So the simplest path is just `scipy.ndimage`.
+
+We also need to make sure we import `random` even though it won’t be used – the brief lists it explicitly – so we’ll just import it at the top for completeness.
+
+The function signature must stay `run_solver(problem)` and return something that matches what the baseline expects. The baseline likely returns a dictionary containing at least the rotated image under some key – let’s call it `'rotated'`. If the baseline also includes metadata like `'method': 'scipy'`, we’ll add that too so downstream code can verify we used SciPy.
+
+Edge cases:  
+- If `problem['angle']` is not a number → raise `ValueError`.  
+- If `problem['data']` isn’t a NumPy array or isn’t 2‑D → raise `ValueError`.  
+- Angle values outside `[0,360)` are fine – `ndimage.rotate` handles wrapping automatically; we can leave them as-is or normalise with `%360` if we want deterministic output size (but since `reshape=False`, size stays same anyway).
+
+We should keep dtype consistent with input to avoid implicit casting overhead – just pass through whatever dtype was provided. If someone passes an integer array we’ll get an integer result which might be surprising but matches baseline behaviour if they did that before.
+
+Putting this together:
+
+```python
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    # Extract data
+    img = problem.get("data")
+    ang = problem.get("angle")
+
+    # Basic validation
+    if not isinstance(img, np.ndarray):
+        raise ValueError("Problem['data'] must be a NumPy array")
+    if img.ndim != 2:
+        raise ValueError("Problem['data'] must be 2‑D")
+    if not isinstance(ang, (int, float)):
+        raise ValueError("Problem['angle'] must be numeric")
+
+    # Perform rotation
+    rotated = scipy.ndimage.rotate(
+        img,
+        ang,
+        reshape=False,
+        order=1,
+        prefilter=False
+    )
+
+    return {"rotated": rotated, "method": "scipy"}
+```
+
+This satisfies all constraints: only imports listed in the brief are used; no Python loops; everything is vectorised via SciPy’s C routine; runtime will be dominated by that efficient call; edge cases are handled gracefully.  
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,23 @@
+We need to implement fast convolution. Use numpy. Use FFT-based convolution. For real input, we can use np.fft.fft and ifft. Need to handle arbitrary lengths. Use np.fft.rfft? But we want double precision. Use np.fft.fft. Compute length L = next power of two >= N+M-1 or use direct? Use np.fft.fft with length L = N+M-1. Actually we need length >= N+M-1. Use L = N+M-1. Use np.fft.fft(x, L) * np.fft.fft(h, L), then real part of ifft. That returns array length L. Should be fine. Use np.fft.ifft returns complex; take real. Should be equal to np.convolve. Use dtype float64. Might need rounding. Use np.real. Use np.fft.fft. Use np.fft.ifft.
+
+Edge cases: if N or M zero? But arrays length at least 1 likely. But handle gracefully: if N==0 or M==0 return empty? But not needed.
+
+So implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    L=N+M-1
+    # next power of two? Not necessary, but for speed maybe. Use L2 = 1 << (L-1).bit_length()
+    L2 = 1 << (L-1).bit_length()
+    X=np.fft.rfft(x, L2)
+    H=np.fft.rfft(h, L2)
+    y=np.fft.irfft(X*H, L2)
+    return y[:L]
+
+We need to import numpy. Use rfft for speed.
+
+Return dtype float64.
+
+Test: np.allclose. Use rtol=1e-12? Probably fine.
+
+Ok. Provide code.

@@ -1,0 +1,50 @@
+We need to turn the slow reference solver into a tight, loop‑free vectorised routine that still honours the same API and edge cases.  
+The problem gives us a `problem` dictionary – the only thing we really care about is whatever byte payload it contains; let’s call that key `'data'`. The goal is to output a Base‑64 encoded string that matches the standard RFC‑4648 alphabet (`A–Z`, `a–z`, `0–9`, `+`, `/`) and uses `=` for padding exactly like the reference does.
+
+**First thought** – just call `base64.b64encode(problem['data'])`. That’s correct but it’s a pure Python call that will be too slow on large inputs compared to a fully vectorised NumPy solution.  
+**Second thought** – use NumPy to do the heavy lifting ourselves: turn the byte stream into an array of 8‑bit integers, pad it so its length is a multiple of three, then pack each trio into a 24‑bit word and split that word into four 6‑bit groups. Those groups are exactly the indices into the Base‑64 alphabet.  
+
+So the pipeline looks like:
+
+1. Convert the payload to a `np.ndarray` of type `uint8`.  
+2. Record its original length so we can apply padding later (`orig_len`).  
+3. Pad with zeros so that `len(arr) % 3 == 0`.  
+4. Reshape into `(N_blocks, 3)` where each row holds three consecutive bytes `[b0, b1, b2]`.  
+5. Compute a single 32‑bit integer per block:
+   ```python
+   w = (arr[:,0].astype(np.uint32) << 16) | \
+       (arr[:,1].astype(np.uint32) << 8) | \
+       arr[:,2].astype(np.uint32)
+   ```
+6. Extract four six‑bit indices per block:
+   ```python
+   idx0 = (w >> 18) & 0x3F
+   idx1 = (w >> 12) & 0x3F
+   idx2 = (w >> 6) & 0x3F
+   idx3 = w & 0x3F
+   ```
+7. Stack those into an `(N_blocks,4)` integer array and flatten it to a one‑dimensional index list.
+8. Prepare an alphabet array of shape `(64,)` containing the ASCII codes of all Base‑64 characters.
+9. Map the indices via `np.take(alphabet, indices)` giving us an array of ASCII codes for the encoded string.
+10. Convert that byte array back to a Python `bytes` object (`result_bytes`) and finally decode it as ASCII (`result_str`).
+
+**Padding** – after we have the raw encoded string we need to replace the trailing characters with `=` according to how many bytes were missing from the last block:
+
+- If `orig_len % 3 == 1`, we padded one byte originally; this means two output characters are actually padding (`==`).  
+- If `orig_len % 3 == 2`, we padded two bytes originally; this means one output character is padding (`=`).  
+
+We can achieve this by slicing off the last one or two characters from our result string and appending `'='`s accordingly:
+
+```python
+pad_len = (-orig_len) % 3          # gives 0,1,2
+if pad_len:
+    result_str = result_str[:-pad_len] + '=' * pad_len
+```
+
+**Edge cases** – an empty payload should return an empty string immediately; no NumPy operations are needed in that case because everything else would produce an empty result anyway but we can guard against zero‑length arrays to avoid weird shapes.
+
+**Imports** – we’ll keep them minimal but satisfy the brief: `import base64; import hmac; from typing import Any, Dict; import numpy as np`. The `base64` and `hmac` imports aren’t used in our final routine but are harmless and satisfy any linter that expects them.
+
+**Performance notes** – all operations are vectorised NumPy calls; no Python loops or list comprehensions are involved except trivial ones for padding logic which operate on scalars only. This should give us a substantial speedup over the reference implementation while staying within ~3300 characters once formatted properly.
+
+OK, I think I have the design. Time to write it.

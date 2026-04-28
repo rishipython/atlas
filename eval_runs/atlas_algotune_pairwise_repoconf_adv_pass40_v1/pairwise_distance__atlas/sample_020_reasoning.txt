@@ -1,0 +1,24 @@
+We need to implement pairwise squared Euclidean distance matrix. The reference is slow triple loop. We need to produce faster implementation. Use numpy broadcasting or matrix multiplication: D = (X**2).sum(axis=1)[:,None] + (X**2).sum(axis=1)[None,:] - 2*X.dot(X.T). That gives squared distances. Must be symmetric. Use float64. Ensure shape (N,N). Should handle large N, D. Provide function pairwise_sq_dist(X). Should be correct. Might need to handle when X is 2-D. Also ensure dtype float64. The input may be float64. Implementation: compute sum_sq = np.sum(X**2, axis=1). Then out = sum_sq[:,None] + sum_sq[None,:] - 2*np.dot(X, X.T). Might need to ensure non-negative small negative values due to floating errors: set negative to zero? But np.allclose tolerance will accept small negatives. But we can clip to zero: out = np.maximum(out, 0). Might not be necessary. Provide function.
+
+Also handle memory: For large N, the dot product X @ X.T may be large but unavoidable. Could use np.dot. Provide final code.
+
+We must include imports at top: import numpy as np.
+
+Edge cases: if X empty? shape (0,D). Then sum_sq shape (0,), sum_sq[:,None] shape (0,1), etc. Dot product X @ X.T shape (0,0). Should produce out shape (0,0). Works.
+
+Return out.
+
+Let's write.
+
+Potential to use numba for speed? But numpy is fine. The dot product uses BLAS, efficient. Provide.
+
+Also need to ensure no memory overflow for huge N; but given typical tasks, fine.
+
+Let's produce code.
+
+Also include docstring same as reference. Provide function.
+
+Test with small random. Use np.allclose.
+
+Let's produce final file.
+

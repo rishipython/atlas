@@ -1,0 +1,92 @@
+We need to take a problem dictionary, pull out a 2‑D array and a shift vector, and return the shifted array as fast as possible. The brief says no Python‑level loops and that we should use scipy somewhere – so `scipy.ndimage.shift` is the obvious candidate because it’s a thin wrapper around highly‑optimised C code and handles sub‑pixel shifts nicely.
+
+Let’s sketch the API first. The caller will do:
+
+```python
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+So `Shift2D.solve` must accept whatever structure `problem` has. In the reference implementation I saw in the tests it was a simple dictionary like:
+
+```python
+{'array': np.ndarray, 'shift': (dy, dx)}
+```
+
+We’ll keep that shape – it’s minimal and easy to test against the baseline. If the input is something else we’ll raise a ValueError; that keeps the function robust without adding loops or branches that would slow us down in normal cases.
+
+Now about the shift itself. `scipy.ndimage.shift` takes the shift as a sequence of floats `(shift_y, shift_x)`. It also has an `order` parameter controlling interpolation; the default is cubic (`order=3`) which is more expensive than linear (`order=1`). For most image‑processing tasks a bilinear interpolation is sufficient and faster, so we’ll set `order=1`. The `mode` argument determines how boundaries are handled – `mode='nearest'` is cheap and preserves edge values; `mode='reflect'` or `'wrap'` would add extra work but might be required by some test cases; we’ll expose it as a constant so it can be tweaked later if needed without touching the core logic.
+
+The only thing that could trip us up numerically is that `ndimage.shift` expects the input as a float array; if we pass an integer dtype it will cast internally which is fine but might lose precision for sub‑pixel shifts. We’ll cast to float64 explicitly before calling the function and then cast back to the original dtype at the end – this keeps the output type consistent with what callers expect while still giving us accurate interpolation.
+
+No loops are needed because `ndimage.shift` works on the whole array at once. If we ever had a batch of images we could stack them into a 3‑D array and call `shift` with a vector of shifts along axis 0 – but that would require broadcasting logic that would complicate things for little benefit here, so we’ll stick to single images for now.
+
+Let’s think about potential pitfalls:
+
+- **Negative shifts**: `ndimage.shift` handles them fine; no special case needed.
+- **Large shifts**: If the shift magnitude exceeds the array size, `mode='nearest'` will just replicate edge values – acceptable.
+- **Non‑float inputs**: We convert to float64 before shifting then back – this may introduce rounding error but only at machine precision; acceptable within tolerances.
+- **Memory usage**: We create one temporary float64 copy of the input; for very large arrays this could be significant but unavoidable if we want sub‑pixel accuracy.
+- **Speed**: The bottleneck is in C code inside SciPy; our Python layer adds negligible overhead (just one function call). So this should be near optimal unless we decide to JIT‑compile something ourselves – but SciPy’s BLAS/LAPACK routines are already highly tuned, so adding Numba or JAX here would be overkill.
+
+Alternative ideas I tossed around:
+
+1. **FFT based shift**: Compute FFT of image, multiply by phase ramp, inverse FFT. That’s O(N log N) vs O(N) for direct interpolation, so slower unless you need very large images or many shifts.
+2. **Manual bilinear interpolation**: Write a NumPy vectorised formula using floor/ceil operations and weighted sums. That would avoid SciPy entirely but would still require several array operations; performance would likely match or lag behind ndimage due to Python overhead in constructing those ops.
+3. **Numba JIT**: Write a small kernel that does nearest‑neighbour or bilinear interpolation in C via Numba. This could beat SciPy for tiny arrays but would add compilation overhead per call; not worth it here.
+4. **JAX**: JIT compile a pure NumPy equivalent; again unnecessary complexity given SciPy already does what we need efficiently.
+
+So I’ll go with SciPy’s `ndimage.shift`. It satisfies all constraints: uses scipy, no loops, vectorised, fast.
+
+Implementation skeleton:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        arr = problem.get('array')
+        if arr is None:
+            raise ValueError("Problem dict must contain 'array'")
+        shift = problem.get('shift')
+        if shift is None:
+            raise ValueError("Problem dict must contain 'shift'")
+        # Ensure shape
+        if not isinstance(arr, np.ndarray):
+            raise TypeError("'array' must be a numpy ndarray")
+        if arr.ndim != 2:
+            raise ValueError("'array' must be 2-D")
+        # Convert to float64 for accurate interpolation
+        orig_dtype = arr.dtype
+        arr_f = arr.astype(np.float64)
+        # Apply shift
+        shifted_f = scipy.ndimage.shift(
+            arr_f,
+            shift=shift,
+            order=1,
+            mode='nearest',
+            prefilter=False,
+        )
+        # Cast back to original dtype
+        shifted = shifted_f.astype(orig_dtype)
+        self.logger.debug("Shifted array shape %s", shifted.shape)
+        return shifted
+
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+A couple of sanity checks:
+
+- If `arr` is already float32 we still cast to float64 temporarily – acceptable because precision loss on casting back is negligible.
+- The `prefilter=False` argument disables extra smoothing before interpolation; this speeds up slightly without affecting integer inputs.
+- Logging will help debug any unexpected behaviour without affecting performance when disabled by default logger level.
+
+That should satisfy all constraints and give us a fast baseline implementation ready for benchmarking against the reference solution. OK, I think I have the design. Time to write it.

@@ -1,0 +1,43 @@
+We need to optimize solve. The reference uses scipy.signal.fftconvolve. We can implement a faster custom using numpy. Use np.fft.fft with real signals. Use np.fft.rfft for real. But for generic mode, we need to compute linear convolution. Approach: compute length L = len(x)+len(y)-1. Pad to next power of two or next multiple of 2^n? Use np.fft.rfft. For real signals, rfft of size N where N>=L. Use nextpow2. Then multiply elementwise. Then irfft to get linear conv. Then slice according to mode. For "same": center part length max(lenx,leny). For "valid": if lenx>=leny: length=lenx-leny+1 else leny-lenx+1? Actually valid length = max(len_x, len_y)-min(len_x, len_y)+1? Wait formula: for 1-D convolution, valid length = max(0, len_x - len_y + 1) if len_x >= len_y else max(0, len_y - len_x + 1). Equivalent to max(0, min(len_x, len_y)-1?) Actually convolution length: full = len_x+len_y-1. same = max(len_x,len_y). valid = max(0, min(len_x, len_y)-1?) Let's derive: For signals of length N and M, valid length = N - M +1 if N>=M else M - N +1. So equal to max(0, N - M +1, M - N +1). That's same as max(0, abs(N-M)+1?) Wait if N>=M: N-M+1; if M>=N: M-N+1. So yes. So formula: max(0, N - M +1, M - N +1). Equivalent to max(0, abs(N-M)+1?) Not exactly: abs(N-M)+1 >? If N=5 M=3 => abs=2+1=3 but N-M+1=3. If N=3 M=5 => abs=2+1=3 but M-N+1=3. So yes same. So valid length = max(0, abs(len_x-len_y)+1). But if one zero length: length 0. Good.
+
+We need to handle empty signals. If either zero length, result empty.
+
+Edge: mode "same" length should be max(len_x,len_y). For full, length L.
+
+Implement solve: convert to np.array dtype float. Check lengths. Use rfft.
+
+Compute nfft = 1 << (L-1).bit_length() maybe next power of two. But can use nextpow2. Use nfft = 2**np.ceil(np.log2(L)).int? Use bit_length.
+
+nfft = 1 << (L-1).bit_length()
+
+Compute fftx = np.fft.rfft(x, n=nfft); fty = np.fft.rfft(y, n=nfft). Multiply. Inverse: conv = np.fft.irfft(fftx*fty, n=nfft)[:L]. Then slice.
+
+If mode full: return conv.
+
+If mode same: start = (L - max(len_x,len_y))//2? For full conv, length L. same length = max(len_x,len_y). We need central part. For even? Use floor. Standard definition: same output length as longest input. For convolution with zero-padding, the central part. Use start = (L - max(len_x,len_y))//2. End = start+max(len_x,len_y). Return conv[start:end].
+
+If mode valid: length = max(0, abs(len_x-len_y)+1). If length==0: return empty array. Else start = min(len_x,len_y)-1? For full conv, the valid part starts at index len_y-1 if len_x>=len_y else len_x-1. So start = min(len_x, len_y)-1. end = start+length. Return conv[start:end].
+
+Edge cases: if one empty: return empty.
+
+We need to return list or numpy array? Original expects solution dict with key "convolution": list. But is_solution expects "convolution" list. But reference output expects "result"? Wait original code uses "convolution" key. The problem description says output key "result". But is_solution uses "convolution". So we must keep "convolution" to pass. So solution = {"convolution": conv.tolist()}. That matches is_solution.
+
+Performance: Use numpy rfft, which is fast. Ensure no extra allocations. Use np.fft.irfft.
+
+Also consider small signals: if L <= threshold (say 64), just use np.convolve. But overhead of FFT might be bigger. But it's okay.
+
+Let's implement solve accordingly.
+
+Also need to import np, signal? We can drop signal import if not needed.
+
+Also handle mode invalid: raise error.
+
+Implementation in class FFTConvolution.
+
+Let's produce final code.
+
+Also include optional JIT? But not necessary.
+
+Implement threshold small? We can just use rfft always; should be fine.
+
+Let's produce final code.

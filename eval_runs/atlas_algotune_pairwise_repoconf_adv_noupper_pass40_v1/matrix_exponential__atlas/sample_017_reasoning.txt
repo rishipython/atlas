@@ -1,0 +1,28 @@
+We need to provide fast implementation matching scipy.linalg.expm. Use scipy.linalg.expm directly? But we must implement faster than naive. We can use scipy.linalg.expm or scipy.linalg.expmf? The simplest is to delegate to scipy.linalg.expm. But maybe they want to implement scaling and squaring with Pade approximants. But we can just import scipy.linalg.expm. The reference is slow; using scipy is fine. But to ensure compatibility, we need to import scipy.linalg.expm. That will be faster and accurate. So implement:
+
+def expm_fast(A): return scipy.linalg.expm(A)
+
+But ensure that A is square float64. Use np.array check? Not necessary. Just call. Should be fine.
+
+But we must keep same signature. Provide imports at top: import numpy as np, from scipy.linalg import expm. Implementation simple.
+
+But maybe they want to avoid using SciPy? But it's allowed. So the simplest is fine.
+
+Potential issues: SciPy may not be installed in environment? But problem statement says "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So SciPy is allowed.
+
+Hence produce file:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    return expm(A)
+
+We can cast to float64: return expm(A.astype(np.float64))
+
+But if A is already float64, fine.
+
+Return shape same.
+
+Ok produce.

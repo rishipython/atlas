@@ -75,6 +75,13 @@ image = (
         "scipy>=1.11",
         "numba>=0.60",
         "openai>=1.40",
+        "orjson>=3.10",
+        "toml>=0.10",
+        "pyaml>=24.0",
+        "pillow>=10.0",
+        # Modal runtime imports these at startup (via modal_proto/client).
+        "protobuf>=4.25",
+        "grpclib>=0.4.7",
         # alphaevolve_math problems need jax/optax for the jax-based
         # optimizers in several initial_program.py files, and sympy/tqdm
         # for the analytic uncertainty_ineq / heilbronn evaluators.
@@ -411,6 +418,7 @@ def run_evolution(
     adapter_name: str | None = None,
     task_family: str = "kernel",
     random_seed: int = 42,
+    rlm_memory_bank_text: str | None = None,
 ) -> dict:
     import yaml
 
@@ -436,6 +444,20 @@ def run_evolution(
 
     evaluator_path = output_dir / "evaluator.py"
     evaluator_path.write_text(spec.evaluator)
+    # Some vendored AlgoTune evaluators import a sibling `task_ref.py`.
+    # Ensure it is present in the run directory for those tasks.
+    if task_family == "algotune":
+        task_ref_src = (
+            Path("/atlas")
+            / "experiment"
+            / "tasks"
+            / "_oe_problems"
+            / "algotune_examples"
+            / problem_id
+            / "task_ref.py"
+        )
+        if task_ref_src.exists():
+            (output_dir / "task_ref.py").write_text(task_ref_src.read_text())
 
     # If an adapter was requested, resolve the on-volume path and pick
     # the served-model name vLLM will register it under.  Base-only
@@ -452,9 +474,25 @@ def run_evolution(
     else:
         print(f"[run] served_model={served_model} (base, no adapter)")
 
+    system_message = spec.system_message
+    if rlm_memory_bank_text:
+        memory = rlm_memory_bank_text.strip()
+        if memory:
+            # Keep prompt bloat bounded while still preserving the latest context.
+            max_chars = 24_000
+            if len(memory) > max_chars:
+                memory = memory[-max_chars:]
+            system_message = (
+                f"{system_message}\n\n"
+                "RLM MEMORY BANK (distilled notes from prior related problems):\n"
+                "Use these as heuristics and anti-pattern reminders, but still verify "
+                "correctness against the exact current task requirements.\n\n"
+                f"{memory}\n"
+            )
+
     cfg = _build_config(
         iterations,
-        spec.system_message,
+        system_message,
         served_model=served_model,
         evaluator_timeout=spec.evaluator_timeout,
         parallel_evaluations=1,
@@ -511,6 +549,7 @@ def run_evolution(
             "problem_id": problem_id,
             "iterations": iterations,
             "adapter_name": adapter_name,
+            "rlm_enabled": bool(rlm_memory_bank_text and rlm_memory_bank_text.strip()),
             "served_model": served_model,
             "best_score": result.best_score,
             "best_metrics": result.metrics,
@@ -550,6 +589,7 @@ def main(
     adapter_name: str | None = None,
     task_family: str = "kernel",
     random_seed: int = 42,
+    rlm_memory_bank: str | None = None,
 ):
     """Kick off an OpenEvolve run on Modal and print the result summary."""
     print(
@@ -558,8 +598,21 @@ def main(
         f"iterations={iterations} run_name={run_name} adapter={adapter_name} "
         f"seed={random_seed}"
     )
+    rlm_memory_bank_text = None
+    if rlm_memory_bank:
+        p = Path(rlm_memory_bank)
+        if not p.exists():
+            raise FileNotFoundError(f"RLM memory bank not found: {p}")
+        rlm_memory_bank_text = p.read_text()
+
     summary = run_evolution.remote(
-        problem_id, iterations, run_name, adapter_name, task_family, random_seed
+        problem_id=problem_id,
+        iterations=iterations,
+        run_name=run_name,
+        adapter_name=adapter_name,
+        task_family=task_family,
+        random_seed=random_seed,
+        rlm_memory_bank_text=rlm_memory_bank_text,
     )
     print("\n=== RESULT ===")
     for k, v in summary.items():

@@ -1,0 +1,33 @@
+We need to produce faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to import. Let's use scipy.signal.fftconvolve. That returns float64. Should be fine. But we need to ensure same dtype. Provide same output shape.
+
+Also test for small arrays: FFT may produce small numerical differences; but np.allclose will allow tolerance. Should be fine.
+
+Alternatively, implement using numpy.fft.rfft? Use real FFT for speed. For real inputs, we can use rfft. Implementation: compute size L = N+M-1. Next power of 2? Or use np.fft.fft. Use np.fft.rfft to compute half-length. Use rfft of padded arrays. Steps:
+
+- L = N+M-1
+- size = 1 << (L-1).bit_length()  # next power of 2
+- X = np.fft.rfft(x, size)
+- H = np.fft.rfft(h, size)
+- Y = X*H
+- y = np.fft.irfft(Y, size)[:L]
+- return y
+
+This uses real FFT, faster. Ensure dtype float64.
+
+Edge cases: if arrays are empty? Not likely. But handle.
+
+Let's implement conv1d accordingly.
+
+Also maybe fallback to numpy.fft if scipy not available.
+
+We can import numpy as np.
+
+We need to ensure function signature same.
+
+Let's produce code.
+
+Test: small arrays.
+
+Also ensure that dtype is float64.
+
+Ok.

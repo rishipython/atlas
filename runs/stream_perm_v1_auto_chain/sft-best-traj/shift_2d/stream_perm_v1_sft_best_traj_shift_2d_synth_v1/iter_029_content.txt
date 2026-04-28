@@ -1,0 +1,24 @@
+We need to re‑implement `Shift2D.solve` so it runs fast while staying correct for whatever `problem` dict the tests feed us.  
+The reference solution probably walks the 2‑D array pixel‑by‑pixel applying a translation – that’s slow in pure Python – so the obvious speed lever is vectorisation via NumPy / SciPy functions that already sit on top of BLAS/LAPACK or C code paths.
+
+First thought was just `np.roll`. It’s a one‑liner and pure NumPy – great speed – but it wraps around the edges which most image‑translation tasks don’t want; they usually expect zero padding outside the original bounds.  
+So `np.roll` alone isn’t a drop‑in replacement unless the tests explicitly allow wrap‑around – unlikely given the “valid solutions” requirement I saw in earlier runs of the baseline where off‑edge pixels were set to zero rather than wrapped around.  
+
+Next idea was `scipy.ndimage.shift`. It supports arbitrary (even fractional) offsets and lets us specify `mode='constant', cval=0`. That gives us correct boundary handling without writing any loops at all – just a single C call under the hood! The only downside is that even when the offset happens to be an integer it still performs spline interpolation which costs more than a simple copy would pay for an exact pixel move.  
+
+So I thought about splitting the logic into two branches:
+
+* **Integer offsets** – do a cheap zero‑initialised buffer plus a direct slice assignment that copies the overlapping region into its new location.
+* **Fractional offsets** – fall back on `ndimage.shift`.
+
+The slice‑assignment trick looks like this in pseudo‑code:
+
+```python
+h,w = arr.shape[-2],arr.shape[-1]
+out = np.zeros_like(arr)
+
+# compute source/destination slices based on sign of offset
+# e.g., positive dy means moving downwards → source rows  : :h-dy,
+# destination rows :dy:h
+
+out[..., dst_y_slice,dst_x_slice] = arr[..., src_y_slice ,

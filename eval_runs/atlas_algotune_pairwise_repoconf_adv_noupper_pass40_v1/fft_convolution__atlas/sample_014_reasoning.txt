@@ -1,0 +1,17 @@
+We need to produce a faster implementation of conv1d. We can use numpy's FFT or scipy.signal.fftconvolve. But we must return same shape. For numeric closeness, we can use np.fft.fft or np.fft.rfft? Use real FFT. For 1D convolution of real arrays, we can use np.fft.rfft with length L = N+M-1, zero pad both to L. Compute product in freq domain, inverse. Use np.fft.irfft. That yields float64. Must be accurate. Use np.fft.fft? Might be fine. Let's implement using np.fft.rfft.
+
+Edge case: small arrays? Works. Use np.fft.rfft on length L, multiply, irfft. Use dtype float64. Ensure shape. Implementation:
+
+def conv1d(x,h):
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X*H, n=L)
+    return y
+
+Test with random arrays. Should match np.convolve.
+
+Let's produce full file. Include imports. No extraneous. Ensure shape.
+
+Let's produce final.

@@ -1,0 +1,177 @@
+We need to implement a fast rotate_2d solver. The problem likely involves rotating a 2D array or image by some angle. We must use scipy, vectorized, no Python loops. Likely use scipy.ndimage.rotate or affine_transform. Let's think.
+
+The baseline is slow; maybe uses nested loops to rotate each pixel. We can replace with scipy.ndimage.rotate which is vectorized and uses interpolation.
+
+We need to parse input format: problem dict? Might contain 'image', 'angle', 'order', etc. We need to return rotated image.
+
+Let's think of potential input: maybe a dict with keys 'image' (numpy array), 'theta' (float). Could be other fields. We need to handle arbitrary shapes.
+
+We should write run_solver that creates Rotate2D instance and calls solve. But we can just implement solve directly inside run_solver? The brief says keep same function name and signature: run_solver(problem) returns solution.
+
+So we can implement a class Rotate2D with solve method that does rotation.
+
+We must use scipy functions somewhere; likely scipy.ndimage.rotate.
+
+We must avoid Python loops; so just call rotate.
+
+Edge cases: angle 0 -> return copy; negative angles; large angles >360; shape changes if reshape=True.
+
+We should decide on interpolation order: default 1? Use order=1 bilinear.
+
+Also consider mode='constant', cval=0.0.
+
+Let's design:
+
+class Rotate2D:
+    def solve(self, problem):
+        img = problem['image']
+        theta = problem.get('angle', 0)
+        # ensure float
+        theta = float(theta)
+        # Use scipy.ndimage.rotate
+        rotated = scipy.ndimage.rotate(img, theta, reshape=True, order=1, mode='constant', cval=0.0)
+        return {'rotated_image': rotated}
+
+But maybe the baseline expects output as numpy array directly. Let's check typical AlgoTune tasks: Usually run_solver returns a numpy array result. So maybe just return rotated image.
+
+Also maybe the problem includes 'center' or 'axes' but we ignore.
+
+We also need random import? The brief mentions import random; maybe for random seed? Not necessary but include.
+
+Also typing.Any, Dict for type hints.
+
+Let's craft final design: imports random, typing.Any, Dict, numpy as np, scipy.ndimage. Define class Rotate2D with solve method that uses ndimage.rotate. Ensure no loops. Use np.asarray to convert input.
+
+Potential numeric edge: if input not float64, cast to float64 for rotation precision.
+
+Also we can precompute cos/sin but not needed because rotate handles it internally.
+
+Edge case: if img is 1D or empty -> return as is.
+
+Testing: pass small array; check shape changes correctly.
+
+Now produce chain-of-thought exploring alternatives:
+
+- Option 1: Use pure numpy with meshgrid and interpolation manually - too complex.
+- Option 2: Use cv2.warpAffine from OpenCV - but not allowed? cv2 not listed.
+- Option 3: Use scipy.ndimage.affine_transform with matrix rotation - also fine but rotate wrapper simpler.
+- Option 4: Use numba jit on loops - but loops prohibited.
+- Option 5: Use JAX jitted function - but requires JAX import and JIT compile overhead; probably slower for small tasks.
+- Option 6: Use SciPy's ndimage.rotate - best vectorized and fast in C++ backend.
+Thus choose option 6.
+
+Also we must avoid loops in our code; just call function once per image.
+
+Now consider output format: maybe baseline returns dictionary with key 'rotated'. But unknown. We could simply return rotated image directly; if tests expect dict, they'd fail. But typical AlgoTune tasks expect a numpy array result. So okay.
+
+Edge case: if problem contains multiple images? Might be list of arrays; we could handle list comprehension but that's still vectorized? List comprehension uses Python loop though. But maybe problem only contains single image.
+
+Better to check type of img; if it's list/tuple of arrays, we could stack them and rotate each via vectorized broadcasting? Not trivial. We'll assume single array.
+
+Now think about potential performance pitfalls:
+
+- Using reshape=True may increase memory usage; but acceptable.
+- Using order=1 bilinear interpolation is faster than cubic.
+- mode='constant' cval=0 ensures background zeros.
+- Could set prefilter=False for speed if order <=1 but not needed.
+
+Check rtol/atol tolerance: The rotation may introduce small differences due to interpolation; acceptable within tolerance maybe 1e-5 relative error. Should be fine.
+
+Now finalize design outline:
+
+```
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Rotate2D:
+    def solve(self, problem):
+        img = np.asarray(problem['image'])
+        angle = float(problem.get('angle', 0))
+        # If angle is zero or image empty -> return copy
+        if angle % 360 == 0 or img.size == 0:
+            return img.copy()
+        rotated = scipy.ndimage.rotate(
+            img,
+            angle,
+            reshape=True,
+            order=1,
+            mode='constant',
+            cval=0.0,
+            prefilter=False
+        )
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+This satisfies imports, uses scipy, no loops, vectorized via ndimage.rotate. Also includes random import though unused but required by brief (maybe used elsewhere). We might add random.seed(42) for reproducibility if needed but not necessary.
+
+Edge cases considered: angle multiples of 360 handled quickly by returning copy to avoid overhead of rotation which would produce same result anyway but might be slower due to extra memory allocation. Also handle empty images gracefully.
+
+Now produce final chain-of-thought with exploration and decisions.
+We need to replace the slow reference implementation of the rotate_2d solver with something that runs in a single call to a highly‑optimized routine from SciPy so we can keep the code entirely vectorised and avoid any Python‑level loops.  
+The task description tells us that the input comes in a `problem` dictionary – most likely it contains at least an `'image'` key holding a NumPy array and an `'angle'` key giving the rotation in degrees (the reference code probably iterates over every pixel).  
+So the goal is to take that array, apply a rotation using SciPy’s C‑backed functions and return the rotated array (or whatever structure the tests expect).  
+
+**First idea:** write my own grid transformation with `np.meshgrid` and bilinear interpolation – that would involve nested Python loops over all pixels or at least an explicit loop over indices – which violates the “no Python‑level loops” rule and would be slow anyway because we'd still be doing per‑pixel work in Python land or at least calling `np.take` many times.  
+**Second idea:** use `scipy.ndimage.affine_transform` where I supply the rotation matrix directly – this is fully vectorised internally, no explicit Python loop needed – but I’d have to compute inverse mapping manually and handle border modes carefully.  
+**Third idea:** just call `scipy.ndimage.rotate`, which already wraps an affine transform plus resampling logic internally in C/C++. It accepts an angle in degrees, has options for `reshape`, interpolation `order`, border handling (`mode`, `cval`) etc., so I can hand off all of that complexity to SciPy and keep my own code minimal and clean.  
+Since the brief explicitly requires “Uses **scipy** functions somewhere in the solution”, this third route satisfies that requirement nicely while also being fast enough for typical test cases (images up to a few thousand pixels).
+
+So I'll go with option three: wrap `scipy.ndimage.rotate`.  
+To stay within the constraints:
+
+* Import `random` even if we don't end up using it – the brief lists it as part of the imports.
+* Import `typing.Any` and `typing.Dict` for type hints on the `problem` argument.
+* Import `numpy as np` because we'll cast inputs safely.
+* Import `scipy.ndimage` for the rotation routine.
+* No explicit loops anywhere – just one call to `rotate`.
+* Handle trivial edge cases quickly:
+    * If the angle is effectively zero (multiple of 360) or the image has no elements (`size == 0`) we just return a copy instead of invoking SciPy’s routine (avoids unnecessary memory allocation).
+    * Cast the input image to an array (`np.asarray`) so callers can pass lists or other array‑like objects without error.
+    * Convert the supplied angle to a float explicitly so any integer or string inputs are handled consistently.
+* Choose parameters that give good performance while keeping numerical accuracy acceptable:
+    * `reshape=True` so that the output fully contains the rotated content (the reference probably does this too).
+    * `order=1` for bilinear interpolation – faster than cubic yet reasonably accurate for most images.
+    * `mode='constant'`, `cval=0.0` so that new pixels outside the original bounds are zeroed out (typical default behaviour).
+    * `prefilter=False` because with bilinear interpolation we don’t need prefiltering – this saves a tiny bit of time.
+* Return whatever the caller expects – most likely just the NumPy array produced by SciPy – so I’ll simply return that result from `solve`.
+
+The final skeleton will look like this (without writing out full function bodies):
+
+```python
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Rotate2D:
+    def solve(self, problem):
+        # Grab inputs safely
+        img = np.asarray(problem['image'])
+        angle = float(problem.get('angle', 0))
+
+        # Quick exit for trivial rotations
+        if angle % 360 == 0 or img.size == 0:
+            return img.copy()
+
+        # Delegate heavy lifting to SciPy
+        rotated = scipy.ndimage.rotate(
+            img,
+            angle,
+            reshape=True,
+            order=1,
+            mode='constant',
+            cval=0.0,
+            prefilter=False
+        )
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+With this design I’m using SciPy’s optimized routine once per call, no Python loops whatsoever, and I’ve covered edge cases like zero rotation or empty images efficiently. All required imports are present and I’m staying within the character budget by keeping helper logic minimal yet clear. OK, I think I have the design. Time to write it.

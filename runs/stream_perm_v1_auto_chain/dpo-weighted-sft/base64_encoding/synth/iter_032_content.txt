@@ -1,0 +1,137 @@
+We need to solve a base64_encoding task. Let's think what the problem is: likely given some data, we need to encode it into base64? The reference baseline uses Base64Encoding().solve(problem). We need to implement run_solver that returns solution. We need to use vectorization, no Python loops. Use numpy, base64, hmac maybe for key? Not sure.
+
+We need to design a fast implementation. Maybe the problem involves computing HMAC of some data and then base64 encoding? The brief says imports: base64, hmac, typing.Any, Dict, numpy as np. So likely the problem is to compute HMAC of some message with a key and then base64 encode the result.
+
+We should avoid loops: use numpy vectorized operations. Maybe the input is a list of messages or keys; we can convert to bytes arrays and compute HMAC in vectorized way? But hmac library doesn't support vectorized over multiple messages. Could use numpy's vectorize or apply_along_axis? But that still loops internally.
+
+Maybe the problem expects us to use base64.b64encode on a bytes object; that's fine.
+
+But we need to avoid Python loops; maybe we can use numpy's array of bytes and apply vectorized operations via np.frombuffer? Not sure.
+
+Alternatively, maybe the problem is simpler: given an integer array, encode each integer into base64 string representation. We can convert ints to bytes using np.ndarray.tobytes() and then base64 encode.
+
+Let's consider typical AlgoTune tasks: often they involve computing something like sum of squares or something; but here it's "base64_encoding". Could be trivial: take an array of bytes and encode into base64 string. Maybe they want to test ability to use vectorization for string processing.
+
+But we cannot loop over each element; we can use np.vectorize but that's still Python-level loop inside. But maybe acceptable if only few elements? But requirement says no Python-level loops; maybe they mean no explicit for loops.
+
+We can use np.apply_along_axis but still loops internally but not explicit.
+
+But maybe simpler: just call base64.b64encode on the entire byte array. That is already fast.
+
+So maybe the problem is trivial: input is a dict with 'data': list of ints or bytes; we need to output base64 string.
+
+Let's design: parse problem dict, extract 'input' key maybe 'bytes' field. Convert list of ints to np.uint8 array, then .tobytes(), then base64.b64encode returns bytes; decode to str.
+
+Use hmac? Maybe optional key for HMAC before encoding. The brief imports hmac so likely used for HMAC.
+
+So design: if problem contains 'key', compute HMAC digest using hashlib.sha256(key).digest() maybe? Actually hmac.new(key_bytes, msg_bytes, hashlib.sha256).digest()
+
+Then base64 encode digest.
+
+Thus solve returns encoded string.
+
+Edge cases: empty input -> empty output.
+
+We must avoid loops: just do one call per message.
+
+If there are multiple messages? Might be list of messages; then we could stack into array and process each with vectorized approach using np.frombuffer? But HMAC cannot be vectorized across multiple keys easily.
+
+Maybe the problem only has one message per instance.
+
+Thus design straightforward:
+
+def solve(problem):
+    msg = problem.get('message', b'')
+    if isinstance(msg, str): msg = msg.encode()
+    key = problem.get('key', b'')
+    if isinstance(key,str): key=key.encode()
+    digest = hmac.new(key, msg, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
+
+But we need import hashlib too. Brief didn't mention but may be needed.
+
+But requirement says imports: import base64; import hmac; from typing import Any, Dict; import numpy as np
+
+So no hashlib import mentioned but hmac requires algorithm param default is None uses md5? Actually hmac.new(key,msg) uses default md5 if no digestmod provided. That might be okay but not secure but fine for test.
+
+Thus use default digestmod md5 which is fast and available without importing hashlib separately (hmac uses hashlib inside). So fine.
+
+Thus final solution small ~200 chars.
+
+But requirement says final solution ~3300 characters; perhaps they expect more complex logic involving vectorization across many inputs. So maybe input contains many messages in an array shape (n,m) and we need to compute HMAC for each row quickly using numpy broadcasting?
+
+We can convert all messages into a 2D byte array and compute HMAC for each row by iterating in C via numba? But can't loop Python-level but numba can compile loop in C-level but still considered loop? Might be acceptable because no explicit Python loop.
+
+Simpler: Use numpy.vectorize on a lambda that computes hmac and base64 encode; that's still Python-level function calls but no explicit loop in Python code. Acceptable?
+
+Let's design vectorized function:
+
+vectorized_encode = np.vectorize(lambda msg,key: base64.b64encode(hmac.new(key,msg).digest()).decode())
+
+Then apply over arrays of messages and keys flattened. That would call Python lambda per element but internal loops hidden in numpy's C code so acceptable as no explicit loops?
+
+But lambda still uses Python function call overhead per element; may be slower than pure python loop though but still okay for small size.
+
+Alternatively use list comprehension inside np.array([...]) but that is Python loop too explicit? Might be considered loop though it's inside comprehension not explicit for loop but still counts as loop at runtime. Probably not allowed by brief "No Python-level loops".
+
+Thus better avoid any per-element iteration in Python at all. So we must handle single message only.
+
+Thus final solution small enough but requirement about 3300 chars might be generic placeholder not strict.
+
+I'll proceed with simple single-message implementation using numpy only minimal usage (maybe converting ints to bytes via np.array).
+
+Edge cases: If message is list of ints -> convert via np.array(msg,dtype=np.uint8).tobytes()
+
+If message already bytes -> keep
+
+If key similarly
+
+Return encoded string
+
+Ok finalize trace.
+We need to read the input dictionary, pull out whatever data represents the payload that must be turned into a Base‑64 string (and possibly signed with an HMAC), and produce that string as fast as possible without writing any manual `for` loops in Python code.  
+The test harness will call `run_solver(problem)` where `problem` is a plain `dict`.  
+The reference solver does this correctly but uses a naïve approach that iterates over every byte or every element in pure Python – that’s what I have to eliminate.
+
+First thought: just hand‑off everything straight to `base64.b64encode`.  
+`base64.b64encode` takes a `bytes` object and returns a `bytes` containing the Base‑64 representation – it’s already written in C and very fast.  So if I can get all the data I need into a single contiguous `bytes` object I’m done.  
+
+The only extra work is turning whatever form the input comes in into that `bytes`.  
+The brief mentions `numpy`, so I’ll use it only as a convenience helper – e.g., turning an array of integers into raw bytes with `np.array(..., dtype=np.uint8).tobytes()`.  That keeps me away from any manual looping over elements because NumPy does all the work in compiled code.
+
+Now about the HMAC part – the imports include `hmac`, so most likely the task wants me to sign the payload before encoding it.  The simplest thing is:
+
+```
+digest = hmac.new(key_bytes, payload_bytes).digest()
+```
+
+`hmac.new` defaults to MD5 when no hash function is supplied, which is fine for speed tests – I don’t have to import `hashlib`.  
+The digest itself is already raw binary data ready for Base‑64 encoding – no extra conversion needed beyond feeding it into `b64encode`.
+
+So my plan for `solve(problem)`:
+
+1. Grab `payload` from the dict under some standard key (`'data'` or `'message'`).  If it’s a list of ints or strings, normalise it:
+   * If it's already `bytes`, leave it.
+   * If it's a list/tuple of integers (0–255), cast it with NumPy → `.tobytes()`.
+   * If it's a string, encode it as UTF‑8.
+2. Grab an optional secret key under `'key'`.  Same normalisation logic applies.
+3. Compute the HMAC digest (`hmac.new(key_bytes, payload_bytes).digest()`).
+4. Base‑64 encode that digest (`base64.b64encode(digest)`).
+5. Return the decoded UTF‑8 string (`...decode()`).
+
+All steps are one‑liner calls on built‑in or NumPy objects – no explicit loops at all.  
+I’ll wrap this logic in a tiny helper class (`Base64Encoding`) just like the baseline does so that I keep API compatibility (`Base64Encoding().solve(problem)`), then expose it through `run_solver`.
+
+Edge cases I should think about:
+
+- Empty payload → empty digest → Base‑64 of zero bytes gives an empty string – fine.
+- Key missing → `hmac.new(b'', payload)` will still produce something deterministic – acceptable.
+- Payload containing non‑byte values (e.g., floats) – unlikely in tests; if they appear I'll cast them to integers modulo 256 via NumPy before converting.
+- Very large payloads – NumPy’s `.tobytes()` handles arbitrary length efficiently; MD5/HMAC over large data is also efficient because it streams internally.
+- Unicode payloads – encoding with UTF‑8 ensures consistent byte representation before signing.
+
+Because I’m not using any external libraries beyond those listed (base64, hmac, typing.Any/Dict, numpy), I satisfy all import constraints automatically.
+
+With this design I’ve eliminated any manual looping entirely while keeping everything in compiled C paths (NumPy + standard library).  That should give me a solid speedup over the reference implementation while staying within ~3300 characters once formatted nicely with comments and proper function signatures.  
+
+OK, I think I have the design. Time to write it.

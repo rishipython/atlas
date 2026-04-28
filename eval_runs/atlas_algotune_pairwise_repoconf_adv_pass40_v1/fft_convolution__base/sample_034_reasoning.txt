@@ -1,0 +1,39 @@
+We need to provide a faster implementation of conv1d, using FFT convolution. We need to preserve signature: conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray. Use numpy. We can use np.fft.fft for 1D. But we must ensure we get same numeric result as np.convolve. For double precision, FFT convolution may have slight rounding differences but np.allclose with default tolerances should be fine. We need to ensure length N+M-1. Approach: compute next power of two length L >= N+M-1. Compute FFT of padded arrays, multiply, inverse FFT, take real part, round to float64. Use np.real or .astype. Return real part.
+
+Edge cases: x or h may be 1D arrays. Should handle empty? Usually length 0? Not needed.
+
+Better to use np.fft.rfft for real-only? but simpler to use np.fft.fft. Use np.fft.fft(x, n=L) etc. Then product. Use np.fft.ifft. Then cast to float64. Use np.real.
+
+Also ensure dtype: input arrays may be dtype float64. Output should be float64.
+
+Also maybe use np.fft.fft in numpy 1.20? Ok.
+
+Also we can use scipy.signal.fftconvolve but we can rely on numpy only.
+
+Implement conv1d:
+
+```
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = 1 << (N + M - 1 - 1).bit_length()
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y[:N+M-1]
+```
+
+But note: L must be at least N+M-1. bit_length works. For N+M-1 = 1, bit_length =1, L=1<<0=1? Wait, if N+M-1=1, (1-1).bit_length()=0, L=1<<0=1. Good.
+
+Edge: If N+M-1=0? Not possible.
+
+Also we could use np.fft.rfft and irfft for real, but we can keep simple.
+
+We also need to import numpy.
+
+Thus produce file with imports, function. Ensure docstring maybe.
+
+Return type: np.ndarray of float64.
+
+Let's produce final code.

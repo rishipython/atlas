@@ -1,0 +1,20 @@
+We need to provide a faster implementation. Use numpy FFT. We must preserve same semantics: full convolution, float64. Use np.fft.fft, but careful about size: next power of 2 or direct length N+M-1. Use np.fft.rfft? Since real data. But easiest: use np.fft.fft of length N+M-1. Use np.fft.ifft. Should cast to float64. Provide efficient.
+
+Also we can use scipy.signal.fftconvolve if available. But we can implement ourselves.
+
+Potential numeric differences: using FFT may produce small errors but acceptable within tolerance.
+
+Edge cases: when either input is empty? But lengths given? Might be zero length? Should handle gracefully. For zero length, convolution result length N+M-1=... If one is zero length, result length -? Actually if one array empty, len=0, then result length -? N+M-1 = -1? That is weird. But maybe not tested. We'll assume non-empty.
+
+Implementation: def conv1d(x, h): compute n = len(x), m = len(h). If n==0 or m==0: return np.array([], dtype=np.float64). else: size = n+m-1. Use next power of 2? Not necessary but may speed. Use nfft = 1 << (size-1).bit_length() maybe. Then compute fft_x = np.fft.rfft(x, nfft); fft_h = np.fft.rfft(h, nfft); conv = np.fft.irfft(fft_x*fft_h, nfft); return conv[:size]. cast to float64. Ensure dtype float64.
+
+Also we can use np.fft.fft for complex but rfft/irfft may be faster.
+
+Return as float64.
+
+Let's write.
+
+Also handle case when n+m-1 is 1? Works.
+
+Let's produce final code.
+

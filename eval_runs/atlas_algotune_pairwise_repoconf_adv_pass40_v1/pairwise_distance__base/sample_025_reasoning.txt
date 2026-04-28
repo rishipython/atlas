@@ -1,0 +1,31 @@
+We need to replace triple loops with efficient vectorized computation. Use broadcasting or matrix operations. For pairwise squared Euclidean distances: D = A + B - 2 * A @ B.T, where A = sum over columns of X**2 per row. Compute as:
+
+sum_X_sq = np.sum(X**2, axis=1)  # shape (N,)
+dist = sum_X_sq[:, None] + sum_X_sq[None, :] - 2 * X @ X.T
+
+Return dist. Ensure dtype float64.
+
+Potential negative small values due to numerical errors: set negative values to 0 using np.maximum(dist, 0). But not necessary if inputs are float64.
+
+But to be safe, we can clip to zero: dist = np.maximum(dist, 0.0).
+
+Also, ensure that we preserve dtype. Use X = np.asarray(X, dtype=np.float64). But X is already dtype float64.
+
+Return dist.
+
+Edge cases: N large; memory maybe high but okay.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sum_sq = np.sum(X**2, axis=1)
+    dist = sum_sq[:, None] + sum_sq[None, :] - 2.0 * X @ X.T
+    return np.maximum(dist, 0.0)
+
+Return dtype float64.
+
+We need to import numpy at top.
+
+Ok produce final code.
+

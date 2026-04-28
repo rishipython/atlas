@@ -1,0 +1,25 @@
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return np.convolve(x, h, mode='full') but MUCH faster using FFT."""
+    # Ensure input arrays are 1-D float64
+    x = np.asarray(x, dtype=np.float64, copy=False)
+    h = np.asarray(h, dtype=np.float64, copy=False)
+
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+
+    # Next power of two for efficient FFT
+    nfft = 1 << (L - 1).bit_length()
+
+    # FFT of both signals
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+
+    # Element-wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse FFT to get convolution result
+    y = np.fft.irfft(Y, nfft)[:L]
+
+    return y

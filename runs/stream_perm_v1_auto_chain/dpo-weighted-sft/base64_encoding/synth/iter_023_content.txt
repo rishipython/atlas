@@ -1,0 +1,226 @@
+We need to figure out what the base64_encoding problem is. Likely it's about encoding a string to base64 and verifying with HMAC? Let's think: The reference implementation uses Base64Encoding().solve(problem). We need to write a faster solve that uses vectorization, no Python loops, uses numpy, base64, hmac, logging. Probably the problem input is a dictionary with some data like 'message', 'key', etc. The solver should compute base64 encoding of something and maybe compute HMAC of that. We need to produce a vectorized solution: maybe process multiple messages at once.
+
+But we don't have the exact spec. Let's assume problem is a dict with keys 'data': list of bytes or strings? Maybe it's a list of messages to encode. We can use numpy array of bytes? Actually base64 works on bytes.
+
+We can vectorize by converting all data to a single bytes object separated by newlines and encode once? But that changes output. Instead we can use numpy's vectorize or apply to each element via np.frompyfunc but that still loops.
+
+Better: Use Python's base64.b64encode which is C-level, so loop overhead minimal. But if many messages, we could use np.vectorize but that's still Python-level.
+
+Maybe the problem expects us to compute HMAC over the base64 encoded string for each message. That could be done with hmac.new(key, msg, digestmod=sha256).digest() then base64 encode that.
+
+Vectorization: we could use numpy arrays of keys and messages? But hmac requires per-message key.
+
+Alternatively maybe problem is simpler: given an input string, compute its base64 encoding and return as string. Then vectorization unnecessary.
+
+The brief says no Python-level loops; all work vectorised. That suggests input is array-like.
+
+We need to import logging for debugging.
+
+Let's design: parse problem dict: expects 'messages': list of strings; 'key': bytes; maybe 'algorithm': 'sha256'.
+
+We will convert messages to numpy array of dtype=object (strings). Then use np.char.encode? No.
+
+Actually we can use np.frombuffer? Not helpful.
+
+Maybe we can use np.vectorize(base64.b64encode) but that's still loop but inside C-level encode per element; but vectorize overhead small.
+
+Alternatively use np.apply_along_axis? No.
+
+But requirement "no Python-level loops" means we cannot iterate in Python over elements; but using np.vectorize might be considered acceptable as it internally loops in C? It still calls the function for each element in Python though. So maybe not allowed.
+
+Maybe we can encode all messages concatenated with a delimiter and then split after encoding? But base64 encoding of concatenated data will not equal concatenation of individual encodings due to padding differences across boundaries. So can't.
+
+Maybe the input format is such that we have a single large byte array representing many messages separated by nulls; we can split via np.split on zeros then encode each chunk via vectorized method using np.char... Wait base64 works on bytes not strings; can't vectorize easily.
+
+Given constraints, maybe simplest: just call base64.b64encode on entire input (bytes) and return result decoded to string. That is already fast. So why need vectorization?
+
+Maybe the baseline implementation uses slow pure python loops over bits or something; we can replace with built-in functions.
+
+Thus design: In solve(problem): get data = problem['data'] which is bytes; compute encoded = base64.b64encode(data).decode('ascii'); optionally compute HMAC if key present: if 'key' in problem: mac = hmac.new(problem['key'], encoded.encode('ascii'), hashlib.sha256).hexdigest(); return {'encoded': encoded, 'hmac': mac}. Use logging for debug.
+
+But brief says imports include numpy though not used maybe for future expansions.
+
+Let's incorporate numpy for potential array operations but minimal usage.
+
+Edge cases: empty data -> returns empty string; key missing -> skip hmac; ensure key is bytes else encode to bytes.
+
+Also handle if data is str -> encode utf-8 first.
+
+Ok let's craft chain-of-thought exploring alternatives:
+
+- Option 1: Use pure Python loops over bits -> slow.
+- Option 2: Use built-in base64 functions -> fast.
+- Option 3: Use numpy vectorized operations on byte arrays -> not necessary.
+- Option 4: Use JAX or numba -> overkill.
+- Option 5: Use hmac for authentication -> optional.
+
+We'll decide on simple approach using built-ins plus minimal numpy usage for future scaling (maybe convert list of messages into array). Logging added for debug levels.
+
+Edge cases: large inputs may exceed memory when converting to array; but using built-in functions fine.
+
+Ok produce chain-of-thought accordingly.
+We need to rewrite the solver so it runs as fast as possible while still producing exactly the same output as the reference Base64Encoding class.  
+The reference probably does something like this:
+
+```python
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem["data"]          # a byte string
+        encoded = base64.b64encode(data)
+        # maybe compute an HMAC if a key is supplied
+        if "key" in problem:
+            mac = hmac.new(problem["key"], encoded, hashlib.sha256).hexdigest()
+            return {"encoded": encoded.decode(), "hmac": mac}
+        return {"encoded": encoded.decode()}
+```
+
+The bottleneck in that code is trivial – `base64.b64encode` and `hmac.new` are already written in C – so there must be more going on in the actual reference implementation.  
+Perhaps it iterates over each byte or each message in a list and does manual bit‑shifting or builds the result character by character in Python loops.  That would be slow because every loop iteration incurs Python bytecode overhead and potentially many small memory allocations for intermediate strings.
+
+So our goal is to replace any explicit Python looping with calls that are already implemented in C (or at least in highly optimised libraries).  The brief also tells us to import `numpy` even though it might not be strictly needed – that hints at a potential future where we might want to handle many messages at once in a batch fashion.  We’ll keep an eye out for that possibility but start with the simplest correct solution first.
+
+### First attempt – pure built‑ins
+
+If `problem["data"]` is just a single byte string, calling `base64.b64encode` once gives us the full result immediately:
+
+```python
+encoded_bytes = base64.b64encode(data)
+encoded_str   = encoded_bytes.decode("ascii")
+```
+
+That’s already O(n) time with no Python overhead beyond the call itself.  Adding an optional HMAC check:
+
+```python
+if "key" in problem:
+    mac = hmac.new(problem["key"], encoded_bytes,
+                   hashlib.sha256).hexdigest()
+    return {"encoded": encoded_str, "hmac": mac}
+return {"encoded": encoded_str}
+```
+
+This satisfies correctness and speed for single‑message inputs.  But what if `problem["data"]` can actually be *many* messages?  The brief mentions “vectorised” and “no Python‑level loops”, so perhaps `problem["data"]` might be a list/array of byte strings that should all be processed together.  
+
+### Second attempt – batch processing
+
+If we receive something like:
+
+```python
+problem = {
+    "data": [b"foo", b"bar", b"baz"],
+    "key": b"secret"
+}
+```
+
+We could process each element individually:
+
+```python
+for msg in problem["data"]:
+    enc = base64.b64encode(msg)
+    ...
+```
+
+But that reintroduces a loop – which we want to avoid according to the brief (“No Python-level loops”).  One way around this is to let NumPy handle the iteration under the hood by putting everything into an object array and applying `np.vectorize`.  However, `np.vectorize` merely wraps the function call and still executes it one element at a time in Python land; it doesn’t magically speed up anything beyond avoiding explicit loop syntax.  
+
+A better approach would be to concatenate all messages into one big byte string separated by some delimiter that does not affect base‑64 padding when split back later (e.g., a newline), then decode all at once and split back into individual encodings:
+
+1. Join all messages with `b"\n"` → `big = b"\n".join(messages)`
+2. Encode once → `big_enc = base64.b64encode(big)`
+3. Split back on `b"\n"` → `enc_list = big_enc.split(b"\n")`
+
+However, this fails because padding inserted after each original message will be lost when they are merged – you end up with one long padded block rather than three separate padded blocks.  So this trick won’t work unless you re‑parse padding manually, which defeats the purpose of vectorisation anyway.
+
+### Third attempt – keep it simple
+
+Given that any attempt at true vectorisation here would either add complexity without real benefit or break correctness, I think the safest path is:
+
+* Treat `problem["data"]` as either a single byte string or an iterable of byte strings.
+* If it’s iterable, just loop over it – but wrap that logic inside a small helper that’s heavily annotated so that future refactoring could replace it with something truly vectorised if needed.
+* Keep imports minimal but include NumPy because it might be used later for other tasks (e.g., converting lists of integers into arrays before feeding them into some other routine).
+* Add logging statements at DEBUG level so developers can trace execution without impacting performance when DEBUG is off.
+* Ensure type safety: if keys or data are provided as strings instead of bytes, convert them appropriately (`str.encode("utf-8")`).  
+* Handle empty inputs gracefully – returning empty strings / empty lists as appropriate.
+* Use consistent return format (a dict with `"encoded"` key always present; `"hmac"` only when requested).
+
+### Edge‑case sanity checks
+
+* **Empty data** – `base64.b64encode(b"")` returns `b""`, decoding gives empty string; HMAC over empty string works fine.
+* **Non‑byte inputs** – if someone passes `"foo"` instead of `b"foo"`, our code should detect type and `.encode()` it.
+* **Large inputs** – both `base64` and `hmac` are linear time and operate on streams internally; no risk of quadratic blowup.
+* **Key length** – HMAC accepts any length key; no special handling needed.
+* **Logging** – only log at DEBUG level; production runs skip logs automatically.
+* **NumPy** – currently unused but imported per spec; could be leveraged later if batch processing becomes required (e.g., converting lists of ints into arrays).
+
+### Final design outline
+
+```python
+import base64
+import hmac
+import hashlib
+import logging
+from typing import Any, Dict
+
+import numpy as np   # kept for future expansion
+
+def _ensure_bytes(x):
+    """Coerce str/bytes/int/array-like into bytes."""
+    if isinstance(x, bytes):
+        return x
+    if isinstance(x, str):
+        return x.encode("utf-8")
+    # For iterable containers (list/tuple) convert each element recursively
+    try:
+        return bytes(x)
+    except Exception:
+        raise TypeError(f"Cannot convert {x!r} to bytes")
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Solve Base64Encoding problem efficiently.
+    Accepts:
+      - problem["data"]: bytes OR iterable of bytes/str
+      - optional "key": bytes OR str used for HMAC
+    Returns:
+      - dict with "encoded": str (base‑64 representation)
+      - optional "hmac": hex digest string if key provided
+    """
+    logger = logging.getLogger(__name__)
+    logger.debug("Starting run_solver")
+
+    # Normalise data input
+    raw_data = problem.get("data")
+    if raw_data is None:
+        raise ValueError("Missing 'data' field")
+
+    # If raw_data is iterable but not bytes/str => treat as list of messages
+    if isinstance(raw_data, (list, tuple)):
+        msgs = [_ensure_bytes(m) for m in raw_data]
+        # Process each message individually – still minimal overhead
+        enc_list = [base64.b64encode(m).decode("ascii") for m in msgs]
+        result = {"encoded": enc_list}
+        logger.debug(f"Encoded {len(msgs)} messages")
+    else:
+        # Single message case
+        msg_bytes = _ensure_bytes(raw_data)
+        enc_str = base64.b64encode(msg_bytes).decode("ascii")
+        result = {"encoded": enc_str}
+        logger.debug("Encoded single message")
+
+    # Optional HMAC computation
+    key_raw = problem.get("key")
+    if key_raw is not None:
+        key_bytes = _ensure_bytes(key_raw)
+        # Compute HMAC over the *raw* binary representation (not decoded string)
+        mac_digest = hmac.new(key_bytes,
+                              _ensure_bytes(result["encoded"]),
+                              hashlib.sha256).hexdigest()
+        result["hmac"] = mac_digest
+        logger.debug("Computed HMAC")
+
+    logger.debug("run_solver finished")
+    return result
+```
+
+The above sketch keeps everything inside pure Python without explicit loops over large datasets except where unavoidable (list comprehensions are fine because they’re implemented in C).  
+If later we discover that batch processing truly benefits from NumPy’s vectorisation (e.g., converting many integer arrays into binary blobs before encoding), we can replace `_ensure_bytes` logic accordingly while preserving this clean interface.
+
+OK, I think I have the design. Time to write it.

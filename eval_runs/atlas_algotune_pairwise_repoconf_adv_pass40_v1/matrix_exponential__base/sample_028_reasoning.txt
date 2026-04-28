@@ -1,0 +1,51 @@
+We need to replace the body with a faster, numerically stable implementation that matches scipy.linalg.expm. We can simply import scipy.linalg.expm and call it? But we need to keep same signature and return same type. But the function should be faster; scipy.linalg.expm uses Pade approximants, etc. So we can implement using scipy.linalg.expm directly. That's acceptable as long as we import scipy.linalg. The evaluator will test that our output is close to scipy.linalg.expm? Actually they will compare to reference? The problem says "matches scipy.linalg.expm(A) within tight tolerance." So we can just call scipy.linalg.expm. That will be fast. But we need to import scipy.linalg. Should be fine.
+
+But there might be requirement that we don't call scipy.linalg.expm? They didn't forbid it. They allowed any packages. So simplest: return scipy.linalg.expm(A). But the reference uses numpy. But we can use scipy. But we need to keep same function name and signature. So:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But maybe we need to ensure dtype float64. expm returns same dtype as input. So fine.
+
+But might be a trick: The evaluator may import our file and call expm_fast. They may not import scipy? But they said we can import. So fine.
+
+However, some environments might not have scipy installed? But problem says "standard scientific-Python distribution" includes scipy. So okay.
+
+Alternatively, we could implement using Pade approximant ourselves with numpy only. But that is more code. But we can just call scipy.
+
+Also, to maintain speed, we could use scipy.linalg.expm, which is C-coded.
+
+Thus final code:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    return expm(A)
+```
+
+But we need to ensure A is float64. If not, cast? But input is float64.
+
+Edge case: shape not square? But problem says square.
+
+Thus final.
+
+But we might want to provide fallback if scipy not available. But not necessary.
+
+But maybe the evaluation expects we implement the algorithm ourselves, not just call SciPy. But it's allowed. However, some tasks purposely expect to use SciPy for speed. So okay.
+
+We should also include docstring.
+
+Also, we might want to do minimal overhead.
+
+Thus final file.
+
+Let's produce.
+

@@ -1,0 +1,23 @@
+We need to replace triple loop with efficient vectorized computation. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute norms squared: sum over axis 1. Then use broadcasting. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    D = norms[:, None] + norms[None, :] - 2 * X.dot(X.T)
+    # due to numerical errors, small negative values may appear; set to zero.
+    np.maximum(D, 0, out=D)
+    return D
+
+Return dtype float64.
+
+Edge cases: X may be 0-d? but shape (N,D). Should work.
+
+Also maybe use np.dot for speed.
+
+Return D.
+
+Need to keep same name.
+
+We should include import numpy as np at top.
+
+Let's produce final code.

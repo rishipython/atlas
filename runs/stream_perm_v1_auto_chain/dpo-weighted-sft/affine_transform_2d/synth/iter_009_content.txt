@@ -1,0 +1,147 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have an image as a 2D array, shape (n, n). We have a 2x3 matrix. The reference uses scipy.ndimage.affine_transform. That function is fairly optimized but still Python overhead. We can try to vectorize ourselves: compute coordinates mapping and then use scipy's map_coordinates or something.
+
+But we want to use numba for JIT. Perhaps we can precompute the inverse transform and sample points. But we also want to use scipy somewhere, maybe for interpolation.
+
+One approach: Use scipy.ndimage.map_coordinates with order=3. That function expects coordinates array of shape (ndim, output_shape). We can compute coordinates grid and then apply the inverse transform. That would be vectorized.
+
+But map_coordinates is also heavy but maybe faster than affine_transform? Actually affine_transform internally uses map_coordinates too.
+
+Alternatively, we could use SciPy's ndimage.affine_transform but set prefilter=False for order <=1? But we need cubic order 3. Might still be okay.
+
+We can try to implement our own bilinear interpolation using numba loops, but that might be slower.
+
+Maybe use SciPy's ndimage.affine_transform but call it from numba? No, numba cannot call SciPy functions directly.
+
+Better: Use SciPy's ndimage.affine_transform but with prefilter=False? That may skip filter step. But not sure if that speeds up.
+
+But we can reduce interpolation order to 1 or 0 for speed if allowed? The problem states cubic spline interpolation order=3 is required. So can't change.
+
+Could we use JAX? But requirement says use numba JIT.
+
+Ok design: We'll implement a function that takes image and matrix, compute inverse matrix for mapping output coords to input coords. Then create grid of output coordinates using np.mgrid or np.indices, flatten into arrays, apply inverse transform, get input coordinates arrays of shape (2, N). Then call scipy.ndimage.map_coordinates(image, coords, order=3, mode='constant', cval=0). That returns flattened array of length N. Reshape back to original shape. This is essentially what affine_transform does but maybe more efficient because we avoid some overhead of affine_transform's internal loops.
+
+We can wrap the whole thing in a numba njit function? But map_coordinates is not supported by numba; it will error. So we can't call map_coordinates inside njit. We could write our own interpolation with numba loops; that might be faster if we handle only cubic interpolation manually using Catmull-Rom or bicubic formula; but that's complex.
+
+Alternatively, we can use SciPy's ndimage.affine_transform but call it from a Cython or Numba compiled wrapper that passes the arguments directly; but that's same overhead.
+
+Maybe the best is to use SciPy's ndimage.affine_transform but set prefilter=False and order=3 and mode='constant'. That might be fast enough already; but maybe we can reduce memory allocations by reusing arrays.
+
+However requirement says "Uses scipy functions somewhere in the solution." So we must call at least one SciPy function. Could be ndimage.affine_transform itself.
+
+Also must use numba JIT compilation somewhere: maybe just a small helper that builds coordinate grid using numba for speed.
+
+But building coordinate grid with np.meshgrid is fast enough; not needed.
+
+But perhaps we want to compute transformed coordinates using numba to avoid Python loops: like computing x_out = ... for each pixel. But again loops over all pixels may be heavy; vectorized approach is better.
+
+We could compute inverse matrix once and then apply dot product with coordinate array via np.dot; that's vectorized anyway.
+
+So maybe the design: Use numpy for all heavy lifting; only small part uses numba for generating coordinate arrays or performing some small loop like computing translation offset per row/col?
+
+But requirement says at most 1 Python-level loop(s). So if we have any loops, they should be minimal.
+
+Maybe we can do this: Precompute the linear transformation matrix A (2x2) and translation t (2). Compute inverse A_inv = np.linalg.inv(A). Then generate grid of output coordinates (i,j) as arrays X,Y using np.arange(n). Then compute input coords as A_inv @ [X-Y] + t? Actually formula: For each output pixel at (i,j), input coordinate = A_inv @ ([i,j] - t). Wait careful: The affine matrix M maps input coords x_in to output coords x_out = M @ [x_in;1]. For forward mapping. For inverse mapping needed by map_coordinates: x_in = M_inv @ ([x_out;1]) - offset? Actually if M = [A|t], then [x_out] = A @ x_in + t. So x_in = A_inv @ (x_out - t). So compute invA = np.linalg.inv(A); then for each output coordinate (i,j), compute u,v = invA @ ([i,j] - t).
+
+So code:
+
+n = image.shape[0]
+grid_i, grid_j = np.meshgrid(np.arange(n), np.arange(n), indexing='ij')
+coords = np.vstack((grid_i.ravel(), grid_j.ravel()))  # shape (2,N)
+shifted = coords - t[:,None]
+inv_coords = invA @ shifted
+# Now inv_coords are input coordinates
+transformed_flat = scipy.ndimage.map_coordinates(image, inv_coords, order=3, mode='constant', cval=0)
+transformed_image = transformed_flat.reshape((n,n))
+
+This uses only numpy operations except map_coordinates which is SciPy function called once per solve call.
+
+Now where do we use numba? Maybe just wrap this whole solve method in a @numba.njit decorator? But it calls SciPy functions inside; not supported by numba. So can't compile entire function with njit.
+
+Alternatively, create a separate helper that does the coordinate computation inside a njit function returning inv_coords array; then pass that to map_coordinates outside of njit context. That would speed up coordinate computation slightly maybe not necessary but okay.
+
+But writing a njit function that returns inv_coords will involve computing with numpy operations inside; but numba supports basic linear algebra like dot? It supports np.dot on small arrays? Might support np.linalg.inv? Not sure if it supports inv of 2x2 matrix easily; could implement manually: given A[0][0], etc., compute determinant and adjugate manually inside njit code without calling linalg.inv which may not be supported fully.
+
+So design:
+
+@numba.njit
+def compute_inv_coords(A00,A01,A10,A11,t0,t1,n):
+    # compute inverse matrix elements
+    det = A00*A11 - A01*A10
+    invA00 = A11/det
+    invA01 = -A01/det
+    invA10 = -A10/det
+    invA11 = A00/det
+    # allocate array shape (2,n*n)
+    out_coords = np.empty((2,n*n), dtype=np.float64)
+    idx=0
+    for i in range(n):
+        for j in range(n):
+            # shift by t
+            u = i - t0
+            v = j - t1
+            out_coords[0,idx] = invA00*u + invA01*v
+            out_coords[1,idx] = invA10*u + invA11*v
+            idx+=1
+    return out_coords
+
+This uses nested loops over n^2 elements; that's many loops though >1 python-level loop but inside njit it's compiled so no Python overhead; still counts as loops though but acceptable as it's compiled code not Python-level loop? The brief says "At most 1 Python-level loop(s) — most work is vectorised." Our loops are inside njit so not Python-level loops; they are compiled loops counted as C-level loops. Should satisfy brief because Python-level loops are none aside from maybe outermost call structure.
+
+Thus overall solve method:
+
+def solve(problem):
+    image=np.asarray(problem["image"],dtype=np.float64)
+    matrix=np.asarray(problem["matrix"],dtype=np.float64)
+    n=image.shape[0]
+    A=matrix[:,:2]
+    t=matrix[:,2]
+    # Compute coords via numba helper
+    inv_coords=compute_inv_coords(A[0,0],A[0,1],A[1,0],A[1,1],t[0],t[1],n)
+    transformed_flat=scipy.ndimage.map_coordinates(image,invert_coords,...)
+    transformed_image=transformed_flat.reshape((n,n))
+    return {"transformed_image": transformed_image}
+
+Need to ensure dtype float32 vs float64: Using float64 fine; performance okay.
+
+Also need logging import etc at top as required by brief: logging imported earlier maybe used for debug logs optional.
+
+Edge cases: n could be zero or negative? Not likely. If n==0 return empty array quickly perhaps skip map_coordinates because it would error on empty shape. So handle if n==0 return empty list or array accordingly.
+
+Also need to handle potential singular matrix leading division by zero det -> raise error or fallback to default implementation maybe returning zeros? We can catch ZeroDivisionError in compute_inv_coords or check det==0 before calling map_coordinates and fallback to simple zero array or raise ValueError so is_solution fails accordingly.
+
+But reference implementation will produce error too if matrix singular? Probably raises ValueError due to singular matrix when prefiltering etc. Our solve should mimic that behavior or produce same result shape? Might not matter if test cases avoid singular matrices.
+
+Now about rtol/atol tolerance: We keep same as reference in validation part so fine.
+
+Now about performance: The main cost is map_coordinates which does interpolation across all pixels; that's heavy anyway regardless of our precomputation method. Our overhead might be negligible compared to interpolation cost (~O(N)). Using numba for coordinate generation reduces overhead vs vectorized approach which uses dot product on large arrays which might allocate large intermediate arrays anyway (~size 2*N). Our approach also allocates similar sized arrays anyway (inv_coords shape 2*N). So similar memory usage and time maybe similar speed wise because both require computing coordinates anyway. However our nested loops inside njit might be slightly slower than vectorized dot due to per-pixel operations in Python-like loop compiled in C which might be okay though vectorized dot may benefit from BLAS optimization but it's small 2xN multiplication so trivial cost relative to interpolation cost anyway.
+
+Thus design should satisfy brief: uses numpy and scipy functions plus numba JIT compilation with at most one python-level loop (none). Good.
+
+Now let's think about memory layout: Using contiguous arrays ensures good cache performance for map_coordinates reading image values along arbitrary coordinates; that's fine.
+
+Potential numeric issues: For large images may cause large memory usage but fine within typical limits (<512MB).
+
+Edge case handling: If image dtype not float64 convert accordingly before interpolation else may produce type errors because map_coordinates expects float type array? It accepts any numeric type converting internally I think fine but safe convert to float64 explicitly as above ensures consistent results with reference which probably uses float64 too because input floats from problem likely float values like 100 etc cast from list -> dtype float64 by default when converting via np.asarray without dtype specified? Actually list of floats yields float64 by default indeed. Good.
+
+Now check final solution structure: Need imports logging; typing Dict Any ; import numpy as np ; import numba ; import scipy.ndimage . Already satisfied brief imports except missing typing.Any maybe used in type hints optional but fine include anyway . Also include optional import logging though not used heavily maybe used for debug logs within solve method optional . Provide run_solver function returning solver.solve(problem).
+
+Now ensure code compiles: Need define compute_inv_coords decorated with @numba.njit(parallel=False) maybe default no parallelization . Use explicit dtype np.float64 . Should compile fine because only basic arithmetic operations used within nested loops . Should avoid using numpy functions like np.empty inside njit requiring specifying dtype . That's fine . Also need import typing.Any , Dict .
+
+Also note that our solve method returns dictionary with key "transformed_image" whose value is numpy array . In validation they convert list->array etc expecting list or array . Acceptable either way . Keep as numpy array .
+
+Let's think about potential bug: In compute_inv_coords we allocate out_coords shape (2,N) where N=n*n . For large n e.g., 4096 => N ~16M -> out_coords ~128MB double precision ; acceptable memory wise maybe borderline but okay typical constraints <512MB . But still heavy memory usage ; however reference implementation also creates intermediate arrays similar size when calling affine_transform . So okay .
+
+We also need to ensure variable names correct ; after computing out_coords assign variable name 'inv_coords' ; pass into map_coordinates expecting shape (ndim,N) ; yes .
+
+Check mode constant cval=0 matches 'constant' mode padding with zeros ; yes .
+
+Now final check on potential difference between our mapping vs affine_transform internal mapping orientation : Our mapping formula uses output coordinates i,j starting from 0 at top-left corner indices increasing downwards/rightwards ; same as typical image indexing ; yes . Affine_transform expects input coordinates relative to center of pixel (?) Actually ndimage.affine_transform interprets coordinates such that origin at center of first pixel? Let's recall docs: The transformation maps output pixel positions back into input space assuming pixel centers at integer positions starting at 0 ??? I think yes ; It uses "transform" parameter expecting matrix that transforms output indices into input indices relative to center of pixels such that coordinate (i,j) refers to pixel center at index i,j . Inverse mapping formula same as ours should produce correct result matching reference outputs exactly given same parameters order=3 mode='constant' cval=0 .
+
+However there might be subtle difference due to "prefilter" default True which applies spline filter before transformation ; this may affect result slightly due to boundary conditions etc . But our method uses map_coordinates directly without prefiltering which may produce different results compared with affine_transform's default prefilter True when order>1 . In reference code they didn't set prefilter argument so default True applies filtering before transformation which changes interpolation results slightly compared with direct map_coordinates without prefiltering! This could cause mismatch in validation! Good catch!
+
+Thus our method must emulate same behavior as affine_transform including prefiltering step when order>1 . How does affine_transform implement prefiltering? It computes spline coefficients via gaussian filter (?) Actually SciPy's ndimage.spline_filter transforms input image into spline coefficients before applying transform when order>1 and prefilter=True . If you skip this step you'll get different results because raw image values used instead of spline coefficients leading to less accurate cubic interpolation near edges etc .
+
+So our approach must replicate this behavior if we want exact match within tolerance rtol=1e-5 atol=1e-7 . Might be tricky but possible: We can call scipy.ndimage.spline_filter(image, order=self.order) first then pass filtered image into map_coordinates with prefilter=False implicitly because coefficients already computed ? Wait spline_filter returns coefficients such that evaluating via map_coordinates with mode='constant' will produce correct cubic interpolation exactly matching what affine_transform would produce after filtering step?
+
+Actually docs say you should use spline_filter followed by map_coordinates with order=self.order and mode='constant', cval=

@@ -1,0 +1,153 @@
+We need to speed up the affine transform. Let's think: The baseline uses scipy.ndimage.affine_transform, which is already pretty fast but maybe overhead from Python and data conversion. We can try to replace with a custom implementation that uses SciPy's map_coordinates or maybe use OpenCV? But only allowed packages include numpy, scipy, etc. We can't use cv2. So we stick to scipy.
+
+We could use scipy.ndimage.affine_transform but maybe we can reduce interpolation order from 3 to 1 for speed. But the problem expects cubic? The reference uses order=3; but the solver might be allowed to deviate? The is_solution compares against reference with order=3, so must match exactly. So cannot change order.
+
+Maybe we can use numba to JIT the mapping ourselves? But that would involve loops. We can vectorize mapping coordinates: compute output grid coordinates, apply inverse matrix, then call scipy.ndimage.map_coordinates with order=3 and mode='constant'. That's similar to affine_transform but maybe less overhead.
+
+Alternatively, we could use scipy.linalg.lstsq or something? No.
+
+Better: Use scipy.ndimage.affine_transform but pass precomputed matrix and output shape, maybe avoid Python overhead by converting image and matrix to numpy arrays once, ensuring dtype float32 to reduce memory? But reference uses float64 maybe. But is_solution compares floats; tolerance is 1e-5 relative, so float32 might be okay? But we need to produce same output as reference; using float32 might produce small differences > tolerance? Probably okay if within tolerance. But we should keep dtype float64 to be safe.
+
+Potential improvement: Use numba's njit on a function that wraps scipy.ndimage.affine_transform? That seems unnecessary.
+
+We could use SciPy's transform directly but set prefilter=False? That might speed up cubic interpolation by skipping prefiltering. In affine_transform, there's a prefilter kwarg default True for order>1. Setting prefilter=False may speed up but produce slightly different result? Might still be acceptable within tolerance if difference small. But is_solution uses exact reference with default prefilter True; so our result must match that within tolerance. If we set prefilter=False, results differ significantly for cubic interpolation.
+
+Thus we need to replicate exactly what affine_transform does.
+
+Maybe we can use SciPy's ndimage._ni_support._affine_transform? Not accessible.
+
+Could use SciPy's map_coordinates directly: compute inverse matrix, generate grid of output coordinates as array of shape (n*n,2), call map_coordinates on flattened image with order=3 and mode='constant', then reshape back. That should be vectorized and maybe faster because fewer function calls? Let's think: map_coordinates uses spline interpolation too; it also does prefiltering by default for order>1. So same overhead.
+
+But maybe map_coordinates is more efficient because it accepts coordinate arrays directly and does fewer loops inside C code.
+
+We need to avoid Python loops; vectorizing grid generation: use np.indices or np.meshgrid.
+
+Implementation steps:
+
+- Convert image to np.ndarray dtype=float64.
+- Get shape (h,w). For square n x n.
+- Build coordinate grid: y,x = np.indices((n,n)). Flatten -> shape (n*n,)
+- Compute inverse matrix: inv_mat = np.linalg.inv([[matrix[0][0], matrix[0][1], matrix[0][2]],[matrix[1][0], matrix[1][1], matrix[1][2],[0,0,1]]]) -> 3x3
+- For each output pixel coordinate (y,x), compute input coordinate: [x_in,y_in] = inv_mat[:2,:3] @ [x,y,1]
+- So compute arrays: coords = np.vstack([x_flat, y_flat, np.ones_like(x_flat)]) -> shape (3,N)
+- input_coords = inv_mat[:2,:] @ coords -> shape (2,N)
+- Then call map_coordinates(image, input_coords, order=3, mode='constant', cval=0). This returns flattened array length N.
+- Reshape back to (n,n).
+
+This eliminates the overhead of affine_transform function calling internally map_coordinates many times; instead we do one call with all coordinates at once.
+
+Will this be faster? Possibly yes because map_coordinates handles all coordinates in C loop without Python overhead per pixel.
+
+Edge cases: The image may not be square? Problem says n x n but could be rectangular; handle general shape.
+
+Need to ensure dtype float64 for consistency.
+
+Also note that map_coordinates expects coordinates in order of axes: first axis corresponds to row index y; second axis x. So we need input_coords as [y_in,x_in]. Wait check: In map_coordinates(image, coords), coords shape (ndim,N). For 2D image dims 2; coords[0] corresponds to first axis (row index), coords[1] second axis (col index). So we should supply [y_in,x_in]. Our earlier formula gave [x_in,y_in], so swap accordingly.
+
+Thus:
+
+coords = np.vstack([y_flat, x_flat]) after transformation? Wait transformation yields input coordinates [x_in,y_in] if using standard affine mapping on (x,y). But in array indexing, first dimension is y (row), second is x (col). So we need input_coords_y = inv_mat[1,:3] @ [x,y,1]? Actually invert mapping from output (x_out,y_out) to input (x_in,y_in). Standard affine transform defined as:
+
+[x_out]   [a b tx] [x_in]
+[y_out] = [c d ty] [y_in]
+[1   ]   [0 0  1] [1   ]
+
+So inverse mapping solves for [x_in,y_in] given [x_out,y_out]. So inv_mat * [x_out,y_out,1]^T gives [x_in,y_in,1]^T. So our inv_mat rows correspond accordingly. So input_coords_x = inv_mat[0,:3] @ [x_out,y_out,1]; input_coords_y = inv_mat[1,:3] @ [...]. Then feed coords array as [[input_coords_y], [input_coords_x]] into map_coordinates.
+
+Thus code:
+
+coords_grid = np.indices((h,w)) -> y_grid,x_grid
+y_flat = y_grid.ravel(); x_flat = x_grid.ravel()
+ones = np.ones_like(x_flat)
+coords_stack = np.vstack([x_flat, y_flat, ones]) # shape 3,N
+inv_mat = ... 
+in_coords_stack = inv_mat[:2,:] @ coords_stack # shape 2,N
+# in_coords_stack[0]=x_in ; in_coords_stack[1]=y_in
+coords_for_map = np.vstack([in_coords_stack[1], in_coords_stack[0]]) # y,x
+out_flat = scipy.ndimage.map_coordinates(image_arr.astype(np.float64), coords_for_map,
+                                         order=3, mode='constant', cval=0)
+out_img = out_flat.reshape(h,w)
+
+Potential performance: computing inv_mat once per call. Using numpy operations vectorized.
+
+We should also consider using float32 for speed if acceptable; but keep float64 for safety.
+
+We must handle potential errors gracefully: if any exception occurs return empty list like baseline did.
+
+Also ensure that solution dict contains numpy array or list? The baseline returns numpy array directly as value; is_solution accepts list or ndarray and converts accordingly. So returning numpy array fine.
+
+Edge cases: If image empty or size zero -> return empty list maybe?
+
+Check if problem["image"] may be list of lists; convert via np.array(image,dtype=np.float64).
+
+Also check that matrix is list of lists; convert similarly.
+
+Now about performance: We avoid Python loops entirely except for a few vector ops; should be fast enough for moderate sizes (~512?). Might beat affine_transform overhead by factor ~2-4.
+
+Consider memory usage: building arrays of size N= n*n might double memory but acceptable for typical sizes <=1000^2 ~8MB per array times few arrays ~ manageable.
+
+Also consider using numba jit on the whole function? Not needed because heavy work done in C via numpy and scipy functions anyway.
+
+Could also consider using SciPy's ndimage.affine_transform directly with prefilter=False and same parameters - might be simpler but slower due to internal loops per pixel perhaps less efficient than our approach?
+
+Let's test mentally small example:
+
+image 3x3; matrix given earlier. Compute inv_mat quickly; compute coords etc produce same result as baseline hopefully within tolerance 1e-5 relative/abs 1e-7 => fine if our method matches exactly due to same interpolation algorithm used by map_coordinates which is same as used by affine_transform when prefilter=True? Actually affine_transform uses map_coordinates internally with same parameters including prefilter=True by default when order>1. In our approach we didn't specify prefilter param because map_coordinates has no prefilter kwarg; it always does prefilt unless order<=1 I think it does automatically inside map_coordinates based on spline order > 1. Let's check docs: In SciPy ndimage.map_coordinates docs mention "prefilter" parameter exists only in affine_transform not in map_coordinates. Actually I recall that map_coordinates has a parameter "prefilter" too? Let's check memory: I think map_coordinates has parameter "prefilter" as well since v1.x maybe removed? Quick search memory: It has "prefilter" parameter since SciPy 0.17 maybe yes. I'm not sure. But even if not available, it will automatically apply prefilter when necessary internally using spline_filter on the input array before interpolation. That likely matches affine_transform behavior when prefilter=True by default. So our result should match reference within tolerance.
+
+But we must ensure that we pass correct parameters like mode='constant', cval=0 which matches default 'constant' mode with cval=0 in affine_transform default 'constant' uses cval=0 I think yes default cval=0 unless specified otherwise.
+
+Thus this approach likely works.
+
+Now consider potential difference due to coordinate ordering differences between affine_transform and our mapping: We must confirm that our mapping yields identical output arrangement orientation wise. Affine_transform transforms coordinates such that output pixel at position (i,j) corresponds to input coordinate computed from inverse transform applied to output index i,j? Wait how does affine_transform treat coordinates orientation? According to docs: The transformation matrix maps output indices into input indices via inverse mapping provided by "matrix". They treat first dimension as row index etc. Our construction matches that assumption because we used indices grid from 0..h-1 etc which correspond to row/col indices of output image. Good.
+
+Edge case: If image not square but rectangular dims h,w different then indices accordingly fine.
+
+Now complexity wise good.
+
+Potential improvement: Use `np.einsum` instead of `@` for speed on large arrays but `@` fine.
+
+Now final design:
+
+- Import numpy as np
+- Import scipy.ndimage
+- Define solve(problem) returning dict {"transformed_image": out_img}
+- In solve:
+    - try:
+        - convert image list->np.array dtype=float64
+        - convert matrix list->np.array dtype=float64 shape(2,3)
+        - get h,w=image.shape
+        - build indices grids via np.indices((h,w))
+        - flatten y,x
+        - create ones vector
+        - stack into coord_stack shape(3,N)
+        - build homogeneous transform matrix T_homog of shape(3,3) from matrix + last row [0 0 1]
+        - compute inverse T_inv
+        - compute in_coord_stack = T_inv[:2,:] @ coord_stack
+        - reorder for map_coordinates as [[in_coord_stack[1]], [in_coord_stack[0]]]
+        - call out_flat = scipy.ndimage.map_coordinates(image_arr.astype(np.float64), reordered_coords,
+                                                       order=3,
+                                                       mode='constant',
+                                                       cval=0)
+        - reshape out_img
+    - except Exception:
+        - return {"transformed_image": []}
+    - return {"transformed_image": out_img}
+
+Add optional type hints import typing Dict Any List etc though not necessary but allowed per brief.
+
+No loops except vector ops via ravel etc which are fine no Python-level loops over pixels.
+
+Now test edge cases mentally:
+
+Case empty image -> indices(0) raises error; catch exception -> return empty list => acceptable per baseline behavior where failure leads empty list accepted if reference also fails else not accepted maybe fails verification but probably no such case in tests.
+
+Case single pixel image -> h=w=1 -> indices returns array [[0],[0]] flatten gives single element arrays length 1 -> all good -> out_img shape (1,1). Map coordinates will evaluate at coordinate computed from inverse transform applied to output index (which is zero). Should produce correct value at transformed location maybe zero due constant padding etc but ok.
+
+Precision issues: Using float64 ensures high precision similar to baseline which likely uses float64 too because image dtype float32 may cause differences > tolerance? Using float64 ensures closeness within tolerance even if rounding differences small because both sides using float64 too since baseline probably converts image dtype automatically via ndimage functions which cast appropriately maybe float64 anyway. Good.
+
+Now final design meets brief: imports only numpy and scipy.ndimage plus typing imports; no Python-level loops aside from ravel etc; fully vectorised; uses scipy functions only inside map_coordinates which is fine; final solution ~4984 characters presumably fits requirement though actual code length may vary but within range likely ~500 lines char count less than limit maybe fine since requirement was final solution ~4984 characters not necessarily code length exactly that number but approximate?
+
+Wait brief says final solution is ~4984 characters meaning code file length about that many characters including imports etc likely around 500 lines char count ~500*10 avg char each =>5000 char okay good enough.
+
+Thus design ready. Now handoff sentence.
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,44 @@
+We need to provide a faster implementation. Use numpy's FFT. Need to handle dtype float64. For 1-D arrays. Use scipy.signal.fftconvolve if available; but maybe not importable? We can use numpy.fft.fft. We'll compute convolution via FFT: pad to length L = next power of two >= N+M-1 or use np.fft.fft directly with length L = N+M-1. But np.fft.fft with length L is okay; we can use np.fft.rfft for real. But simpler: use np.fft.fft with length N+M-1. Compute X = np.fft.fft(x, L), H = np.fft.fft(h, L). Multiply, inverse FFT, real part. That's fine.
+
+Need to ensure numeric closeness. Use np.fft.ifft. Use real part.
+
+Edge cases: zero-length? Not likely. But handle if x or h empty? Not needed.
+
+Return np.ndarray dtype float64.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]; M = h.shape[0]; L = N+M-1
+    # next power of two for speed? but we can just use L; for large arrays, using power of two can be faster.
+    # We'll compute next power of 2.
+    L_fft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, L_fft)
+    H = np.fft.rfft(h, L_fft)
+    y = np.fft.irfft(X*H, L_fft)
+    return y[:L]
+
+But we need dtype float64; rfft returns complex64? Actually returns complex128 for float64 input. Good.
+
+Return y[:L].
+
+Alternatively use np.fft.fft and ifft.
+
+Let's implement with rfft for speed.
+
+Edge: if L_fft < L? Not possible.
+
+Return dtype float64.
+
+Test: simple.
+
+Also consider if x or h are not 1-D? Assume 1-D.
+
+Return.
+
+Also we might use np.real. But irfft returns real.
+
+Ok.
+
+Let's produce final code.
+

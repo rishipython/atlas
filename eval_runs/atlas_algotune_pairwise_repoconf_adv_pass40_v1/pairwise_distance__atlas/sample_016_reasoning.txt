@@ -1,0 +1,21 @@
+We need to replace triple-loop with faster method. Use broadcasting or efficient formula: D = A + B - 2C where A[i] = sum(X[i]^2), B[j] = sum(X[j]^2), C = X @ X.T. Use np.dot. Ensure dtype float64. Provide function pairwise_sq_dist.
+
+Edge cases: N can be large. Memory usage: output NxN. Use vectorization.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    D = sq_norm[:, None] + sq_norm[None, :] - 2 * X @ X.T
+    # numeric errors may produce small negative values
+    D = np.maximum(D, 0.0)
+    return D
+
+Make sure to import numpy.
+
+Return dtype float64.
+
+Test: Use random arrays.
+
+Ok produce final code.

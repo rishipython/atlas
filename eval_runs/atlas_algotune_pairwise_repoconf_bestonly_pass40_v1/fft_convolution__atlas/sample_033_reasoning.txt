@@ -1,0 +1,37 @@
+We need to replace with faster FFT convolution. Use scipy.signal.fftconvolve or numpy. But we must keep same signature and return same shape and dtype. We'll implement using numpy. But to be robust to small sizes we may fallback to direct convolution for small arrays. Use np.fft.fft with appropriate length. Steps:
+
+- Determine output length L = N+M-1.
+- Compute next power of two >= L? Or use np.fft.fft with length L? For full convolution, we need length L. But convolution via FFT requires circular convolution length equal to at least N+M-1. So we can use np.fft.fft(x, n=L) etc. But to avoid aliasing, we need zero-padding to L. Actually we need at least L. Using n=L works. But must ensure we don't wrap around: With zero padding to length L, the circular convolution equals linear convolution because the sequences are zero-padded to length L. So we can use n=L.
+
+But careful: If we choose n=L, but N+M-1 may not be power of two. np.fft.fft uses any size, but may be slower for non-power-of-two. Could use next power of two for speed. But we can just use np.fft.fft with n=L. That's fine.
+
+Implementation:
+
+```
+def conv1d(x,h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N+M-1
+    # compute next power of two >= L for speed
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)
+    return y[:L]
+```
+
+Use rfft for real input to be faster. Works for float64.
+
+Edge cases: if either array is empty? But shapes positive. But we can handle.
+
+Should we use scipy.signal.fftconvolve? But we can implement ourselves.
+
+Also for small sizes we could just use np.convolve which may be faster? But not needed. But we can keep.
+
+Return dtype float64.
+
+Let's produce file with imports.
+
+Also need to ensure function signature same.
+
+Let's craft final code.

@@ -1,0 +1,31 @@
+We need to replace the slow implementation with efficient vectorized approach. The standard formula: pairwise squared distances can be computed as:
+
+Let G = X @ X.T (dot product). Then distances: D = X_norm^2[:, None] + X_norm^2[None, :] - 2 G.
+
+Where X_norm^2 = sum(X**2, axis=1). Ensure dtype float64. Use np.dot.
+
+Also we should ensure no negative values due to numerical errors: np.maximum(D, 0). But the original code returns exact values; but small negative due to floating errors may appear if using floats. Should we clip? The reference code uses double precision; but differences may appear. The test uses np.allclose with rtol/atol. It's fine.
+
+Return shape (N,N). Use np.float64.
+
+Edge cases: N=0? Should return (0,0). Works.
+
+Return out.
+
+Let's implement pairwise_sq_dist with vectorized formula.
+
+We also may use np.einsum for clarity. But dot is fine.
+
+We'll produce a file with imports and function.
+
+We need to maintain same signature.
+
+Also we should include type hints.
+
+Let's implement.
+
+Potential performance: use np.dot.
+
+Edge: For large arrays, memory might be high but fine.
+
+Let's produce final code.

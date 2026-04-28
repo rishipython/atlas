@@ -1,0 +1,1590 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/mlab-org/main/ap-nbXppJifARI6ADwWo29Cg0
+
+Building image im-0vLwH3EC5uuaW6oVEfcnXM
+
+Using legacy Image Builder version. We suggest upgrading at https://modal.com/settings/image-config.
+
+=> Step 0: FROM base
+
+=> Step 1: RUN python -m pip install 'numba>=0.60' 'numpy>=1.26' 'openai>=1.50' 'pyyaml>=6' 'scipy>=1.11' vllm==0.19.1
+Looking in indexes: http://pypi-mirror.modal.local:5555/simple
+Collecting numba>=0.60
+  Downloading http://pypi-mirror.modal.local:5555/simple/numba/numba-0.65.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.9 kB)
+Collecting numpy>=1.26
+  Downloading http://pypi-mirror.modal.local:5555/simple/numpy/numpy-2.4.4-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+Collecting openai>=1.50
+  Downloading http://pypi-mirror.modal.local:5555/simple/openai/openai-2.32.0-py3-none-any.whl.metadata (31 kB)
+Collecting pyyaml>=6
+  Downloading http://pypi-mirror.modal.local:5555/simple/pyyaml/pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+Collecting scipy>=1.11
+  Downloading http://pypi-mirror.modal.local:5555/simple/scipy/scipy-1.17.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+Collecting vllm==0.19.1
+  Downloading http://pypi-mirror.modal.local:5555/simple/vllm/vllm-0.19.1-cp38-abi3-manylinux_2_31_x86_64.whl.metadata (10 kB)
+Collecting regex (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/regex/regex-2026.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+Collecting cachetools (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cachetools/cachetools-7.0.6-py3-none-any.whl.metadata (5.9 kB)
+Collecting psutil (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/psutil/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl.metadata (22 kB)
+Collecting sentencepiece (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/sentencepiece/sentencepiece-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (10 kB)
+Collecting requests>=2.26.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/requests/requests-2.33.1-py3-none-any.whl.metadata (4.8 kB)
+Collecting tqdm (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/tqdm/tqdm-4.67.3-py3-none-any.whl.metadata (57 kB)
+Collecting blake3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/blake3/blake3-1.0.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.6 kB)
+Collecting py-cpuinfo (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/py-cpuinfo/py_cpuinfo-9.0.0-py3-none-any.whl.metadata (794 bytes)
+Collecting transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/transformers/transformers-5.6.0-py3-none-any.whl.metadata (33 kB)
+Collecting tokenizers>=0.21.1 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/tokenizers/tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (7.3 kB)
+Collecting protobuf!=6.30.*,!=6.31.*,!=6.32.*,!=6.33.0.*,!=6.33.1.*,!=6.33.2.*,!=6.33.3.*,!=6.33.4.*,>=5.29.6 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/protobuf/protobuf-7.34.1-cp310-abi3-manylinux2014_x86_64.whl.metadata (595 bytes)
+Collecting fastapi>=0.115.0 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/fastapi/fastapi-0.136.0-py3-none-any.whl.metadata (28 kB)
+Collecting aiohttp>=3.13.3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/aiohttp/aiohttp-3.13.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (8.1 kB)
+Collecting pydantic>=2.12.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pydantic/pydantic-2.13.3-py3-none-any.whl.metadata (108 kB)
+Collecting prometheus_client>=0.18.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/prometheus-client/prometheus_client-0.25.0-py3-none-any.whl.metadata (2.1 kB)
+Collecting pillow (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pillow/pillow-12.2.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (8.8 kB)
+Collecting prometheus-fastapi-instrumentator>=7.0.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/prometheus-fastapi-instrumentator/prometheus_fastapi_instrumentator-7.1.0-py3-none-any.whl.metadata (13 kB)
+Collecting tiktoken>=0.6.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/tiktoken/tiktoken-0.12.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (6.7 kB)
+Collecting lm-format-enforcer==0.11.3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/lm-format-enforcer/lm_format_enforcer-0.11.3-py3-none-any.whl.metadata (17 kB)
+Collecting llguidance<1.4.0,>=1.3.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/llguidance/llguidance-1.3.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (10 kB)
+Collecting outlines_core==0.2.11 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/outlines-core/outlines_core-0.2.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.8 kB)
+Collecting diskcache==5.6.3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/diskcache/diskcache-5.6.3-py3-none-any.whl.metadata (20 kB)
+Collecting lark==1.2.2 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/lark/lark-1.2.2-py3-none-any.whl.metadata (1.8 kB)
+Collecting xgrammar<1.0.0,>=0.1.32 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/xgrammar/xgrammar-0.1.33-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (7.6 kB)
+Requirement already satisfied: typing_extensions>=4.10 in /usr/local/lib/python3.12/site-packages (from vllm==0.19.1) (4.12.2)
+Collecting filelock>=3.16.1 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/filelock/filelock-3.29.0-py3-none-any.whl.metadata (2.0 kB)
+Collecting partial-json-parser (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/partial-json-parser/partial_json_parser-0.2.1.1.post7-py3-none-any.whl.metadata (6.1 kB)
+Collecting pyzmq>=25.0.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pyzmq/pyzmq-27.1.0-cp312-abi3-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (6.0 kB)
+Collecting msgspec (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/msgspec/msgspec-0.21.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.8 kB)
+Collecting gguf>=0.17.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/gguf/gguf-0.18.0-py3-none-any.whl.metadata (4.5 kB)
+Collecting mistral_common>=1.10.0 (from mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/mistral-common/mistral_common-1.11.0-py3-none-any.whl.metadata (5.9 kB)
+Collecting opencv-python-headless>=4.13.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opencv-python-headless/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_x86_64.whl.metadata (19 kB)
+Collecting six>=1.16.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/six/six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+Collecting setuptools<81.0.0,>=77.0.3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/setuptools/setuptools-80.10.2-py3-none-any.whl.metadata (6.6 kB)
+Collecting einops (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/einops/einops-0.8.2-py3-none-any.whl.metadata (13 kB)
+Collecting compressed-tensors==0.15.0.1 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/compressed-tensors/compressed_tensors-0.15.0.1-py3-none-any.whl.metadata (4.7 kB)
+Collecting depyf==0.20.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/depyf/depyf-0.20.0-py3-none-any.whl.metadata (7.3 kB)
+Collecting cloudpickle (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cloudpickle/cloudpickle-3.1.2-py3-none-any.whl.metadata (7.1 kB)
+Collecting watchfiles (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/watchfiles/watchfiles-1.1.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.9 kB)
+Collecting python-json-logger (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/python-json-logger/python_json_logger-4.1.0-py3-none-any.whl.metadata (3.7 kB)
+Collecting ninja (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/ninja/ninja-1.13.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (5.1 kB)
+Collecting pybase64 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pybase64/pybase64-1.4.3-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl.metadata (8.7 kB)
+Collecting cbor2 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cbor2/cbor2-5.9.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (5.5 kB)
+Collecting ijson (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/ijson/ijson-3.5.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (23 kB)
+Collecting setproctitle (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/setproctitle/setproctitle-1.3.7-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (10 kB)
+Collecting openai-harmony>=0.0.3 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/openai-harmony/openai_harmony-0.0.8-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (8.0 kB)
+Collecting anthropic>=0.71.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/anthropic/anthropic-0.96.0-py3-none-any.whl.metadata (3.1 kB)
+Collecting model-hosting-container-standards<1.0.0,>=0.1.13 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/model-hosting-container-standards/model_hosting_container_standards-0.1.14-py3-none-any.whl.metadata (24 kB)
+Collecting mcp (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/mcp/mcp-1.27.0-py3-none-any.whl.metadata (8.2 kB)
+Collecting opentelemetry-sdk>=1.27.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-sdk/opentelemetry_sdk-1.41.0-py3-none-any.whl.metadata (1.7 kB)
+Collecting opentelemetry-api>=1.27.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-api/opentelemetry_api-1.41.0-py3-none-any.whl.metadata (1.5 kB)
+Collecting opentelemetry-exporter-otlp>=1.27.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp/opentelemetry_exporter_otlp-1.41.0-py3-none-any.whl.metadata (2.4 kB)
+Collecting opentelemetry-semantic-conventions-ai>=0.4.1 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-semantic-conventions-ai/opentelemetry_semantic_conventions_ai-0.5.1-py3-none-any.whl.metadata (997 bytes)
+Collecting numba>=0.60
+  Downloading http://pypi-mirror.modal.local:5555/simple/numba/numba-0.61.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.8 kB)
+Collecting torch==2.10.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/torch/torch-2.10.0-3-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (31 kB)
+Collecting torchaudio==2.10.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/torchaudio/torchaudio-2.10.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (6.9 kB)
+Collecting torchvision==0.25.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/torchvision/torchvision-0.25.0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (5.4 kB)
+Collecting flashinfer-python==0.6.6 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/flashinfer-python/flashinfer_python-0.6.6-py3-none-any.whl.metadata (11 kB)
+Collecting flashinfer-cubin==0.6.6 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/flashinfer-cubin/flashinfer_cubin-0.6.6-py3-none-any.whl.metadata (1.3 kB)
+Collecting nvidia-cudnn-frontend<1.19.0,>=1.13.0 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cudnn-frontend/nvidia_cudnn_frontend-1.18.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (4.4 kB)
+Collecting nvidia-cutlass-dsl>=4.4.0.dev1 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cutlass-dsl/nvidia_cutlass_dsl-4.5.0.dev0-py3-none-any.whl.metadata (2.8 kB)
+Collecting quack-kernels>=0.2.7 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/quack-kernels/quack_kernels-0.3.11-py3-none-any.whl.metadata (619 bytes)
+Collecting llvmlite<0.45,>=0.44.0dev0 (from numba>=0.60)
+  Downloading http://pypi-mirror.modal.local:5555/simple/llvmlite/llvmlite-0.44.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.0 kB)
+Collecting numpy>=1.26
+  Downloading http://pypi-mirror.modal.local:5555/simple/numpy/numpy-2.2.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (62 kB)
+Collecting loguru (from compressed-tensors==0.15.0.1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/loguru/loguru-0.7.3-py3-none-any.whl.metadata (22 kB)
+Collecting astor (from depyf==0.20.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/astor/astor-0.8.1-py2.py3-none-any.whl.metadata (4.2 kB)
+Collecting dill (from depyf==0.20.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/dill/dill-0.4.1-py3-none-any.whl.metadata (10 kB)
+Collecting apache-tvm-ffi!=0.1.8,!=0.1.8.post0,<0.2,>=0.1.6 (from flashinfer-python==0.6.6->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/apache-tvm-ffi/apache_tvm_ffi-0.1.10-cp312-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (6.1 kB)
+Collecting click (from flashinfer-python==0.6.6->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/click/click-8.3.3-py3-none-any.whl.metadata (2.6 kB)
+Collecting nvidia-ml-py (from flashinfer-python==0.6.6->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-ml-py/nvidia_ml_py-13.595.45-py3-none-any.whl.metadata (9.7 kB)
+Collecting packaging>=24.2 (from flashinfer-python==0.6.6->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/packaging/packaging-26.1-py3-none-any.whl.metadata (3.5 kB)
+Collecting tabulate (from flashinfer-python==0.6.6->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/tabulate/tabulate-0.10.0-py3-none-any.whl.metadata (40 kB)
+Collecting interegular>=0.3.2 (from lm-format-enforcer==0.11.3->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/interegular/interegular-0.3.3-py37-none-any.whl.metadata (3.0 kB)
+Collecting sympy>=1.13.3 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/sympy/sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+Collecting networkx>=2.5.1 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/networkx/networkx-3.6.1-py3-none-any.whl.metadata (6.8 kB)
+Collecting jinja2 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/jinja2/jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+Collecting fsspec>=0.8.5 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/fsspec/fsspec-2026.3.0-py3-none-any.whl.metadata (10 kB)
+Collecting cuda-bindings==12.9.4 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-bindings/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (2.6 kB)
+Collecting nvidia-cuda-nvrtc-cu12==12.8.93 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-nvrtc-cu12/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cuda-runtime-cu12==12.8.90 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-runtime-cu12/nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cuda-cupti-cu12==12.8.90 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-cupti-cu12/nvidia_cuda_cupti_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cudnn-cu12==9.10.2.21 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cudnn-cu12/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl.metadata (1.8 kB)
+Collecting nvidia-cublas-cu12==12.8.4.1 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cublas-cu12/nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cufft-cu12==11.3.3.83 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cufft-cu12/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-curand-cu12==10.3.9.90 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-curand-cu12/nvidia_curand_cu12-10.3.9.90-py3-none-manylinux_2_27_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cusolver-cu12==11.7.3.90 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusolver-cu12/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_x86_64.whl.metadata (1.8 kB)
+Collecting nvidia-cusparse-cu12==12.5.8.93 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusparse-cu12/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.8 kB)
+Collecting nvidia-cusparselt-cu12==0.7.1 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusparselt-cu12/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl.metadata (7.0 kB)
+Collecting nvidia-nccl-cu12==2.27.5 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nccl-cu12/nvidia_nccl_cu12-2.27.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.0 kB)
+Collecting nvidia-nvshmem-cu12==3.4.5 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvshmem-cu12/nvidia_nvshmem_cu12-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.1 kB)
+Collecting nvidia-nvtx-cu12==12.8.90 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvtx-cu12/nvidia_nvtx_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.8 kB)
+Collecting nvidia-nvjitlink-cu12==12.8.93 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvjitlink-cu12/nvidia_nvjitlink_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl.metadata (1.7 kB)
+Collecting nvidia-cufile-cu12==1.13.1.3 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cufile-cu12/nvidia_cufile_cu12-1.13.1.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (1.7 kB)
+Collecting triton==3.6.0 (from torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/triton/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (1.7 kB)
+Collecting cuda-pathfinder~=1.1 (from cuda-bindings==12.9.4->torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-pathfinder/cuda_pathfinder-1.5.3-py3-none-any.whl.metadata (1.9 kB)
+Collecting anyio<5,>=3.5.0 (from openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/anyio/anyio-4.13.0-py3-none-any.whl.metadata (4.5 kB)
+Collecting distro<2,>=1.7.0 (from openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/distro/distro-1.9.0-py3-none-any.whl.metadata (6.8 kB)
+Collecting httpx<1,>=0.23.0 (from openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/httpx/httpx-0.28.1-py3-none-any.whl.metadata (7.1 kB)
+Collecting jiter<1,>=0.10.0 (from openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/jiter/jiter-0.14.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (5.2 kB)
+Collecting sniffio (from openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/sniffio/sniffio-1.3.1-py3-none-any.whl.metadata (3.9 kB)
+Collecting typing_extensions>=4.10 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/typing-extensions/typing_extensions-4.15.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting aiohappyeyeballs>=2.5.0 (from aiohttp>=3.13.3->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/aiohappyeyeballs/aiohappyeyeballs-2.6.1-py3-none-any.whl.metadata (5.9 kB)
+Collecting aiosignal>=1.4.0 (from aiohttp>=3.13.3->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/aiosignal/aiosignal-1.4.0-py3-none-any.whl.metadata (3.7 kB)
+Requirement already satisfied: attrs>=17.3.0 in /usr/local/lib/python3.12/site-packages (from aiohttp>=3.13.3->vllm==0.19.1) (24.2.0)
+Requirement already satisfied: frozenlist>=1.1.1 in /usr/local/lib/python3.12/site-packages (from aiohttp>=3.13.3->vllm==0.19.1) (1.4.1)
+Requirement already satisfied: multidict<7.0,>=4.5 in /usr/local/lib/python3.12/site-packages (from aiohttp>=3.13.3->vllm==0.19.1) (6.1.0)
+Collecting propcache>=0.2.0 (from aiohttp>=3.13.3->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/propcache/propcache-0.4.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (13 kB)
+Collecting yarl<2.0,>=1.17.0 (from aiohttp>=3.13.3->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/yarl/yarl-1.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+Collecting docstring-parser<1,>=0.15 (from anthropic>=0.71.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/docstring-parser/docstring_parser-0.18.0-py3-none-any.whl.metadata (3.5 kB)
+Requirement already satisfied: idna>=2.8 in /usr/local/lib/python3.12/site-packages (from anyio<5,>=3.5.0->openai>=1.50) (3.10)
+Collecting starlette>=0.46.0 (from fastapi>=0.115.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/starlette/starlette-1.0.0-py3-none-any.whl.metadata (6.3 kB)
+Collecting typing-inspection>=0.4.2 (from fastapi>=0.115.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/typing-inspection/typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+Collecting annotated-doc>=0.0.2 (from fastapi>=0.115.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/annotated-doc/annotated_doc-0.0.4-py3-none-any.whl.metadata (6.6 kB)
+Collecting fastapi-cli>=0.0.8 (from fastapi-cli[standard]>=0.0.8; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/fastapi-cli/fastapi_cli-0.0.24-py3-none-any.whl.metadata (6.4 kB)
+Collecting fastar>=0.9.0 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/fastar/fastar-0.11.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.0 kB)
+Collecting python-multipart>=0.0.18 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/python-multipart/python_multipart-0.0.26-py3-none-any.whl.metadata (2.1 kB)
+Collecting email-validator>=2.0.0 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/email-validator/email_validator-2.3.0-py3-none-any.whl.metadata (26 kB)
+Collecting uvicorn>=0.12.0 (from uvicorn[standard]>=0.12.0; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/uvicorn/uvicorn-0.45.0-py3-none-any.whl.metadata (6.7 kB)
+Collecting pydantic-settings>=2.0.0 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-settings/pydantic_settings-2.14.0-py3-none-any.whl.metadata (3.4 kB)
+Collecting pydantic-extra-types>=2.0.0 (from fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-extra-types/pydantic_extra_types-2.11.1-py3-none-any.whl.metadata (4.2 kB)
+Requirement already satisfied: certifi in /usr/local/lib/python3.12/site-packages (from httpx<1,>=0.23.0->openai>=1.50) (2024.8.30)
+Collecting httpcore==1.* (from httpx<1,>=0.23.0->openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/httpcore/httpcore-1.0.9-py3-none-any.whl.metadata (21 kB)
+Collecting h11>=0.16 (from httpcore==1.*->httpx<1,>=0.23.0->openai>=1.50)
+  Downloading http://pypi-mirror.modal.local:5555/simple/h11/h11-0.16.0-py3-none-any.whl.metadata (8.3 kB)
+Collecting jsonschema>=4.21.1 (from mistral_common>=1.10.0->mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/jsonschema/jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+Collecting jmespath (from model-hosting-container-standards<1.0.0,>=0.1.13->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/jmespath/jmespath-1.1.0-py3-none-any.whl.metadata (7.6 kB)
+Collecting supervisor>=4.2.0 (from model-hosting-container-standards<1.0.0,>=0.1.13->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/supervisor/supervisor-4.3.0-py2.py3-none-any.whl.metadata (87 kB)
+Collecting nvidia-cutlass-dsl-libs-base==4.5.0.dev0 (from nvidia-cutlass-dsl>=4.4.0.dev1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cutlass-dsl-libs-base/nvidia_cutlass_dsl_libs_base-4.5.0.dev0-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+Collecting cuda-python>=12.8 (from nvidia-cutlass-dsl-libs-base==4.5.0.dev0->nvidia-cutlass-dsl>=4.4.0.dev1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.2.0-py3-none-any.whl.metadata (6.5 kB)
+Collecting importlib-metadata<8.8.0,>=6.0 (from opentelemetry-api>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/importlib-metadata/importlib_metadata-8.7.1-py3-none-any.whl.metadata (4.7 kB)
+Collecting opentelemetry-exporter-otlp-proto-grpc==1.41.0 (from opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-grpc/opentelemetry_exporter_otlp_proto_grpc-1.41.0-py3-none-any.whl.metadata (2.6 kB)
+Collecting opentelemetry-exporter-otlp-proto-http==1.41.0 (from opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-http/opentelemetry_exporter_otlp_proto_http-1.41.0-py3-none-any.whl.metadata (2.5 kB)
+Collecting googleapis-common-protos~=1.57 (from opentelemetry-exporter-otlp-proto-grpc==1.41.0->opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/googleapis-common-protos/googleapis_common_protos-1.74.0-py3-none-any.whl.metadata (9.2 kB)
+Collecting grpcio<2.0.0,>=1.63.2 (from opentelemetry-exporter-otlp-proto-grpc==1.41.0->opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/grpcio/grpcio-1.80.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (3.8 kB)
+Collecting opentelemetry-exporter-otlp-proto-common==1.41.0 (from opentelemetry-exporter-otlp-proto-grpc==1.41.0->opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-common/opentelemetry_exporter_otlp_proto_common-1.41.0-py3-none-any.whl.metadata (1.9 kB)
+Collecting opentelemetry-proto==1.41.0 (from opentelemetry-exporter-otlp-proto-grpc==1.41.0->opentelemetry-exporter-otlp>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-proto/opentelemetry_proto-1.41.0-py3-none-any.whl.metadata (2.4 kB)
+Collecting protobuf!=6.30.*,!=6.31.*,!=6.32.*,!=6.33.0.*,!=6.33.1.*,!=6.33.2.*,!=6.33.3.*,!=6.33.4.*,>=5.29.6 (from vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/protobuf/protobuf-6.33.6-cp39-abi3-manylinux2014_x86_64.whl.metadata (593 bytes)
+Collecting opentelemetry-semantic-conventions==0.62b0 (from opentelemetry-sdk>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-semantic-conventions/opentelemetry_semantic_conventions-0.62b0-py3-none-any.whl.metadata (2.5 kB)
+Collecting starlette>=0.46.0 (from fastapi>=0.115.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/starlette/starlette-0.52.1-py3-none-any.whl.metadata (6.3 kB)
+Collecting annotated-types>=0.6.0 (from pydantic>=2.12.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/annotated-types/annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+Collecting pydantic-core==2.46.3 (from pydantic>=2.12.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-core/pydantic_core-2.46.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+Collecting torch-c-dlpack-ext (from quack-kernels>=0.2.7->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/torch-c-dlpack-ext/torch_c_dlpack_ext-0.1.5-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (14 kB)
+Collecting charset_normalizer<4,>=2 (from requests>=2.26.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/charset-normalizer/charset_normalizer-3.4.7-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+Collecting urllib3<3,>=1.26 (from requests>=2.26.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/urllib3/urllib3-2.6.3-py3-none-any.whl.metadata (6.9 kB)
+Collecting huggingface-hub<2.0,>=0.16.4 (from tokenizers>=0.21.1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/huggingface-hub/huggingface_hub-1.11.0-py3-none-any.whl.metadata (14 kB)
+Collecting typer (from transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/typer/typer-0.24.2-py3-none-any.whl.metadata (15 kB)
+Collecting safetensors>=0.4.3 (from transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/safetensors/safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+Collecting httpx-sse>=0.4 (from mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/httpx-sse/httpx_sse-0.4.3-py3-none-any.whl.metadata (9.7 kB)
+Collecting pyjwt>=2.10.1 (from pyjwt[crypto]>=2.10.1->mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pyjwt/pyjwt-2.12.1-py3-none-any.whl.metadata (4.1 kB)
+Collecting sse-starlette>=1.6.1 (from mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/sse-starlette/sse_starlette-3.3.4-py3-none-any.whl.metadata (14 kB)
+Collecting dnspython>=2.0.0 (from email-validator>=2.0.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/dnspython/dnspython-2.8.0-py3-none-any.whl.metadata (5.7 kB)
+Collecting rich-toolkit>=0.14.8 (from fastapi-cli>=0.0.8->fastapi-cli[standard]>=0.0.8; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/rich-toolkit/rich_toolkit-0.19.7-py3-none-any.whl.metadata (1.0 kB)
+Collecting fastapi-cloud-cli>=0.1.1 (from fastapi-cli[standard]>=0.0.8; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/fastapi-cloud-cli/fastapi_cloud_cli-0.17.0-py3-none-any.whl.metadata (3.3 kB)
+Collecting hf-xet<2.0.0,>=1.4.3 (from huggingface-hub<2.0,>=0.16.4->tokenizers>=0.21.1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/hf-xet/hf_xet-1.4.3-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+Collecting zipp>=3.20 (from importlib-metadata<8.8.0,>=6.0->opentelemetry-api>=1.27.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/zipp/zipp-3.23.1-py3-none-any.whl.metadata (3.6 kB)
+Collecting MarkupSafe>=2.0 (from jinja2->torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/markupsafe/markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+Collecting jsonschema-specifications>=2023.03.6 (from jsonschema>=4.21.1->mistral_common>=1.10.0->mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/jsonschema-specifications/jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+Collecting referencing>=0.28.4 (from jsonschema>=4.21.1->mistral_common>=1.10.0->mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/referencing/referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+Collecting rpds-py>=0.25.0 (from jsonschema>=4.21.1->mistral_common>=1.10.0->mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/rpds-py/rpds_py-0.30.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+Collecting pycountry>=23 (from pydantic-extra-types[pycountry]>=2.10.5->mistral_common>=1.10.0->mistral_common[image]>=1.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pycountry/pycountry-26.2.16-py3-none-any.whl.metadata (12 kB)
+Collecting python-dotenv>=0.21.0 (from pydantic-settings>=2.0.0->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/python-dotenv/python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+Collecting cryptography>=3.4.0 (from pyjwt[crypto]>=2.10.1->mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cryptography/cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (5.7 kB)
+Collecting mpmath<1.4,>=1.1.0 (from sympy>=1.13.3->torch==2.10.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/mpmath/mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)
+Collecting shellingham>=1.3.0 (from typer->transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/shellingham/shellingham-1.5.4-py2.py3-none-any.whl.metadata (3.5 kB)
+Collecting rich>=12.3.0 (from typer->transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/rich/rich-15.0.0-py3-none-any.whl.metadata (18 kB)
+Collecting httptools>=0.6.3 (from uvicorn[standard]>=0.12.0; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/httptools/httptools-0.7.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (3.5 kB)
+Collecting uvloop>=0.15.1 (from uvicorn[standard]>=0.12.0; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/uvloop/uvloop-0.22.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (4.9 kB)
+Collecting websockets>=10.4 (from uvicorn[standard]>=0.12.0; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/websockets/websockets-16.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl.metadata (6.8 kB)
+Collecting cffi>=2.0.0 (from cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cffi/cffi-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.6 kB)
+INFO: pip is looking at multiple versions of cuda-python to determine which version is compatible with other requirements. This could take a while.
+Collecting cuda-python>=12.8 (from nvidia-cutlass-dsl-libs-base==4.5.0.dev0->nvidia-cutlass-dsl>=4.4.0.dev1->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.1.1-py3-none-any.whl.metadata (6.2 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.1.0-py3-none-any.whl.metadata (4.8 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.0.3-py3-none-any.whl.metadata (4.7 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.0.2-py3-none-any.whl.metadata (4.7 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.0.1-py3-none-any.whl.metadata (4.7 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-13.0.0-py3-none-any.whl.metadata (4.7 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-12.9.6-py3-none-any.whl.metadata (4.7 kB)
+INFO: pip is still looking at multiple versions of cuda-python to determine which version is compatible with other requirements. This could take a while.
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-12.9.5-py3-none-any.whl.metadata (4.7 kB)
+  Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-12.9.4-py3-none-any.whl.metadata (4.7 kB)
+Collecting rignore>=0.5.1 (from fastapi-cloud-cli>=0.1.1->fastapi-cli[standard]>=0.0.8; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/rignore/rignore-0.7.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.2 kB)
+Collecting sentry-sdk>=2.20.0 (from fastapi-cloud-cli>=0.1.1->fastapi-cli[standard]>=0.0.8; extra == "standard"->fastapi[standard]>=0.115.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/sentry-sdk/sentry_sdk-2.58.0-py2.py3-none-any.whl.metadata (10 kB)
+Collecting markdown-it-py>=2.2.0 (from rich>=12.3.0->typer->transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/markdown-it-py/markdown_it_py-4.0.0-py3-none-any.whl.metadata (7.3 kB)
+Collecting pygments<3.0.0,>=2.13.0 (from rich>=12.3.0->typer->transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pygments/pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)
+Collecting pycparser (from cffi>=2.0.0->cryptography>=3.4.0->pyjwt[crypto]>=2.10.1->mcp->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/pycparser/pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich>=12.3.0->typer->transformers!=5.0.*,!=5.1.*,!=5.2.*,!=5.3.*,!=5.4.*,!=5.5.0,>=4.56.0->vllm==0.19.1)
+  Downloading http://pypi-mirror.modal.local:5555/simple/mdurl/mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/vllm/vllm-0.19.1-cp38-abi3-manylinux_2_31_x86_64.whl (433.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 433.1/433.1 MB 163.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/numba/numba-0.61.2-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (3.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.9/3.9 MB 143.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/compressed-tensors/compressed_tensors-0.15.0.1-py3-none-any.whl (194 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/depyf/depyf-0.20.0-py3-none-any.whl (39 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/diskcache/diskcache-5.6.3-py3-none-any.whl (45 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/flashinfer-cubin/flashinfer_cubin-0.6.6-py3-none-any.whl (267.7 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 267.7/267.7 MB 155.1 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/flashinfer-python/flashinfer_python-0.6.6-py3-none-any.whl (7.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.8/7.8 MB 166.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/lark/lark-1.2.2-py3-none-any.whl (111 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/lm-format-enforcer/lm_format_enforcer-0.11.3-py3-none-any.whl (45 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/outlines-core/outlines_core-0.2.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.3/2.3 MB 257.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/torch/torch-2.10.0-3-cp312-cp312-manylinux_2_28_x86_64.whl (915.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 915.6/915.6 MB 159.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/torchaudio/torchaudio-2.10.0-cp312-cp312-manylinux_2_28_x86_64.whl (1.9 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 279.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/torchvision/torchvision-0.25.0-cp312-cp312-manylinux_2_28_x86_64.whl (8.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.1/8.1 MB 185.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/cuda-bindings/cuda_bindings-12.9.4-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (12.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.2/12.2 MB 178.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cublas-cu12/nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl (594.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 594.3/594.3 MB 155.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-cupti-cu12/nvidia_cuda_cupti_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (10.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10.2/10.2 MB 150.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-nvrtc-cu12/nvidia_cuda_nvrtc_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl (88.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 88.0/88.0 MB 143.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cuda-runtime-cu12/nvidia_cuda_runtime_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (954 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 954.8/954.8 kB 769.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cudnn-cu12/nvidia_cudnn_cu12-9.10.2.21-py3-none-manylinux_2_27_x86_64.whl (706.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 706.8/706.8 MB 154.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cufft-cu12/nvidia_cufft_cu12-11.3.3.83-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (193.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 193.1/193.1 MB 175.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cufile-cu12/nvidia_cufile_cu12-1.13.1.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 223.1 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-curand-cu12/nvidia_curand_cu12-10.3.9.90-py3-none-manylinux_2_27_x86_64.whl (63.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 63.6/63.6 MB 172.1 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusolver-cu12/nvidia_cusolver_cu12-11.7.3.90-py3-none-manylinux_2_27_x86_64.whl (267.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 267.5/267.5 MB 165.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusparse-cu12/nvidia_cusparse_cu12-12.5.8.93-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (288.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 288.2/288.2 MB 189.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cusparselt-cu12/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl (287.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 287.2/287.2 MB 192.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nccl-cu12/nvidia_nccl_cu12-2.27.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (322.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 322.3/322.3 MB 194.1 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvjitlink-cu12/nvidia_nvjitlink_cu12-12.8.93-py3-none-manylinux2010_x86_64.manylinux_2_12_x86_64.whl (39.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 39.3/39.3 MB 196.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvshmem-cu12/nvidia_nvshmem_cu12-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (139.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 139.1/139.1 MB 172.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-nvtx-cu12/nvidia_nvtx_cu12-12.8.90-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (89 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/triton/triton-3.6.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (188.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 188.3/188.3 MB 163.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/numpy/numpy-2.2.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (16.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.5/16.5 MB 157.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/openai/openai-2.32.0-py3-none-any.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 622.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/pyyaml/pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 807.9/807.9 kB 353.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/scipy/scipy-1.17.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (35.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 35.2/35.2 MB 132.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/aiohttp/aiohttp-3.13.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 699.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/anthropic/anthropic-0.96.0-py3-none-any.whl (635 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 635.9/635.9 kB 789.5 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/anyio/anyio-4.13.0-py3-none-any.whl (114 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/distro/distro-1.9.0-py3-none-any.whl (20 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/fastapi/fastapi-0.136.0-py3-none-any.whl (117 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/filelock/filelock-3.29.0-py3-none-any.whl (39 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/gguf/gguf-0.18.0-py3-none-any.whl (114 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/httpx/httpx-0.28.1-py3-none-any.whl (73 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/httpcore/httpcore-1.0.9-py3-none-any.whl (78 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/jiter/jiter-0.14.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (353 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/llguidance/llguidance-1.3.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 190.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/llvmlite/llvmlite-0.44.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (42.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 42.4/42.4 MB 176.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/mistral-common/mistral_common-1.11.0-py3-none-any.whl (6.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.5/6.5 MB 173.5 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/model-hosting-container-standards/model_hosting_container_standards-0.1.14-py3-none-any.whl (121 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cudnn-frontend/nvidia_cudnn_frontend-1.18.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (2.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.2/2.2 MB 74.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cutlass-dsl/nvidia_cutlass_dsl-4.5.0.dev0-py3-none-any.whl (10 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-cutlass-dsl-libs-base/nvidia_cutlass_dsl_libs_base-4.5.0.dev0-cp312-cp312-manylinux_2_28_x86_64.whl (74.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 74.4/74.4 MB 157.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/openai-harmony/openai_harmony-0.0.8-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.0/3.0 MB 302.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/opencv-python-headless/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_x86_64.whl (60.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 60.4/60.4 MB 184.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-api/opentelemetry_api-1.41.0-py3-none-any.whl (69 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp/opentelemetry_exporter_otlp-1.41.0-py3-none-any.whl (7.0 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-grpc/opentelemetry_exporter_otlp_proto_grpc-1.41.0-py3-none-any.whl (20 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-http/opentelemetry_exporter_otlp_proto_http-1.41.0-py3-none-any.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-exporter-otlp-proto-common/opentelemetry_exporter_otlp_proto_common-1.41.0-py3-none-any.whl (18 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-proto/opentelemetry_proto-1.41.0-py3-none-any.whl (72 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-sdk/opentelemetry_sdk-1.41.0-py3-none-any.whl (180 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-semantic-conventions/opentelemetry_semantic_conventions-0.62b0-py3-none-any.whl (231 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/opentelemetry-semantic-conventions-ai/opentelemetry_semantic_conventions_ai-0.5.1-py3-none-any.whl (11 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pillow/pillow-12.2.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (7.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 7.1/7.1 MB 177.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/prometheus-client/prometheus_client-0.25.0-py3-none-any.whl (64 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/prometheus-fastapi-instrumentator/prometheus_fastapi_instrumentator-7.1.0-py3-none-any.whl (19 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/protobuf/protobuf-6.33.6-cp39-abi3-manylinux2014_x86_64.whl (323 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pydantic/pydantic-2.13.3-py3-none-any.whl (471 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-core/pydantic_core-2.46.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 341.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/pyzmq/pyzmq-27.1.0-cp312-abi3-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (840 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 841.0/841.0 kB 70.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/quack-kernels/quack_kernels-0.3.11-py3-none-any.whl (240 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/requests/requests-2.33.1-py3-none-any.whl (64 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/setuptools/setuptools-80.10.2-py3-none-any.whl (1.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.1/1.1 MB 347.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/six/six-1.17.0-py2.py3-none-any.whl (11 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/tiktoken/tiktoken-0.12.0-cp312-cp312-manylinux_2_28_x86_64.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 408.5 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/regex/regex-2026.4.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (801 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 801.1/801.1 kB 702.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/tokenizers/tokenizers-0.22.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (3.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.3/3.3 MB 277.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/tqdm/tqdm-4.67.3-py3-none-any.whl (78 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/transformers/transformers-5.6.0-py3-none-any.whl (10.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10.4/10.4 MB 195.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/typing-extensions/typing_extensions-4.15.0-py3-none-any.whl (44 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/xgrammar/xgrammar-0.1.33-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (42.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 42.2/42.2 MB 150.3 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/blake3/blake3-1.0.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (388 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/cachetools/cachetools-7.0.6-py3-none-any.whl (13 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/cbor2/cbor2-5.9.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (288 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/cloudpickle/cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/einops/einops-0.8.2-py3-none-any.whl (65 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/ijson/ijson-3.5.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (149 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/mcp/mcp-1.27.0-py3-none-any.whl (215 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/msgspec/msgspec-0.21.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (225 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/ninja/ninja-1.13.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (180 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/partial-json-parser/partial_json_parser-0.2.1.1.post7-py3-none-any.whl (10 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/psutil/psutil-7.2.2-cp36-abi3-manylinux2010_x86_64.manylinux_2_12_x86_64.manylinux_2_28_x86_64.whl (155 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/py-cpuinfo/py_cpuinfo-9.0.0-py3-none-any.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pybase64/pybase64-1.4.3-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl (71 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/python-json-logger/python_json_logger-4.1.0-py3-none-any.whl (15 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/sentencepiece/sentencepiece-0.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (1.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 93.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/setproctitle/setproctitle-1.3.7-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (32 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/sniffio/sniffio-1.3.1-py3-none-any.whl (10 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/watchfiles/watchfiles-1.1.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (456 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/aiohappyeyeballs/aiohappyeyeballs-2.6.1-py3-none-any.whl (15 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/aiosignal/aiosignal-1.4.0-py3-none-any.whl (7.5 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/annotated-doc/annotated_doc-0.0.4-py3-none-any.whl (5.3 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/annotated-types/annotated_types-0.7.0-py3-none-any.whl (13 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/apache-tvm-ffi/apache_tvm_ffi-0.1.10-cp312-abi3-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (2.6 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.6/2.6 MB 259.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/charset-normalizer/charset_normalizer-3.4.7-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (216 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/docstring-parser/docstring_parser-0.18.0-py3-none-any.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/email-validator/email_validator-2.3.0-py3-none-any.whl (35 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/fastapi-cli/fastapi_cli-0.0.24-py3-none-any.whl (12 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/fastar/fastar-0.11.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (819 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 819.4/819.4 kB 203.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/fsspec/fsspec-2026.3.0-py3-none-any.whl (202 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/httpx-sse/httpx_sse-0.4.3-py3-none-any.whl (9.0 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/huggingface-hub/huggingface_hub-1.11.0-py3-none-any.whl (645 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 645.5/645.5 kB 608.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/importlib-metadata/importlib_metadata-8.7.1-py3-none-any.whl (27 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/interegular/interegular-0.3.3-py37-none-any.whl (23 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/jinja2/jinja2-3.1.6-py3-none-any.whl (134 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/jsonschema/jsonschema-4.26.0-py3-none-any.whl (90 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/networkx/networkx-3.6.1-py3-none-any.whl (2.1 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 280.0 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/packaging/packaging-26.1-py3-none-any.whl (95 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/propcache/propcache-0.4.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (221 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-extra-types/pydantic_extra_types-2.11.1-py3-none-any.whl (79 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pydantic-settings/pydantic_settings-2.14.0-py3-none-any.whl (60 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pyjwt/pyjwt-2.12.1-py3-none-any.whl (29 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/python-multipart/python_multipart-0.0.26-py3-none-any.whl (28 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/safetensors/safetensors-0.7.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (507 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/sse-starlette/sse_starlette-3.3.4-py3-none-any.whl (14 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/starlette/starlette-0.52.1-py3-none-any.whl (74 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/supervisor/supervisor-4.3.0-py2.py3-none-any.whl (320 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/sympy/sympy-1.14.0-py3-none-any.whl (6.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 216.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/typer/typer-0.24.2-py3-none-any.whl (55 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/click/click-8.3.3-py3-none-any.whl (110 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/typing-inspection/typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/urllib3/urllib3-2.6.3-py3-none-any.whl (131 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/uvicorn/uvicorn-0.45.0-py3-none-any.whl (69 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/yarl/yarl-1.23.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (100 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/astor/astor-0.8.1-py2.py3-none-any.whl (27 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/dill/dill-0.4.1-py3-none-any.whl (120 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/jmespath/jmespath-1.1.0-py3-none-any.whl (20 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/loguru/loguru-0.7.3-py3-none-any.whl (61 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/nvidia-ml-py/nvidia_ml_py-13.595.45-py3-none-any.whl (51 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/tabulate/tabulate-0.10.0-py3-none-any.whl (39 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/torch-c-dlpack-ext/torch_c_dlpack_ext-0.1.5-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (897 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 897.8/897.8 kB 232.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/cryptography/cryptography-46.0.7-cp311-abi3-manylinux_2_34_x86_64.whl (4.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.5/4.5 MB 238.7 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/cuda-pathfinder/cuda_pathfinder-1.5.3-py3-none-any.whl (49 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/cuda-python/cuda_python-12.9.4-py3-none-any.whl (7.6 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/dnspython/dnspython-2.8.0-py3-none-any.whl (331 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/fastapi-cloud-cli/fastapi_cloud_cli-0.17.0-py3-none-any.whl (33 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/googleapis-common-protos/googleapis_common_protos-1.74.0-py3-none-any.whl (300 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/grpcio/grpcio-1.80.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (6.8 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.8/6.8 MB 204.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/h11/h11-0.16.0-py3-none-any.whl (37 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/hf-xet/hf_xet-1.4.3-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.2/4.2 MB 209.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/httptools/httptools-0.7.1-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (517 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/jsonschema-specifications/jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/markupsafe/markupsafe-3.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/mpmath/mpmath-1.3.0-py3-none-any.whl (536 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 653.8 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/pycountry/pycountry-26.2.16-py3-none-any.whl (8.0 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.0/8.0 MB 228.6 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/python-dotenv/python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/referencing/referencing-0.37.0-py3-none-any.whl (26 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/rich/rich-15.0.0-py3-none-any.whl (310 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/rich-toolkit/rich_toolkit-0.19.7-py3-none-any.whl (32 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/rpds-py/rpds_py-0.30.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (394 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/shellingham/shellingham-1.5.4-py2.py3-none-any.whl (9.8 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/uvloop/uvloop-0.22.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (4.4 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.4/4.4 MB 204.9 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/websockets/websockets-16.0-cp312-cp312-manylinux1_x86_64.manylinux_2_28_x86_64.manylinux_2_5_x86_64.whl (184 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/zipp/zipp-3.23.1-py3-none-any.whl (10 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/cffi/cffi-2.0.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (219 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/markdown-it-py/markdown_it_py-4.0.0-py3-none-any.whl (87 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pygments/pygments-2.20.0-py3-none-any.whl (1.2 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 537.2 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/rignore/rignore-0.7.6-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (959 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 959.8/959.8 kB 95.4 MB/s eta 0:00:00
+Downloading http://pypi-mirror.modal.local:5555/simple/sentry-sdk/sentry_sdk-2.58.0-py2.py3-none-any.whl (460 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/mdurl/mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+Downloading http://pypi-mirror.modal.local:5555/simple/pycparser/pycparser-3.0-py3-none-any.whl (48 kB)
+Installing collected packages: supervisor, py-cpuinfo, nvidia-ml-py, nvidia-cusparselt-cu12, mpmath, zipp, websockets, uvloop, urllib3, typing_extensions, triton, tqdm, tabulate, sympy, sniffio, six, shellingham, setuptools, setproctitle, sentencepiece, safetensors, rpds-py, rignore, regex, pyzmq, pyyaml, python-multipart, python-json-logger, python-dotenv, pyjwt, pygments, pycparser, pycountry, pybase64, psutil, protobuf, propcache, prometheus_client, pillow, partial-json-parser, packaging, outlines_core, nvidia-nvtx-cu12, nvidia-nvshmem-cu12, nvidia-nvjitlink-cu12, nvidia-nccl-cu12, nvidia-curand-cu12, nvidia-cufile-cu12, nvidia-cudnn-frontend, nvidia-cuda-runtime-cu12, nvidia-cuda-nvrtc-cu12, nvidia-cuda-cupti-cu12, nvidia-cublas-cu12, numpy, ninja, networkx, msgspec, mdurl, MarkupSafe, loguru, llvmlite, llguidance, lark, jmespath, jiter, interegular, ijson, httpx-sse, httptools, hf-xet, h11, fsspec, flashinfer-cubin, filelock, fastar, einops, docstring-parser, dnspython, distro, diskcache, dill, cuda-pathfinder, cloudpickle, click, charset_normalizer, cbor2, cachetools, blake3, astor, annotated-types, annotated-doc, aiohappyeyeballs, yarl, uvicorn, typing-inspection, sentry-sdk, scipy, requests, referencing, pydantic-core, opentelemetry-proto, opencv-python-headless, nvidia-cusparse-cu12, nvidia-cufft-cu12, nvidia-cudnn-cu12, numba, markdown-it-py, jinja2, importlib-metadata, httpcore, grpcio, googleapis-common-protos, email-validator, depyf, cuda-bindings, cffi, apache-tvm-ffi, anyio, aiosignal, watchfiles, tiktoken, starlette, rich, pydantic, opentelemetry-exporter-otlp-proto-common, opentelemetry-api, nvidia-cusolver-cu12, jsonschema-specifications, httpx, gguf, cuda-python, cryptography, aiohttp, typer, torch, sse-starlette, rich-toolkit, pydantic-settings, pydantic-extra-types, prometheus-fastapi-instrumentator, opentelemetry-semantic-conventions, openai-harmony, openai, nvidia-cutlass-dsl-libs-base, lm-format-enforcer, jsonschema, fastapi, anthropic, torchvision, torchaudio, torch-c-dlpack-ext, opentelemetry-sdk, nvidia-cutlass-dsl, model-hosting-container-standards, mcp, huggingface-hub, fastapi-cloud-cli, fastapi-cli, tokenizers, quack-kernels, opentelemetry-semantic-conventions-ai, opentelemetry-exporter-otlp-proto-http, opentelemetry-exporter-otlp-proto-grpc, mistral_common, flashinfer-python, transformers, opentelemetry-exporter-otlp, xgrammar, compressed-tensors, vllm
+  Attempting uninstall: typing_extensions
+    Found existing installation: typing_extensions 4.12.2
+    Uninstalling typing_extensions-4.12.2:
+      Successfully uninstalled typing_extensions-4.12.2
+  Attempting uninstall: protobuf
+    Found existing installation: protobuf 5.29.2
+    Uninstalling protobuf-5.29.2:
+      Successfully uninstalled protobuf-5.29.2
+  Attempting uninstall: aiohappyeyeballs
+    Found existing installation: aiohappyeyeballs 2.4.3
+    Uninstalling aiohappyeyeballs-2.4.3:
+      Successfully uninstalled aiohappyeyeballs-2.4.3
+  Attempting uninstall: yarl
+    Found existing installation: yarl 1.13.1
+    Uninstalling yarl-1.13.1:
+      Successfully uninstalled yarl-1.13.1
+  Attempting uninstall: aiosignal
+    Found existing installation: aiosignal 1.3.1
+    Uninstalling aiosignal-1.3.1:
+      Successfully uninstalled aiosignal-1.3.1
+  Attempting uninstall: aiohttp
+    Found existing installation: aiohttp 3.10.8
+    Uninstalling aiohttp-3.10.8:
+      Successfully uninstalled aiohttp-3.10.8
+Successfully installed MarkupSafe-3.0.3 aiohappyeyeballs-2.6.1 aiohttp-3.13.5 aiosignal-1.4.0 annotated-doc-0.0.4 annotated-types-0.7.0 anthropic-0.96.0 anyio-4.13.0 apache-tvm-ffi-0.1.10 astor-0.8.1 blake3-1.0.8 cachetools-7.0.6 cbor2-5.9.0 cffi-2.0.0 charset_normalizer-3.4.7 click-8.3.3 cloudpickle-3.1.2 compressed-tensors-0.15.0.1 cryptography-46.0.7 cuda-bindings-12.9.4 cuda-pathfinder-1.5.3 cuda-python-12.9.4 depyf-0.20.0 dill-0.4.1 diskcache-5.6.3 distro-1.9.0 dnspython-2.8.0 docstring-parser-0.18.0 einops-0.8.2 email-validator-2.3.0 fastapi-0.136.0 fastapi-cli-0.0.24 fastapi-cloud-cli-0.17.0 fastar-0.11.0 filelock-3.29.0 flashinfer-cubin-0.6.6 flashinfer-python-0.6.6 fsspec-2026.3.0 gguf-0.18.0 googleapis-common-protos-1.74.0 grpcio-1.80.0 h11-0.16.0 hf-xet-1.4.3 httpcore-1.0.9 httptools-0.7.1 httpx-0.28.1 httpx-sse-0.4.3 huggingface-hub-1.11.0 ijson-3.5.0 importlib-metadata-8.7.1 interegular-0.3.3 jinja2-3.1.6 jiter-0.14.0 jmespath-1.1.0 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 lark-1.2.2 llguidance-1.3.0 llvmlite-0.44.0 lm-format-enforcer-0.11.3 loguru-0.7.3 markdown-it-py-4.0.0 mcp-1.27.0 mdurl-0.1.2 mistral_common-1.11.0 model-hosting-container-standards-0.1.14 mpmath-1.3.0 msgspec-0.21.1 networkx-3.6.1 ninja-1.13.0 numba-0.61.2 numpy-2.2.6 nvidia-cublas-cu12-12.8.4.1 nvidia-cuda-cupti-cu12-12.8.90 nvidia-cuda-nvrtc-cu12-12.8.93 nvidia-cuda-runtime-cu12-12.8.90 nvidia-cudnn-cu12-9.10.2.21 nvidia-cudnn-frontend-1.18.0 nvidia-cufft-cu12-11.3.3.83 nvidia-cufile-cu12-1.13.1.3 nvidia-curand-cu12-10.3.9.90 nvidia-cusolver-cu12-11.7.3.90 nvidia-cusparse-cu12-12.5.8.93 nvidia-cusparselt-cu12-0.7.1 nvidia-cutlass-dsl-4.5.0.dev0 nvidia-cutlass-dsl-libs-base-4.5.0.dev0 nvidia-ml-py-13.595.45 nvidia-nccl-cu12-2.27.5 nvidia-nvjitlink-cu12-12.8.93 nvidia-nvshmem-cu12-3.4.5 nvidia-nvtx-cu12-12.8.90 openai-2.32.0 openai-harmony-0.0.8 opencv-python-headless-4.13.0.92 opentelemetry-api-1.41.0 opentelemetry-exporter-otlp-1.41.0 opentelemetry-exporter-otlp-proto-common-1.41.0 opentelemetry-exporter-otlp-proto-grpc-1.41.0 opentelemetry-exporter-otlp-proto-http-1.41.0 opentelemetry-proto-1.41.0 opentelemetry-sdk-1.41.0 opentelemetry-semantic-conventions-0.62b0 opentelemetry-semantic-conventions-ai-0.5.1 outlines_core-0.2.11 packaging-26.1 partial-json-parser-0.2.1.1.post7 pillow-12.2.0 prometheus-fastapi-instrumentator-7.1.0 prometheus_client-0.25.0 propcache-0.4.1 protobuf-6.33.6 psutil-7.2.2 py-cpuinfo-9.0.0 pybase64-1.4.3 pycountry-26.2.16 pycparser-3.0 pydantic-2.13.3 pydantic-core-2.46.3 pydantic-extra-types-2.11.1 pydantic-settings-2.14.0 pygments-2.20.0 pyjwt-2.12.1 python-dotenv-1.2.2 python-json-logger-4.1.0 python-multipart-0.0.26 pyyaml-6.0.3 pyzmq-27.1.0 quack-kernels-0.3.11 referencing-0.37.0 regex-2026.4.4 requests-2.33.1 rich-15.0.0 rich-toolkit-0.19.7 rignore-0.7.6 rpds-py-0.30.0 safetensors-0.7.0 scipy-1.17.1 sentencepiece-0.2.1 sentry-sdk-2.58.0 setproctitle-1.3.7 setuptools-80.10.2 shellingham-1.5.4 six-1.17.0 sniffio-1.3.1 sse-starlette-3.3.4 starlette-0.52.1 supervisor-4.3.0 sympy-1.14.0 tabulate-0.10.0 tiktoken-0.12.0 tokenizers-0.22.2 torch-2.10.0 torch-c-dlpack-ext-0.1.5 torchaudio-2.10.0 torchvision-0.25.0 tqdm-4.67.3 transformers-5.6.0 triton-3.6.0 typer-0.24.2 typing-inspection-0.4.2 typing_extensions-4.15.0 urllib3-2.6.3 uvicorn-0.45.0 uvloop-0.22.1 vllm-0.19.1 watchfiles-1.1.1 websockets-16.0 xgrammar-0.1.33 yarl-1.23.0 zipp-3.23.1
+
+[notice] A new release of pip is available: 24.3.1 -> 26.0.1
+[notice] To update, run: pip install --upgrade pip
+Saving image...
+Image saved, took 20.89s
+
+Built image im-0vLwH3EC5uuaW6oVEfcnXM in 224.65s
+
+
+Building image im-D52BUARnDzHSg7gO9Rg7fy
+
+Using legacy Image Builder version. We suggest upgrading at https://modal.com/settings/image-config.
+
+=> Step 0: FROM base
+
+=> Step 1: COPY . /
+Saving image...
+Image saved, took 1.26s
+
+Built image im-D52BUARnDzHSg7gO9Rg7fy in 3.76s
+
+
+Building image im-oomrhP7j2o01V33xjwkn54
+
+Using legacy Image Builder version. We suggest upgrading at https://modal.com/settings/image-config.
+
+=> Step 0: FROM base
+
+=> Step 1: ENV PYTHONPATH=/atlas
+
+=> Step 2: ENV HF_HOME=/hf_cache
+Saving image...
+Image saved, took 2.82s
+
+Built image im-oomrhP7j2o01V33xjwkn54 in 5.45s
+
+
+
+✓ Created objects.
+├── 🔨 Created mount /Users/rishi/cs288/atlas/experiment/eval_algotune.py
+├── 🔨 Created mount /Users/rishi/cs288/atlas
+└── 🔨 Created function run_eval_sweep.
+[local] sweep: problems=['pairwise_distance', 'fft_convolution', 
+'matrix_exponential'] run_name=atlas_algotune_pass40_v1 base=True atlas=True 
+adapter=atlas_algotune_pairwise_adv_v1
+[eval] LoRA adapter at /atlas_models/atlas_algotune_pairwise_adv_v1
+[vllm] launching: /usr/local/bin/python -m vllm.entrypoints.openai.api_server --model openai/gpt-oss-20b --port 8000 --gpu-memory-utilization 0.80 --max-model-len 32768 --reasoning-parser openai_gptoss --enable-lora --lora-modules atlas=/atlas_models/atlas_algotune_pairwise_adv_v1
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299] 
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299]        █     █     █▄   ▄█
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.19.1
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299]   █▄█▀ █     █     █     █  model   openai/gpt-oss-20b
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:299] 
+(APIServer pid=4) INFO 04-22 23:12:36 [utils.py:233] non-default args: {'lora_modules': [LoRAModulePath(name='atlas', path='/atlas_models/atlas_algotune_pairwise_adv_v1', base_model_name=None)], 'model': 'openai/gpt-oss-20b', 'max_model_len': 32768, 'reasoning_parser': 'openai_gptoss', 'gpu_memory_utilization': 0.8, 'enable_lora': True}
+(APIServer pid=4) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=4) INFO 04-22 23:13:00 [model.py:549] Resolved architecture: GptOssForCausalLM
+(APIServer pid=4) 
+[1AParse safetensors files:   0%|          | 0/3 [00:00<?, ?it/s]
+[1AParse safetensors files: 100%|██████████| 3/3 [00:00<00:00, 55.17it/s]
+(APIServer pid=4) INFO 04-22 23:13:00 [model.py:1678] Using max model len 32768
+(APIServer pid=4) INFO 04-22 23:13:00 [config.py:131] Overriding max cuda graph capture size to 1024 for performance.
+(APIServer pid=4) INFO 04-22 23:13:00 [vllm.py:790] Asynchronous scheduling is enabled.
+(EngineCore pid=22) INFO 04-22 23:13:18 [core.py:105] Initializing a V1 LLM engine (v0.19.1) with config: model='openai/gpt-oss-20b', speculative_config=None, tokenizer='openai/gpt-oss-20b', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=mxfp4, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='openai_gptoss', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=openai/gpt-oss-20b, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_images_per_batch': 0, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592, 608, 624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800, 816, 832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008, 1024], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 1024, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}
+(EngineCore pid=22) INFO 04-22 23:13:18 [parallel_state.py:1400] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://172.20.0.105:48501 backend=nccl
+(EngineCore pid=22) INFO 04-22 23:13:19 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+(EngineCore pid=22) INFO 04-22 23:13:19 [gpu_model_runner.py:4735] Starting to load model openai/gpt-oss-20b...
+(EngineCore pid=22) INFO 04-22 23:13:21 [cuda.py:334] Using TRITON_ATTN attention backend out of potential backends: ['TRITON_ATTN'].
+(EngineCore pid=22) INFO 04-22 23:13:21 [mxfp4.py:222] Using Marlin backend for mxfp4 lora
+(EngineCore pid=22) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(EngineCore pid=22) <frozen importlib._bootstrap_external>:1297: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(EngineCore pid=22) Loading safetensors checkpoint shards:   0% Completed | 0/3 [00:00<?, ?it/s]
+(EngineCore pid=22) Loading safetensors checkpoint shards:  33% Completed | 1/3 [00:05<00:10,  5.04s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards:  67% Completed | 2/3 [00:11<00:05,  6.00s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:17<00:00,  6.01s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:17<00:00,  5.91s/it]
+(EngineCore pid=22) 
+(EngineCore pid=22) INFO 04-22 23:13:40 [default_loader.py:384] Loading weights took 17.86 seconds
+(EngineCore pid=22) INFO 04-22 23:13:40 [mxfp4.py:836] Using MoEPrepareAndFinalizeNoDPEPModular
+(EngineCore pid=22) INFO 04-22 23:13:40 [utils.py:101] MoE model detected. Using fused MoE LoRA implementation.
+(EngineCore pid=22) INFO 04-22 23:13:40 [punica_selector.py:20] Using PunicaWrapperGPU.
+(EngineCore pid=22) INFO 04-22 23:13:41 [gpu_model_runner.py:4820] Model loading took 14.08 GiB memory and 20.695745 seconds
+(EngineCore pid=22) INFO 04-22 23:14:03 [backends.py:1051] Using cache directory: /root/.cache/vllm/torch_compile_cache/8ad0e42d69/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=22) INFO 04-22 23:14:03 [backends.py:1111] Dynamo bytecode transform time: 21.04 s
+(EngineCore pid=22) INFO 04-22 23:14:13 [backends.py:372] Cache the graph of compile range (1, 2048) for later use
+(EngineCore pid=22) INFO 04-22 23:14:30 [backends.py:390] Compiling a graph for compile range (1, 2048) takes 26.42 s
+(EngineCore pid=22) INFO 04-22 23:14:32 [decorators.py:655] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/9da98ee92e3c394487ce21f931dfb74bd0b28cdf79988336b58472a58cd9d650/rank_0_0/model
+(EngineCore pid=22) INFO 04-22 23:14:32 [monitor.py:48] torch.compile took 50.66 s in total
+(EngineCore pid=22) WARNING 04-22 23:14:33 [fused_moe.py:1090] Using default MoE config. Performance might be sub-optimal! Config file not found at /usr/local/lib/python3.12/site-packages/vllm/model_executor/layers/fused_moe/configs/E=32,N=6144,device_name=NVIDIA_A100_80GB_PCIe.json
+(EngineCore pid=22) INFO 04-22 23:14:35 [monitor.py:76] Initial profiling/warmup run took 2.57 s
+(EngineCore pid=22) INFO 04-22 23:14:48 [kv_cache_utils.py:829] Overriding num_gpu_blocks=0 with num_gpu_blocks_override=1024
+(EngineCore pid=22) INFO 04-22 23:14:48 [gpu_model_runner.py:5876] Profiling CUDA graph memory: PIECEWISE=166 (largest=1024), FULL=70 (largest=256)
+(EngineCore pid=22) WARNING 04-22 23:14:49 [utils.py:267] Using default LoRA kernel configs
+(EngineCore pid=22) INFO 04-22 23:14:56 [gpu_model_runner.py:5955] Estimated CUDA graph memory: 1.70 GiB total
+(EngineCore pid=22) INFO 04-22 23:14:57 [gpu_worker.py:436] Available KV cache memory: 47.98 GiB
+(EngineCore pid=22) INFO 04-22 23:14:57 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8214 to maintain the same effective KV cache size.
+(EngineCore pid=22) INFO 04-22 23:14:57 [kv_cache_utils.py:1319] GPU KV cache size: 1,048,128 tokens
+(EngineCore pid=22) INFO 04-22 23:14:57 [kv_cache_utils.py:1324] Maximum concurrency for 32,768 tokens per request: 59.96x
+(EngineCore pid=22) 
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/166 [00:00<?, ?it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   1%|          | 1/166 [00:00<00:58,  2.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   1%|          | 2/166 [00:00<00:38,  4.29it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   2%|▏         | 3/166 [00:00<00:34,  4.73it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   2%|▏         | 4/166 [00:00<00:30,  5.27it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   3%|▎         | 5/166 [00:01<00:30,  5.25it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   4%|▎         | 6/166 [00:01<00:28,  5.66it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   4%|▍         | 7/166 [00:01<00:28,  5.57it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   5%|▍         | 8/166 [00:01<00:27,  5.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   5%|▌         | 9/166 [00:01<00:28,  5.53it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   6%|▌         | 10/166 [00:01<00:27,  5.72it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   7%|▋         | 11/166 [00:02<00:28,  5.47it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   7%|▋         | 12/166 [00:02<00:26,  5.73it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   8%|▊         | 13/166 [00:02<00:27,  5.52it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   8%|▊         | 14/166 [00:02<00:26,  5.68it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   9%|▉         | 15/166 [00:02<00:27,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  10%|▉         | 16/166 [00:02<00:26,  5.64it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  10%|█         | 17/166 [00:03<00:27,  5.44it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  11%|█         | 18/166 [00:03<00:26,  5.62it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  11%|█▏        | 19/166 [00:03<00:27,  5.42it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  12%|█▏        | 20/166 [00:03<00:25,  5.64it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  13%|█▎        | 21/166 [00:03<00:26,  5.45it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  13%|█▎        | 22/166 [00:04<00:25,  5.60it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  14%|█▍        | 23/166 [00:04<00:26,  5.36it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  14%|█▍        | 24/166 [00:04<00:25,  5.59it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  15%|█▌        | 25/166 [00:04<00:26,  5.40it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  16%|█▌        | 26/166 [00:04<00:25,  5.58it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  16%|█▋        | 27/166 [00:04<00:25,  5.39it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  17%|█▋        | 28/166 [00:05<00:24,  5.60it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  17%|█▋        | 29/166 [00:05<00:25,  5.43it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  18%|█▊        | 30/166 [00:05<00:24,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  19%|█▊        | 31/166 [00:05<00:24,  5.45it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  19%|█▉        | 32/166 [00:05<00:23,  5.67it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  20%|█▉        | 33/166 [00:06<00:24,  5.43it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  20%|██        | 34/166 [00:06<00:23,  5.66it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  21%|██        | 35/166 [00:06<00:23,  5.47it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  22%|██▏       | 36/166 [00:06<00:22,  5.66it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  22%|██▏       | 37/166 [00:06<00:23,  5.45it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  23%|██▎       | 38/166 [00:06<00:22,  5.67it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  23%|██▎       | 39/166 [00:07<00:23,  5.45it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  24%|██▍       | 40/166 [00:07<00:22,  5.64it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  25%|██▍       | 41/166 [00:07<00:22,  5.44it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  25%|██▌       | 42/166 [00:07<00:21,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  26%|██▌       | 43/166 [00:07<00:22,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  27%|██▋       | 44/166 [00:08<00:21,  5.62it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  27%|██▋       | 45/166 [00:08<00:22,  5.40it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  28%|██▊       | 46/166 [00:08<00:21,  5.60it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  28%|██▊       | 47/166 [00:08<00:21,  5.44it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  29%|██▉       | 48/166 [00:08<00:20,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  30%|██▉       | 49/166 [00:08<00:21,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  30%|███       | 50/166 [00:09<00:20,  5.69it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  31%|███       | 51/166 [00:09<00:20,  5.48it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  31%|███▏      | 52/166 [00:09<00:19,  5.71it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  32%|███▏      | 53/166 [00:09<00:20,  5.54it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  33%|███▎      | 54/166 [00:09<00:19,  5.75it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  33%|███▎      | 55/166 [00:10<00:20,  5.47it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  34%|███▎      | 56/166 [00:10<00:19,  5.67it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  34%|███▍      | 57/166 [00:10<00:19,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  35%|███▍      | 58/166 [00:10<00:18,  5.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  36%|███▌      | 59/166 [00:10<00:19,  5.59it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  36%|███▌      | 60/166 [00:10<00:18,  5.87it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 61/166 [00:11<00:18,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 62/166 [00:11<00:17,  5.87it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  38%|███▊      | 63/166 [00:11<00:18,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  39%|███▊      | 64/166 [00:11<00:17,  5.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  39%|███▉      | 65/166 [00:11<00:17,  5.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  40%|███▉      | 66/166 [00:11<00:17,  5.87it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  40%|████      | 67/166 [00:12<00:17,  5.61it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  41%|████      | 68/166 [00:12<00:16,  5.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  42%|████▏     | 69/166 [00:12<00:17,  5.52it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  42%|████▏     | 70/166 [00:12<00:16,  5.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 71/166 [00:12<00:17,  5.53it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 72/166 [00:12<00:16,  5.69it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  44%|████▍     | 73/166 [00:13<00:17,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  45%|████▍     | 74/166 [00:13<00:16,  5.67it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  45%|████▌     | 75/166 [00:13<00:16,  5.50it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  46%|████▌     | 76/166 [00:13<00:15,  5.70it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  46%|████▋     | 77/166 [00:13<00:16,  5.49it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  47%|████▋     | 78/166 [00:14<00:15,  5.75it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  48%|████▊     | 79/166 [00:14<00:15,  5.56it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  48%|████▊     | 80/166 [00:14<00:14,  5.74it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  49%|████▉     | 81/166 [00:14<00:15,  5.56it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  49%|████▉     | 82/166 [00:14<00:14,  5.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  50%|█████     | 83/166 [00:14<00:14,  5.61it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████     | 84/166 [00:15<00:14,  5.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████     | 85/166 [00:15<00:14,  5.60it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  52%|█████▏    | 86/166 [00:15<00:13,  5.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  52%|█████▏    | 87/166 [00:15<00:14,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  53%|█████▎    | 88/166 [00:15<00:13,  5.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  54%|█████▎    | 89/166 [00:16<00:13,  5.58it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  54%|█████▍    | 90/166 [00:16<00:13,  5.73it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  55%|█████▍    | 91/166 [00:16<00:13,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  55%|█████▌    | 92/166 [00:16<00:12,  5.73it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  56%|█████▌    | 93/166 [00:16<00:13,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  57%|█████▋    | 94/166 [00:16<00:12,  5.75it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  57%|█████▋    | 95/166 [00:17<00:12,  5.55it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  58%|█████▊    | 96/166 [00:17<00:12,  5.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  58%|█████▊    | 97/166 [00:17<00:12,  5.51it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  59%|█████▉    | 98/166 [00:17<00:11,  5.69it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  60%|█████▉    | 99/166 [00:19<00:48,  1.37it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  60%|██████    | 100/166 [00:19<00:36,  1.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  61%|██████    | 101/166 [00:19<00:29,  2.23it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  61%|██████▏   | 102/166 [00:20<00:23,  2.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  62%|██████▏   | 103/166 [00:20<00:19,  3.23it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  63%|██████▎   | 104/166 [00:20<00:16,  3.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  63%|██████▎   | 105/166 [00:20<00:14,  4.15it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  64%|██████▍   | 106/166 [00:20<00:12,  4.67it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  64%|██████▍   | 107/166 [00:21<00:12,  4.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  65%|██████▌   | 108/166 [00:21<00:11,  5.24it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  66%|██████▌   | 109/166 [00:21<00:10,  5.19it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  66%|██████▋   | 110/166 [00:21<00:10,  5.54it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  67%|██████▋   | 111/166 [00:21<00:10,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  67%|██████▋   | 112/166 [00:21<00:09,  5.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  68%|██████▊   | 113/166 [00:22<00:09,  5.64it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▊   | 114/166 [00:22<00:08,  5.90it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▉   | 115/166 [00:22<00:08,  5.70it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  70%|██████▉   | 116/166 [00:22<00:08,  5.94it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  70%|███████   | 117/166 [00:22<00:08,  5.70it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  71%|███████   | 118/166 [00:22<00:08,  5.92it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  72%|███████▏  | 119/166 [00:23<00:08,  5.43it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  72%|███████▏  | 120/166 [00:23<00:08,  5.57it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  73%|███████▎  | 121/166 [00:23<00:08,  5.31it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  73%|███████▎  | 122/166 [00:23<00:07,  5.52it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  74%|███████▍  | 123/166 [00:23<00:08,  5.28it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  75%|███████▍  | 124/166 [00:24<00:07,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  75%|███████▌  | 125/166 [00:24<00:07,  5.26it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  76%|███████▌  | 126/166 [00:24<00:07,  5.46it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  77%|███████▋  | 127/166 [00:24<00:07,  5.26it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  77%|███████▋  | 128/166 [00:24<00:06,  5.43it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  78%|███████▊  | 129/166 [00:26<00:22,  1.62it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  78%|███████▊  | 130/166 [00:26<00:17,  2.07it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  79%|███████▉  | 131/166 [00:27<00:22,  1.54it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  80%|███████▉  | 132/166 [00:27<00:17,  1.99it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  80%|████████  | 133/166 [00:28<00:22,  1.50it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  81%|████████  | 134/166 [00:28<00:16,  1.93it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  81%|████████▏ | 135/166 [00:29<00:13,  2.37it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  82%|████████▏ | 136/166 [00:29<00:10,  2.89it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  83%|████████▎ | 137/166 [00:30<00:19,  1.48it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  83%|████████▎ | 138/166 [00:30<00:14,  1.91it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▎ | 139/166 [00:31<00:11,  2.34it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▍ | 140/166 [00:31<00:09,  2.87it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  85%|████████▍ | 141/166 [00:31<00:07,  3.30it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  86%|████████▌ | 142/166 [00:31<00:06,  3.86it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  86%|████████▌ | 143/166 [00:31<00:05,  4.19it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  87%|████████▋ | 144/166 [00:32<00:04,  4.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  87%|████████▋ | 145/166 [00:33<00:12,  1.74it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  88%|████████▊ | 146/166 [00:33<00:08,  2.23it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  89%|████████▊ | 147/166 [00:33<00:07,  2.69it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  89%|████████▉ | 148/166 [00:33<00:05,  3.28it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  90%|████████▉ | 149/166 [00:34<00:04,  3.69it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  90%|█████████ | 150/166 [00:34<00:03,  4.26it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  91%|█████████ | 151/166 [00:34<00:03,  4.53it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  92%|█████████▏| 152/166 [00:34<00:02,  4.98it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  92%|█████████▏| 153/166 [00:35<00:07,  1.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  93%|█████████▎| 154/166 [00:36<00:05,  2.34it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  93%|█████████▎| 155/166 [00:36<00:03,  2.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  94%|█████████▍| 156/166 [00:36<00:02,  3.42it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  95%|█████████▍| 157/166 [00:36<00:02,  3.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  95%|█████████▌| 158/166 [00:36<00:01,  4.43it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  96%|█████████▌| 159/166 [00:36<00:01,  4.70it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  96%|█████████▋| 160/166 [00:37<00:01,  5.16it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  97%|█████████▋| 161/166 [00:37<00:00,  5.25it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  98%|█████████▊| 162/166 [00:37<00:00,  5.64it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  98%|█████████▊| 163/166 [00:37<00:00,  5.60it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  99%|█████████▉| 164/166 [00:37<00:00,  5.93it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  99%|█████████▉| 165/166 [00:42<00:01,  1.52s/it]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 166/166 [00:42<00:00,  1.11s/it]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 166/166 [00:42<00:00,  3.90it/s]
+(EngineCore pid=22) 
+[1ACapturing CUDA graphs (decode, FULL):   0%|          | 0/70 [00:00<?, ?it/s]
+[1ACapturing CUDA graphs (decode, FULL):   1%|▏         | 1/70 [00:00<00:21,  3.19it/s]
+[1ACapturing CUDA graphs (decode, FULL):   3%|▎         | 2/70 [00:00<00:13,  4.87it/s]
+[1ACapturing CUDA graphs (decode, FULL):   4%|▍         | 3/70 [00:01<00:38,  1.72it/s]
+[1ACapturing CUDA graphs (decode, FULL):   6%|▌         | 4/70 [00:01<00:26,  2.47it/s]
+[1ACapturing CUDA graphs (decode, FULL):   7%|▋         | 5/70 [00:01<00:20,  3.11it/s]
+[1ACapturing CUDA graphs (decode, FULL):   9%|▊         | 6/70 [00:01<00:16,  3.85it/s]
+[1ACapturing CUDA graphs (decode, FULL):  10%|█         | 7/70 [00:02<00:14,  4.29it/s]
+[1ACapturing CUDA graphs (decode, FULL):  11%|█▏        | 8/70 [00:02<00:12,  4.95it/s]
+[1ACapturing CUDA graphs (decode, FULL):  13%|█▎        | 9/70 [00:02<00:11,  5.14it/s]
+[1ACapturing CUDA graphs (decode, FULL):  14%|█▍        | 10/70 [00:02<00:10,  5.67it/s]
+[1ACapturing CUDA graphs (decode, FULL):  16%|█▌        | 11/70 [00:02<00:10,  5.68it/s]
+[1ACapturing CUDA graphs (decode, FULL):  17%|█▋        | 12/70 [00:02<00:09,  6.17it/s]
+[1ACapturing CUDA graphs (decode, FULL):  19%|█▊        | 13/70 [00:03<00:09,  6.09it/s]
+[1ACapturing CUDA graphs (decode, FULL):  20%|██        | 14/70 [00:03<00:08,  6.43it/s]
+[1ACapturing CUDA graphs (decode, FULL):  21%|██▏       | 15/70 [00:03<00:08,  6.16it/s]
+[1ACapturing CUDA graphs (decode, FULL):  23%|██▎       | 16/70 [00:03<00:08,  6.51it/s]
+[1ACapturing CUDA graphs (decode, FULL):  24%|██▍       | 17/70 [00:03<00:08,  6.26it/s]
+[1ACapturing CUDA graphs (decode, FULL):  26%|██▌       | 18/70 [00:03<00:07,  6.60it/s]
+[1ACapturing CUDA graphs (decode, FULL):  27%|██▋       | 19/70 [00:03<00:08,  6.32it/s]
+[1ACapturing CUDA graphs (decode, FULL):  29%|██▊       | 20/70 [00:04<00:07,  6.63it/s]
+[1ACapturing CUDA graphs (decode, FULL):  30%|███       | 21/70 [00:04<00:07,  6.36it/s]
+[1ACapturing CUDA graphs (decode, FULL):  31%|███▏      | 22/70 [00:04<00:07,  6.62it/s]
+[1ACapturing CUDA graphs (decode, FULL):  33%|███▎      | 23/70 [00:04<00:07,  6.12it/s]
+[1ACapturing CUDA graphs (decode, FULL):  34%|███▍      | 24/70 [00:04<00:07,  6.43it/s]
+[1ACapturing CUDA graphs (decode, FULL):  36%|███▌      | 25/70 [00:04<00:07,  6.20it/s]
+[1ACapturing CUDA graphs (decode, FULL):  37%|███▋      | 26/70 [00:05<00:06,  6.49it/s]
+[1ACapturing CUDA graphs (decode, FULL):  39%|███▊      | 27/70 [00:05<00:06,  6.23it/s]
+[1ACapturing CUDA graphs (decode, FULL):  40%|████      | 28/70 [00:05<00:06,  6.52it/s]
+[1ACapturing CUDA graphs (decode, FULL):  41%|████▏     | 29/70 [00:05<00:06,  6.24it/s]
+[1ACapturing CUDA graphs (decode, FULL):  43%|████▎     | 30/70 [00:05<00:06,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  44%|████▍     | 31/70 [00:05<00:06,  6.24it/s]
+[1ACapturing CUDA graphs (decode, FULL):  46%|████▌     | 32/70 [00:05<00:05,  6.57it/s]
+[1ACapturing CUDA graphs (decode, FULL):  47%|████▋     | 33/70 [00:06<00:05,  6.29it/s]
+[1ACapturing CUDA graphs (decode, FULL):  49%|████▊     | 34/70 [00:06<00:05,  6.56it/s]
+[1ACapturing CUDA graphs (decode, FULL):  50%|█████     | 35/70 [00:06<00:05,  6.24it/s]
+[1ACapturing CUDA graphs (decode, FULL):  51%|█████▏    | 36/70 [00:06<00:05,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  53%|█████▎    | 37/70 [00:06<00:05,  6.15it/s]
+[1ACapturing CUDA graphs (decode, FULL):  54%|█████▍    | 38/70 [00:06<00:04,  6.51it/s]
+[1ACapturing CUDA graphs (decode, FULL):  56%|█████▌    | 39/70 [00:07<00:04,  6.24it/s]
+[1ACapturing CUDA graphs (decode, FULL):  57%|█████▋    | 40/70 [00:07<00:04,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  59%|█████▊    | 41/70 [00:07<00:04,  6.21it/s]
+[1ACapturing CUDA graphs (decode, FULL):  60%|██████    | 42/70 [00:07<00:04,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  61%|██████▏   | 43/70 [00:07<00:04,  6.30it/s]
+[1ACapturing CUDA graphs (decode, FULL):  63%|██████▎   | 44/70 [00:07<00:03,  6.68it/s]
+[1ACapturing CUDA graphs (decode, FULL):  64%|██████▍   | 45/70 [00:08<00:03,  6.41it/s]
+[1ACapturing CUDA graphs (decode, FULL):  66%|██████▌   | 46/70 [00:08<00:03,  6.75it/s]
+[1ACapturing CUDA graphs (decode, FULL):  67%|██████▋   | 47/70 [00:08<00:03,  6.46it/s]
+[1ACapturing CUDA graphs (decode, FULL):  69%|██████▊   | 48/70 [00:08<00:03,  6.60it/s]
+[1ACapturing CUDA graphs (decode, FULL):  70%|███████   | 49/70 [00:08<00:03,  6.32it/s]
+[1ACapturing CUDA graphs (decode, FULL):  71%|███████▏  | 50/70 [00:08<00:03,  6.62it/s]
+[1ACapturing CUDA graphs (decode, FULL):  73%|███████▎  | 51/70 [00:08<00:03,  6.30it/s]
+[1ACapturing CUDA graphs (decode, FULL):  74%|███████▍  | 52/70 [00:09<00:02,  6.70it/s]
+[1ACapturing CUDA graphs (decode, FULL):  76%|███████▌  | 53/70 [00:09<00:02,  6.38it/s]
+[1ACapturing CUDA graphs (decode, FULL):  77%|███████▋  | 54/70 [00:09<00:02,  6.69it/s]
+[1ACapturing CUDA graphs (decode, FULL):  79%|███████▊  | 55/70 [00:09<00:02,  6.36it/s]
+[1ACapturing CUDA graphs (decode, FULL):  80%|████████  | 56/70 [00:09<00:02,  6.68it/s]
+[1ACapturing CUDA graphs (decode, FULL):  81%|████████▏ | 57/70 [00:09<00:02,  6.35it/s]
+[1ACapturing CUDA graphs (decode, FULL):  83%|████████▎ | 58/70 [00:09<00:01,  6.63it/s]
+[1ACapturing CUDA graphs (decode, FULL):  84%|████████▍ | 59/70 [00:10<00:01,  6.43it/s]
+[1ACapturing CUDA graphs (decode, FULL):  86%|████████▌ | 60/70 [00:10<00:01,  6.69it/s]
+[1ACapturing CUDA graphs (decode, FULL):  87%|████████▋ | 61/70 [00:12<00:06,  1.35it/s]
+[1ACapturing CUDA graphs (decode, FULL):  89%|████████▊ | 62/70 [00:12<00:04,  1.79it/s]
+[1ACapturing CUDA graphs (decode, FULL):  90%|█████████ | 63/70 [00:13<00:05,  1.29it/s]
+[1ACapturing CUDA graphs (decode, FULL):  91%|█████████▏| 64/70 [00:13<00:03,  1.71it/s]
+[1ACapturing CUDA graphs (decode, FULL):  93%|█████████▎| 65/70 [00:14<00:02,  2.17it/s]
+[1ACapturing CUDA graphs (decode, FULL):  94%|█████████▍| 66/70 [00:14<00:01,  2.76it/s]
+[1ACapturing CUDA graphs (decode, FULL):  96%|█████████▌| 67/70 [00:14<00:00,  3.27it/s]
+[1ACapturing CUDA graphs (decode, FULL):  97%|█████████▋| 68/70 [00:14<00:00,  3.93it/s]
+[1ACapturing CUDA graphs (decode, FULL):  99%|█████████▊| 69/70 [00:16<00:00,  1.49it/s]
+[1ACapturing CUDA graphs (decode, FULL): 100%|██████████| 70/70 [00:16<00:00,  1.95it/s]Capturing CUDA graphs (decode, FULL): 100%|██████████| 70/70 [00:16<00:00,  4.28it/s]
+(EngineCore pid=22) INFO 04-22 23:15:57 [gpu_model_runner.py:6046] Graph capturing finished in 60 secs, took 1.86 GiB
+(EngineCore pid=22) INFO 04-22 23:15:57 [gpu_worker.py:597] CUDA graph pool memory: 1.86 GiB (actual), 1.7 GiB (estimated), difference: 0.16 GiB (8.6%).
+(EngineCore pid=22) INFO 04-22 23:15:57 [core.py:283] init engine (profile, create kv cache, warmup model) took 136.10 seconds
+(EngineCore pid=22) INFO 04-22 23:16:01 [vllm.py:790] Asynchronous scheduling is enabled.
+(APIServer pid=4) INFO 04-22 23:16:01 [api_server.py:592] Supported tasks: ['generate']
+(APIServer pid=4) INFO 04-22 23:16:03 [serving.py:201] Loaded new LoRA adapter: name 'atlas', path '/atlas_models/atlas_algotune_pairwise_adv_v1'
+(APIServer pid=4) WARNING 04-22 23:16:03 [serving.py:233] For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use.
+(APIServer pid=4) INFO 04-22 23:16:06 [hf.py:314] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=4) INFO 04-22 23:16:06 [api_server.py:596] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:37] Available routes are:
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /docs, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /tokenize, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /detokenize, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /load, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /version, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /health, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /metrics, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/models, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /ping, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /ping, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /invocations, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/responses, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/completions, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/messages, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=4) INFO 04-22 23:16:06 [launcher.py:46] Route: /v1/completions/render, Methods: POST
+(APIServer pid=4) INFO:     Started server process [4]
+(APIServer pid=4) INFO:     Waiting for application startup.
+(APIServer pid=4) INFO:     Application startup complete.
+(APIServer pid=4) INFO:     127.0.0.1:60680 - "GET /v1/models HTTP/1.1" 200 OK
+[vllm] ready at http://localhost:8000/v1
+
+[eval] === leg: problem=pairwise_distance model=base (served='openai/gpt-oss-20b') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) INFO 04-22 23:16:16 [loggers.py:259] Engine 000: Avg prompt throughput: 53.6 tokens/s, Avg generation throughput: 297.7 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.5%, Prefix cache hit rate: 96.3%
+(APIServer pid=4) INFO:     127.0.0.1:35730 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:63463 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50354 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:30610 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33743 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56778 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23201 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56762 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:41735 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36524 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23310 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:22487 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:31479 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23044 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:61128 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:20417 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37036 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:19778 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:40344 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:19850 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46509 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:44357 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45256 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:19062 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42830 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:44259 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:62013 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:16:26 [loggers.py:259] Engine 000: Avg prompt throughput: 3.2 tokens/s, Avg generation throughput: 1197.1 tokens/s, Running: 13 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 96.9%
+(APIServer pid=4) INFO:     127.0.0.1:51564 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16750 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:21210 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36005 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50354 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=21.4s
+(APIServer pid=4) INFO:     127.0.0.1:35730 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:63463 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56778 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56762 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:30610 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23201 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:58184 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33743 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=23.1s
+      [batch] pass 2/3 effort=medium rolling 1 completions
+(APIServer pid=4) INFO:     127.0.0.1:51564 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass2] 1/1 done effort=medium elapsed=2.6s
+      [gen] 40 completions in 25.7s (1.56 seq/s)
+    [openai/gpt-oss-20b/pairwise_distance] [1/40] correct=True speedup=15.36x combined=0.793 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [2/40] correct=True speedup=8.28x combined=0.728 eval=1.5s
+(APIServer pid=4) INFO 04-22 23:16:36 [loggers.py:259] Engine 000: Avg prompt throughput: 0.4 tokens/s, Avg generation throughput: 367.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.0%
+    [openai/gpt-oss-20b/pairwise_distance] [3/40] correct=True speedup=14.41x combined=0.788 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [4/40] correct=True speedup=15.44x combined=0.796 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [5/40] correct=True speedup=13.82x combined=0.783 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [6/40] correct=True speedup=26.20x combined=0.854 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [7/40] correct=True speedup=16.21x combined=0.801 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [8/40] correct=True speedup=17.06x combined=0.806 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [9/40] correct=True speedup=26.18x combined=0.854 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:16:46 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.0%
+    [openai/gpt-oss-20b/pairwise_distance] [10/40] correct=True speedup=15.69x combined=0.798 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [11/40] correct=True speedup=25.59x combined=0.852 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [12/40] correct=True speedup=9.15x combined=0.739 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [13/40] correct=True speedup=15.17x combined=0.793 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [14/40] correct=True speedup=26.07x combined=0.854 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [15/40] correct=True speedup=16.04x combined=0.800 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [16/40] correct=True speedup=17.04x combined=0.805 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [17/40] correct=True speedup=27.92x combined=0.861 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [18/40] correct=True speedup=25.63x combined=0.852 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [19/40] correct=True speedup=15.05x combined=0.793 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [20/40] correct=True speedup=15.23x combined=0.794 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [21/40] correct=True speedup=15.60x combined=0.798 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [22/40] correct=True speedup=15.47x combined=0.797 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [23/40] correct=True speedup=16.14x combined=0.799 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [24/40] correct=True speedup=15.47x combined=0.792 eval=1.5s
+    [openai/gpt-oss-20b/pairwise_distance] [25/40] correct=True speedup=25.82x combined=0.852 eval=1.5s
+    [openai/gpt-oss-20b/pairwise_distance] [26/40] correct=True speedup=14.81x combined=0.791 eval=1.5s
+    [openai/gpt-oss-20b/pairwise_distance] [27/40] correct=True speedup=15.01x combined=0.792 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [28/40] correct=True speedup=15.55x combined=0.796 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [29/40] correct=True speedup=24.43x combined=0.846 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [30/40] correct=True speedup=14.76x combined=0.791 eval=1.5s
+    [openai/gpt-oss-20b/pairwise_distance] [31/40] correct=True speedup=14.60x combined=0.790 eval=1.5s
+    [openai/gpt-oss-20b/pairwise_distance] [32/40] correct=True speedup=16.90x combined=0.805 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [33/40] correct=True speedup=16.36x combined=0.800 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [34/40] correct=True speedup=24.03x combined=0.844 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [35/40] correct=True speedup=26.03x combined=0.854 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [36/40] correct=True speedup=15.05x combined=0.793 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [37/40] correct=True speedup=14.91x combined=0.792 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [38/40] correct=True speedup=14.75x combined=0.791 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [39/40] correct=True speedup=14.15x combined=0.786 eval=1.4s
+    [openai/gpt-oss-20b/pairwise_distance] [40/40] correct=True speedup=13.65x combined=0.783 eval=1.4s
+
+[eval] === leg: problem=pairwise_distance model=atlas (served='atlas') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) WARNING 04-22 23:17:50 [input_processor.py:149] vLLM has deprecated support for supporting different tokenizers for different LoRAs. By default, vLLM uses base model's tokenizer. If you are using a LoRA with its own tokenizer, consider specifying `--tokenizer [lora_path]` to use the LoRA tokenizer.
+(APIServer pid=4) INFO:     127.0.0.1:25518 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50675 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47097 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:41258 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:34083 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45852 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46743 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:17:56 [loggers.py:259] Engine 000: Avg prompt throughput: 80.8 tokens/s, Avg generation throughput: 1439.2 tokens/s, Running: 31 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.8%, Prefix cache hit rate: 96.9%
+(APIServer pid=4) INFO:     127.0.0.1:47589 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:34438 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:43804 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:51378 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:27684 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35798 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35900 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45070 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37075 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:32265 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:32452 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:43477 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36307 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:48349 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:55177 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:19584 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:17198 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36553 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:18282 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:28875 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:21402 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36566 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:34353 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38831 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:21685 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=9.2s
+(APIServer pid=4) INFO:     127.0.0.1:41258 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46743 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:34083 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45852 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47097 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47589 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:25518 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50675 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=12.7s
+      [gen] 40 completions in 12.7s (3.14 seq/s)
+    [atlas/pairwise_distance] [1/40] correct=True speedup=15.90x combined=0.800 eval=1.4s
+    [atlas/pairwise_distance] [2/40] correct=True speedup=14.37x combined=0.788 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:18:06 [loggers.py:259] Engine 000: Avg prompt throughput: 0.8 tokens/s, Avg generation throughput: 714.8 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 96.9%
+    [atlas/pairwise_distance] [3/40] correct=True speedup=13.91x combined=0.784 eval=1.4s
+    [atlas/pairwise_distance] [4/40] correct=True speedup=14.73x combined=0.789 eval=1.4s
+    [atlas/pairwise_distance] [5/40] correct=True speedup=15.22x combined=0.793 eval=1.4s
+    [atlas/pairwise_distance] [6/40] correct=True speedup=24.29x combined=0.846 eval=1.4s
+    [atlas/pairwise_distance] [7/40] correct=True speedup=26.45x combined=0.855 eval=1.4s
+    [atlas/pairwise_distance] [8/40] correct=True speedup=14.98x combined=0.793 eval=1.4s
+    [atlas/pairwise_distance] [9/40] correct=True speedup=23.27x combined=0.841 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:18:16 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 96.9%
+    [atlas/pairwise_distance] [10/40] correct=True speedup=14.17x combined=0.786 eval=1.4s
+    [atlas/pairwise_distance] [11/40] correct=True speedup=17.84x combined=0.810 eval=1.4s
+    [atlas/pairwise_distance] [12/40] correct=True speedup=26.97x combined=0.857 eval=1.3s
+    [atlas/pairwise_distance] [13/40] correct=True speedup=14.54x combined=0.790 eval=1.5s
+    [atlas/pairwise_distance] [14/40] correct=True speedup=15.01x combined=0.793 eval=1.4s
+    [atlas/pairwise_distance] [15/40] correct=True speedup=15.19x combined=0.790 eval=1.5s
+    [atlas/pairwise_distance] [16/40] correct=True speedup=16.29x combined=0.801 eval=1.4s
+    [atlas/pairwise_distance] [17/40] correct=True speedup=13.19x combined=0.779 eval=1.4s
+    [atlas/pairwise_distance] [18/40] correct=True speedup=16.63x combined=0.802 eval=1.4s
+    [atlas/pairwise_distance] [19/40] correct=True speedup=24.97x combined=0.849 eval=1.4s
+    [atlas/pairwise_distance] [20/40] correct=True speedup=26.12x combined=0.854 eval=1.4s
+    [atlas/pairwise_distance] [21/40] correct=True speedup=23.77x combined=0.839 eval=1.6s
+    [atlas/pairwise_distance] [22/40] correct=True speedup=14.04x combined=0.785 eval=1.4s
+    [atlas/pairwise_distance] [23/40] correct=True speedup=14.43x combined=0.788 eval=1.5s
+    [atlas/pairwise_distance] [24/40] correct=True speedup=15.71x combined=0.798 eval=1.4s
+    [atlas/pairwise_distance] [25/40] correct=True speedup=16.77x combined=0.804 eval=1.3s
+    [atlas/pairwise_distance] [26/40] correct=True speedup=14.77x combined=0.791 eval=1.3s
+    [atlas/pairwise_distance] [27/40] correct=True speedup=16.63x combined=0.801 eval=1.4s
+    [atlas/pairwise_distance] [28/40] correct=True speedup=15.54x combined=0.796 eval=1.3s
+    [atlas/pairwise_distance] [29/40] correct=True speedup=17.30x combined=0.808 eval=1.4s
+    [atlas/pairwise_distance] [30/40] correct=True speedup=17.40x combined=0.806 eval=1.3s
+    [atlas/pairwise_distance] [31/40] correct=True speedup=21.51x combined=0.833 eval=1.3s
+    [atlas/pairwise_distance] [32/40] correct=True speedup=15.29x combined=0.795 eval=1.4s
+    [atlas/pairwise_distance] [33/40] correct=True speedup=19.45x combined=0.816 eval=1.5s
+    [atlas/pairwise_distance] [34/40] correct=True speedup=15.96x combined=0.799 eval=1.5s
+    [atlas/pairwise_distance] [35/40] correct=True speedup=14.89x combined=0.792 eval=1.5s
+    [atlas/pairwise_distance] [36/40] correct=True speedup=16.51x combined=0.803 eval=1.5s
+    [atlas/pairwise_distance] [37/40] correct=True speedup=26.25x combined=0.855 eval=1.3s
+    [atlas/pairwise_distance] [38/40] correct=True speedup=15.67x combined=0.797 eval=1.5s
+    [atlas/pairwise_distance] [39/40] correct=True speedup=14.24x combined=0.784 eval=1.4s
+    [atlas/pairwise_distance] [40/40] correct=True speedup=16.39x combined=0.801 eval=1.3s
+
+[eval] === leg: problem=fft_convolution model=base (served='openai/gpt-oss-20b') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) INFO:     127.0.0.1:26117 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35059 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:19:36 [loggers.py:259] Engine 000: Avg prompt throughput: 45.2 tokens/s, Avg generation throughput: 1641.0 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.0%, Prefix cache hit rate: 97.3%
+(APIServer pid=4) INFO:     127.0.0.1:40634 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49434 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49256 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45768 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36226 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36799 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23205 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:57140 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:48035 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33376 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:59871 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46106 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:40365 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:23193 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:39031 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:24880 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:18529 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:65503 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:20683 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:48600 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:40570 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:31012 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:63841 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:32910 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36226 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:60855 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:17462 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47595 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45768 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:63383 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=14.0s
+(APIServer pid=4) INFO:     127.0.0.1:40634 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:61835 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35059 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49434 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:26117 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49256 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:19:46 [loggers.py:259] Engine 000: Avg prompt throughput: 1.2 tokens/s, Avg generation throughput: 1501.1 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.2%, Prefix cache hit rate: 97.4%
+(APIServer pid=4) INFO:     127.0.0.1:36799 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:51810 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=18.6s
+      [gen] 40 completions in 18.6s (2.15 seq/s)
+    [openai/gpt-oss-20b/fft_convolution] [1/40] correct=False speedup=0.00x combined=0.150 eval=0.7s
+    [openai/gpt-oss-20b/fft_convolution] [2/40] correct=True speedup=14.31x combined=0.762 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [3/40] correct=True speedup=15.12x combined=0.767 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [4/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [openai/gpt-oss-20b/fft_convolution] [5/40] correct=True speedup=6.80x combined=0.605 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [6/40] correct=True speedup=8.15x combined=0.704 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:19:56 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 49.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.4%
+    [openai/gpt-oss-20b/fft_convolution] [7/40] correct=True speedup=20.56x combined=0.766 eval=7.1s
+    [openai/gpt-oss-20b/fft_convolution] [8/40] correct=True speedup=14.93x combined=0.763 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [9/40] correct=True speedup=15.15x combined=0.771 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:20:06 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.4%
+    [openai/gpt-oss-20b/fft_convolution] [10/40] correct=True speedup=13.96x combined=0.755 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [11/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [openai/gpt-oss-20b/fft_convolution] [12/40] correct=True speedup=15.05x combined=0.767 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [13/40] correct=True speedup=13.23x combined=0.744 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [14/40] correct=True speedup=15.50x combined=0.768 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [15/40] correct=True speedup=6.69x combined=0.605 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [16/40] correct=True speedup=14.97x combined=0.764 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [17/40] correct=True speedup=14.70x combined=0.761 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [18/40] correct=True speedup=13.31x combined=0.745 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [19/40] correct=True speedup=14.81x combined=0.762 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [20/40] correct=True speedup=14.99x combined=0.769 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [21/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [openai/gpt-oss-20b/fft_convolution] [22/40] correct=True speedup=14.88x combined=0.763 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [23/40] correct=True speedup=14.49x combined=0.762 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [24/40] correct=True speedup=14.94x combined=0.762 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [25/40] correct=True speedup=15.30x combined=0.772 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [26/40] correct=True speedup=14.92x combined=0.768 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [27/40] correct=True speedup=6.69x combined=0.607 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [28/40] correct=True speedup=14.66x combined=0.763 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [29/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [openai/gpt-oss-20b/fft_convolution] [30/40] correct=True speedup=14.47x combined=0.760 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [31/40] correct=True speedup=6.75x combined=0.607 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [32/40] correct=True speedup=14.63x combined=0.760 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [33/40] correct=True speedup=14.59x combined=0.761 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [34/40] correct=True speedup=13.18x combined=0.747 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [35/40] correct=True speedup=14.04x combined=0.759 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [36/40] correct=True speedup=6.55x combined=0.601 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [37/40] correct=True speedup=6.89x combined=0.601 eval=1.5s
+    [openai/gpt-oss-20b/fft_convolution] [38/40] correct=True speedup=14.38x combined=0.762 eval=1.4s
+    [openai/gpt-oss-20b/fft_convolution] [39/40] correct=True speedup=6.47x combined=0.671 eval=1.5s
+    [openai/gpt-oss-20b/fft_convolution] [40/40] correct=True speedup=14.04x combined=0.761 eval=1.4s
+
+[eval] === leg: problem=fft_convolution model=atlas (served='atlas') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) INFO 04-22 23:21:16 [loggers.py:259] Engine 000: Avg prompt throughput: 44.8 tokens/s, Avg generation throughput: 892.8 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.7%, Prefix cache hit rate: 97.5%
+(APIServer pid=4) INFO:     127.0.0.1:46289 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16441 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:43313 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:62787 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47391 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49295 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37826 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16880 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33882 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50916 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:62544 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:22119 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:41783 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:21225 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49767 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56762 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50990 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56361 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:55065 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:52209 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:39930 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46211 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:27385 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:54686 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42041 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:39173 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:20949 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38707 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:21:26 [loggers.py:259] Engine 000: Avg prompt throughput: 1.6 tokens/s, Avg generation throughput: 1963.9 tokens/s, Running: 12 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.5%, Prefix cache hit rate: 97.6%
+(APIServer pid=4) INFO:     127.0.0.1:16441 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:52454 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:52041 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46289 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=14.3s
+(APIServer pid=4) INFO:     127.0.0.1:43313 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33251 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37826 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49295 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47391 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16880 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:62787 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42280 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=18.6s
+      [gen] 40 completions in 18.6s (2.15 seq/s)
+    [atlas/fft_convolution] [1/40] correct=True speedup=14.61x combined=0.761 eval=1.5s
+    [atlas/fft_convolution] [2/40] correct=True speedup=14.41x combined=0.760 eval=1.4s
+    [atlas/fft_convolution] [3/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [atlas/fft_convolution] [4/40] correct=True speedup=15.82x combined=0.767 eval=1.4s
+(APIServer pid=4) INFO 04-22 23:21:36 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 223.2 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.6%
+    [atlas/fft_convolution] [5/40] correct=True speedup=14.27x combined=0.760 eval=1.4s
+    [atlas/fft_convolution] [6/40] correct=True speedup=6.40x combined=0.669 eval=1.4s
+    [atlas/fft_convolution] [7/40] correct=True speedup=16.28x combined=0.774 eval=1.4s
+    [atlas/fft_convolution] [8/40] correct=True speedup=14.94x combined=0.771 eval=1.4s
+    [atlas/fft_convolution] [9/40] correct=True speedup=6.89x combined=0.606 eval=1.4s
+    [atlas/fft_convolution] [10/40] correct=False speedup=0.00x combined=0.150 eval=0.7s
+(APIServer pid=4) INFO 04-22 23:21:46 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.6%
+    [atlas/fft_convolution] [11/40] correct=True speedup=14.43x combined=0.761 eval=1.4s
+    [atlas/fft_convolution] [12/40] correct=True speedup=6.87x combined=0.677 eval=1.5s
+    [atlas/fft_convolution] [13/40] correct=True speedup=12.86x combined=0.746 eval=1.4s
+    [atlas/fft_convolution] [14/40] correct=True speedup=16.30x combined=0.781 eval=1.4s
+    [atlas/fft_convolution] [15/40] correct=True speedup=15.88x combined=0.774 eval=1.4s
+    [atlas/fft_convolution] [16/40] correct=True speedup=16.16x combined=0.775 eval=1.4s
+    [atlas/fft_convolution] [17/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [atlas/fft_convolution] [18/40] correct=True speedup=12.58x combined=0.741 eval=1.4s
+    [atlas/fft_convolution] [19/40] correct=False speedup=0.00x combined=0.150 eval=0.6s
+    [atlas/fft_convolution] [20/40] correct=True speedup=15.10x combined=0.770 eval=1.4s
+    [atlas/fft_convolution] [21/40] correct=True speedup=15.51x combined=0.770 eval=1.4s
+    [atlas/fft_convolution] [22/40] correct=True speedup=14.65x combined=0.763 eval=1.4s
+    [atlas/fft_convolution] [23/40] correct=True speedup=15.84x combined=0.771 eval=1.4s
+    [atlas/fft_convolution] [24/40] correct=True speedup=14.70x combined=0.764 eval=1.4s
+    [atlas/fft_convolution] [25/40] correct=True speedup=14.91x combined=0.772 eval=1.4s
+    [atlas/fft_convolution] [26/40] correct=True speedup=14.80x combined=0.763 eval=1.4s
+    [atlas/fft_convolution] [27/40] correct=True speedup=15.37x combined=0.765 eval=1.4s
+    [atlas/fft_convolution] [28/40] correct=True speedup=14.27x combined=0.765 eval=1.4s
+    [atlas/fft_convolution] [29/40] correct=True speedup=15.45x combined=0.774 eval=1.4s
+    [atlas/fft_convolution] [30/40] correct=True speedup=6.62x combined=0.599 eval=1.4s
+    [atlas/fft_convolution] [31/40] correct=True speedup=6.73x combined=0.676 eval=1.4s
+    [atlas/fft_convolution] [32/40] correct=True speedup=1.11x combined=0.474 eval=1.5s
+    [atlas/fft_convolution] [33/40] correct=True speedup=15.22x combined=0.767 eval=1.4s
+    [atlas/fft_convolution] [34/40] correct=True speedup=15.14x combined=0.763 eval=1.4s
+    [atlas/fft_convolution] [35/40] correct=True speedup=16.21x combined=0.776 eval=1.4s
+    [atlas/fft_convolution] [36/40] correct=True speedup=16.61x combined=0.783 eval=1.4s
+    [atlas/fft_convolution] [37/40] correct=True speedup=15.45x combined=0.762 eval=1.4s
+    [atlas/fft_convolution] [38/40] correct=True speedup=15.43x combined=0.773 eval=1.4s
+    [atlas/fft_convolution] [39/40] correct=True speedup=17.21x combined=0.787 eval=1.4s
+    [atlas/fft_convolution] [40/40] correct=True speedup=16.23x combined=0.783 eval=1.4s
+
+[eval] === leg: problem=matrix_exponential model=base (served='openai/gpt-oss-20b') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) INFO:     127.0.0.1:59451 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:64701 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50940 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56329 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:22:56 [loggers.py:259] Engine 000: Avg prompt throughput: 34.4 tokens/s, Avg generation throughput: 958.7 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.6%, Prefix cache hit rate: 97.8%
+(APIServer pid=4) INFO:     127.0.0.1:37685 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16674 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:58285 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42300 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:55320 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38648 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:51386 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:24437 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38935 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50875 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:21734 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:48509 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:25695 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35728 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:17533 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:55703 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:19371 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:61810 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:49890 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:39599 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:51779 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53535 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:52608 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:47119 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:55708 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:64701 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:59852 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:59451 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=7.9s
+(APIServer pid=4) INFO:     127.0.0.1:56329 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:16674 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:33222 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42300 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:58285 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:18207 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50940 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37685 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=10.0s
+      [gen] 40 completions in 10.0s (4.01 seq/s)
+    [openai/gpt-oss-20b/matrix_exponential] [1/40] correct=True speedup=2.48x combined=0.587 eval=3.0s
+(APIServer pid=4) INFO 04-22 23:23:06 [loggers.py:259] Engine 000: Avg prompt throughput: 0.8 tokens/s, Avg generation throughput: 779.1 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.8%
+    [openai/gpt-oss-20b/matrix_exponential] [2/40] correct=True speedup=3.54x combined=0.614 eval=2.9s
+    [openai/gpt-oss-20b/matrix_exponential] [3/40] correct=True speedup=2.74x combined=0.595 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [4/40] correct=True speedup=2.70x combined=0.593 eval=3.0s
+(APIServer pid=4) INFO 04-22 23:23:16 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.8%
+    [openai/gpt-oss-20b/matrix_exponential] [5/40] correct=True speedup=3.39x combined=0.600 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [6/40] correct=True speedup=3.36x combined=0.602 eval=3.5s
+    [openai/gpt-oss-20b/matrix_exponential] [7/40] correct=True speedup=5.35x combined=0.623 eval=3.5s
+    [openai/gpt-oss-20b/matrix_exponential] [8/40] correct=True speedup=3.26x combined=0.601 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [9/40] correct=True speedup=2.71x combined=0.590 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [10/40] correct=True speedup=3.38x combined=0.602 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [11/40] correct=True speedup=3.11x combined=0.600 eval=2.9s
+    [openai/gpt-oss-20b/matrix_exponential] [12/40] correct=True speedup=2.75x combined=0.599 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [13/40] correct=True speedup=3.65x combined=0.617 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [14/40] correct=True speedup=5.14x combined=0.640 eval=3.6s
+    [openai/gpt-oss-20b/matrix_exponential] [15/40] correct=True speedup=2.85x combined=0.598 eval=4.0s
+    [openai/gpt-oss-20b/matrix_exponential] [16/40] correct=True speedup=2.62x combined=0.595 eval=3.8s
+    [openai/gpt-oss-20b/matrix_exponential] [17/40] correct=True speedup=3.74x combined=0.618 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [18/40] correct=True speedup=2.73x combined=0.598 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [19/40] correct=True speedup=3.39x combined=0.608 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [20/40] correct=True speedup=3.63x combined=0.613 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [21/40] correct=True speedup=2.57x combined=0.593 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [22/40] correct=True speedup=2.98x combined=0.601 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [23/40] correct=True speedup=2.75x combined=0.599 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [24/40] correct=True speedup=3.94x combined=0.615 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [25/40] correct=True speedup=3.61x combined=0.610 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [26/40] correct=True speedup=2.34x combined=0.579 eval=2.9s
+    [openai/gpt-oss-20b/matrix_exponential] [27/40] correct=True speedup=2.48x combined=0.582 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [28/40] correct=True speedup=2.49x combined=0.587 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [29/40] correct=True speedup=2.68x combined=0.587 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [30/40] correct=True speedup=2.52x combined=0.589 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [31/40] correct=True speedup=2.77x combined=0.600 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [32/40] correct=True speedup=4.54x combined=0.624 eval=3.2s
+    [openai/gpt-oss-20b/matrix_exponential] [33/40] correct=True speedup=3.59x combined=0.609 eval=3.3s
+    [openai/gpt-oss-20b/matrix_exponential] [34/40] correct=True speedup=3.41x combined=0.607 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [35/40] correct=True speedup=2.78x combined=0.602 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [36/40] correct=True speedup=4.41x combined=0.620 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [37/40] correct=True speedup=2.75x combined=0.597 eval=3.1s
+    [openai/gpt-oss-20b/matrix_exponential] [38/40] correct=True speedup=2.68x combined=0.594 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [39/40] correct=True speedup=2.55x combined=0.593 eval=3.0s
+    [openai/gpt-oss-20b/matrix_exponential] [40/40] correct=True speedup=4.71x combined=0.638 eval=3.0s
+
+[eval] === leg: problem=matrix_exponential model=atlas (served='atlas') ===
+      [batch] pass 1/3 effort=default rolling 40 completions
+(APIServer pid=4) INFO:     127.0.0.1:29498 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:42294 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38312 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36626 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50923 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35210 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:60834 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56100 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:25:36 [loggers.py:259] Engine 000: Avg prompt throughput: 35.2 tokens/s, Avg generation throughput: 1237.5 tokens/s, Running: 32 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.7%, Prefix cache hit rate: 97.9%
+(APIServer pid=4) INFO:     127.0.0.1:63818 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46195 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53687 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:51023 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:29459 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:46272 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:34253 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:59904 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:54628 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53901 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:37403 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:52872 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:44407 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53905 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:22496 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:48761 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53885 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:57388 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:45401 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:63257 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:56100 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:53757 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:31931 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:36626 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 32/40 done effort=default elapsed=11.6s
+(APIServer pid=4) INFO:     127.0.0.1:42294 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:50923 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:38312 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:35210 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:59340 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:29498 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO 04-22 23:25:46 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 955.4 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.2%, Prefix cache hit rate: 97.9%
+(APIServer pid=4) INFO 04-22 23:25:56 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 272.2 tokens/s, Running: 2 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.3%, Prefix cache hit rate: 97.9%
+(APIServer pid=4) INFO:     127.0.0.1:34242 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:60834 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+      [batch:pass1] 40/40 done effort=default elapsed=29.1s
+      [gen] 40 completions in 29.1s (1.37 seq/s)
+    [atlas/matrix_exponential] [1/40] correct=True speedup=3.29x combined=0.598 eval=3.0s
+    [atlas/matrix_exponential] [2/40] correct=True speedup=2.39x combined=0.577 eval=2.9s
+(APIServer pid=4) INFO 04-22 23:26:06 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 78.4 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.9%
+    [atlas/matrix_exponential] [3/40] correct=True speedup=2.39x combined=0.581 eval=2.9s
+    [atlas/matrix_exponential] [4/40] correct=True speedup=2.40x combined=0.585 eval=3.0s
+    [atlas/matrix_exponential] [5/40] correct=True speedup=2.52x combined=0.587 eval=3.0s
+(APIServer pid=4) INFO 04-22 23:26:16 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 97.9%
+    [atlas/matrix_exponential] [6/40] correct=True speedup=2.75x combined=0.598 eval=3.0s
+    [atlas/matrix_exponential] [7/40] correct=True speedup=2.52x combined=0.590 eval=3.0s
+    [atlas/matrix_exponential] [8/40] correct=True speedup=2.75x combined=0.597 eval=3.0s
+    [atlas/matrix_exponential] [9/40] correct=True speedup=2.73x combined=0.595 eval=3.0s
+    [atlas/matrix_exponential] [10/40] correct=True speedup=4.91x combined=0.629 eval=3.0s
+    [atlas/matrix_exponential] [11/40] correct=True speedup=3.23x combined=0.603 eval=3.0s
+    [atlas/matrix_exponential] [12/40] correct=True speedup=2.66x combined=0.589 eval=3.0s
+    [atlas/matrix_exponential] [13/40] correct=True speedup=2.41x combined=0.581 eval=3.0s
+    [atlas/matrix_exponential] [14/40] correct=True speedup=2.35x combined=0.578 eval=3.0s
+    [atlas/matrix_exponential] [15/40] correct=True speedup=2.68x combined=0.593 eval=2.9s
+    [atlas/matrix_exponential] [16/40] correct=True speedup=2.58x combined=0.586 eval=2.9s
+    [atlas/matrix_exponential] [17/40] correct=True speedup=3.97x combined=0.609 eval=2.9s
+    [atlas/matrix_exponential] [18/40] correct=True speedup=2.53x combined=0.585 eval=2.9s
+    [atlas/matrix_exponential] [19/40] correct=True speedup=2.89x combined=0.592 eval=2.9s
+    [atlas/matrix_exponential] [20/40] correct=True speedup=3.56x combined=0.604 eval=3.0s
+    [atlas/matrix_exponential] [21/40] correct=True speedup=2.51x combined=0.583 eval=2.9s
+    [atlas/matrix_exponential] [22/40] correct=True speedup=3.31x combined=0.603 eval=2.9s
+    [atlas/matrix_exponential] [23/40] correct=True speedup=2.53x combined=0.586 eval=2.9s
+    [atlas/matrix_exponential] [24/40] correct=True speedup=2.47x combined=0.581 eval=2.9s
+    [atlas/matrix_exponential] [25/40] correct=True speedup=2.96x combined=0.592 eval=2.9s
+    [atlas/matrix_exponential] [26/40] correct=True speedup=2.92x combined=0.589 eval=2.9s
+    [atlas/matrix_exponential] [27/40] correct=True speedup=3.81x combined=0.606 eval=3.0s
+    [atlas/matrix_exponential] [28/40] correct=True speedup=2.69x combined=0.587 eval=3.0s
+    [atlas/matrix_exponential] [29/40] correct=True speedup=2.91x combined=0.593 eval=3.0s
+    [atlas/matrix_exponential] [30/40] correct=True speedup=3.65x combined=0.604 eval=3.0s
+    [atlas/matrix_exponential] [31/40] correct=True speedup=2.92x combined=0.592 eval=3.1s
+    [atlas/matrix_exponential] [32/40] correct=True speedup=2.54x combined=0.586 eval=3.1s
+    [atlas/matrix_exponential] [33/40] correct=True speedup=2.26x combined=0.580 eval=3.0s
+    [atlas/matrix_exponential] [34/40] correct=True speedup=3.83x combined=0.614 eval=3.0s
+    [atlas/matrix_exponential] [35/40] correct=True speedup=2.58x combined=0.592 eval=3.1s
+    [atlas/matrix_exponential] [36/40] correct=True speedup=2.63x combined=0.591 eval=3.1s
+    [atlas/matrix_exponential] [37/40] correct=True speedup=3.58x combined=0.606 eval=3.1s
+    [atlas/matrix_exponential] [38/40] correct=True speedup=3.57x combined=0.612 eval=3.1s
+    [atlas/matrix_exponential] [39/40] correct=True speedup=0.65x combined=0.449 eval=2.0s
+    [atlas/matrix_exponential] [40/40] correct=True speedup=2.59x combined=0.593 eval=3.4s
+
+=== CROSS-CONDITION COMPARISON ===
+problem                leg       pass@1  pass@k  n_corr    best_sp    mean_sp
+pairwise_distance      base        1.00    1.00      40      27.92      17.63
+pairwise_distance      atlas       1.00    1.00      40      26.97      17.66
+fft_convolution        base        0.00    0.88      35      20.56      12.97
+fft_convolution        atlas       1.00    0.90      36      17.21      13.65
+matrix_exponential     base        1.00    1.00      40       5.35       3.23
+matrix_exponential     atlas       1.00    1.00      40       4.91       2.86
+[vllm] terminating server subprocess...
+(EngineCore pid=22) INFO 04-22 23:28:20 [core.py:1210] Shutdown initiated (timeout=0)
+(EngineCore pid=22) INFO 04-22 23:28:20 [core.py:1233] Shutdown complete
+(APIServer pid=4) INFO:     Shutting down
+[rank0]:[W422 23:28:20.057227806 ProcessGroupNCCL.cpp:1553] Warning: WARNING: destroy_process_group() was not called before program exit, which can leak resources. For more info, please see https://pytorch.org/docs/stable/distributed.html#shutdown (function operator())
+(APIServer pid=4) INFO:     Waiting for application shutdown.
+(APIServer pid=4) INFO:     Application shutdown complete.
+(APIServer pid=4) INFO:     Finished server process [4]
+
+=== COMPARE ===
+  pairwise_distance      base     pass@1=1.00 pass@k=1.00 best_speedup=27.92
+  pairwise_distance      atlas    pass@1=1.00 pass@k=1.00 best_speedup=26.97
+  fft_convolution        base     pass@1=0.00 pass@k=0.88 best_speedup=20.56
+  fft_convolution        atlas    pass@1=1.00 pass@k=0.90 best_speedup=17.21
+  matrix_exponential     base     pass@1=1.00 pass@k=1.00 best_speedup=5.35
+  matrix_exponential     atlas    pass@1=1.00 pass@k=1.00 best_speedup=4.91
+
+Download artifacts with:
+  modal volume get atlas-openevolve-outputs eval/atlas_algotune_pass40_v1 
+./eval_runs/
+
+✓ App completed. View run at 
+https://modal.com/apps/mlab-org/main/ap-nbXppJifARI6ADwWo29Cg0

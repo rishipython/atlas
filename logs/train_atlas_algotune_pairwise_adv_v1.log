@@ -1,0 +1,338 @@
+Note that running a local entrypoint in detached mode only keeps the last triggered Modal function alive after the parent process has been killed or disconnected.
+✓ Initialized. View run at 
+https://modal.com/apps/mlab-org/main/ap-GYvAFanzVEZjKT1Wd0rVnb
+
+Building image im-MUucZ8C4ZnKV1kCgDPor8g
+
+Using legacy Image Builder version. We suggest upgrading at https://modal.com/settings/image-config.
+
+=> Step 0: FROM base
+
+=> Step 1: COPY . /
+Saving image...
+Image saved, took 1.02s
+
+Built image im-MUucZ8C4ZnKV1kCgDPor8g in 2.30s
+
+
+Building image im-tT9BBTt8WvWhsjSBtwUqIR
+
+Using legacy Image Builder version. We suggest upgrading at https://modal.com/settings/image-config.
+
+=> Step 0: FROM base
+
+=> Step 1: ENV PYTHONPATH=/atlas
+
+=> Step 2: ENV HF_HOME=/hf_cache
+Saving image...
+Image saved, took 1.03s
+
+Built image im-tT9BBTt8WvWhsjSBtwUqIR in 2.22s
+
+
+
+✓ Created objects.
+├── 🔨 Created mount /Users/rishi/cs288/atlas/experiment/train_atlas_sft.py
+├── 🔨 Created mount /Users/rishi/cs288/atlas
+└── 🔨 Created function train.
+[local] launching SFT: phase=phase2 
+dataset=data/sft/algotune_pairwise_adv_v1.jsonl (376651 chars) replay=None 
+resume_from=None
+[train] phase=phase2 run_name=atlas_algotune_pairwise_adv_v1 base_model=openai/gpt-oss-20b
+[train] dataset_chars=376651 replay_chars=0
+[train] resume_from=None epochs=3 lr=5e-05 seq=12288
+[train] parsed 39 primary records
+[train] total training records: 39
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[train] loading base model (bf16, flash-attn-2)...
+`torch_dtype` is deprecated! Use `dtype` instead!
+MXFP4 quantization requires Triton: CUDA requires Triton >= 3.4.0, XPU/CPU requires Triton >= 3.5.0. Please install triton: `pip install triton`. We will default to dequantizing the model to bf16.
+This model is compatible with the following flash attention implementations: `['kernels-community/vllm-flash-attn3', 'flash_attention_4']`. Automatically falling back to `kernels-community/vllm-flash-attn3` instead of `flash_attention_2`.
+
+[1AFetching 4 files:   0%|          | 0/4 [00:00<?, ?it/s]
+[1AFetching 4 files: 100%|██████████| 4/4 [00:00<00:00, 4032.02it/s]
+
+[1ALoading weights:   0%|          | 0/411 [00:00<?, ?it/s]
+[1ALoading weights:   0%|          | 1/411 [00:00<02:20,  2.92it/s]
+[1ALoading weights:   0%|          | 2/411 [00:00<02:30,  2.72it/s]
+[1ALoading weights:   1%|          | 5/411 [00:01<01:15,  5.41it/s]
+[1ALoading weights:   2%|▏         | 7/411 [00:01<01:00,  6.69it/s]
+[1ALoading weights:   5%|▌         | 22/411 [00:01<00:15, 24.55it/s]
+[1ALoading weights:   6%|▌         | 25/411 [00:01<00:20, 19.20it/s]
+[1ALoading weights:   9%|▉         | 39/411 [00:02<00:13, 27.29it/s]
+[1ALoading weights:  10%|█         | 42/411 [00:02<00:17, 21.36it/s]
+[1ALoading weights:  14%|█▎        | 56/411 [00:02<00:12, 28.53it/s]
+[1ALoading weights:  14%|█▍        | 59/411 [00:03<00:15, 22.43it/s]
+[1ALoading weights:  18%|█▊        | 73/411 [00:03<00:11, 28.76it/s]
+[1ALoading weights:  18%|█▊        | 76/411 [00:03<00:12, 26.60it/s]
+[1ALoading weights:  22%|██▏       | 90/411 [00:03<00:08, 36.55it/s]
+[1ALoading weights:  23%|██▎       | 94/411 [00:04<00:10, 30.87it/s]
+[1ALoading weights:  26%|██▌       | 107/411 [00:04<00:07, 38.41it/s]
+[1ALoading weights:  27%|██▋       | 111/411 [00:04<00:10, 29.32it/s]
+[1ALoading weights:  30%|███       | 124/411 [00:04<00:06, 43.26it/s]
+[1ALoading weights:  43%|████▎     | 177/411 [00:04<00:01, 123.18it/s]
+[1ALoading weights:  59%|█████▉    | 243/411 [00:04<00:00, 217.40it/s]
+[1ALoading weights:  72%|███████▏  | 296/411 [00:05<00:00, 277.17it/s]
+[1ALoading weights:  84%|████████▍ | 347/411 [00:05<00:00, 315.68it/s]
+[1ALoading weights:  97%|█████████▋| 398/411 [00:05<00:00, 350.94it/s]
+[1ALoading weights: 100%|██████████| 411/411 [00:05<00:00, 78.12it/s] 
+[train] base loaded in 6.3s
+trainable params: 7,962,624 || all params: 20,922,719,808 || trainable%: 0.0381
+[train] tokenizing dataset...
+
+[train] prompt_text tail (250 chars): ' = X[i, k] - X[j, k]\n                s += diff * diff\n            out[i, j] = s\n    return out\n```\n\nProduce a single ```python fenced block containing a complete runnable file. The entry-point function is `pairwise_sq_dist`.\n<|end|><|start|>assistant'
+[train] assistant_turn head (250 chars): "<|channel|>analysis<|message|>We need to compute pairwise squared Euclidean distances. The naive triple loop is slow. We want a fast version using numpy, scipy, numba, BLAS. No Python loops. Let's think.\n\nWe know formula: ||x_i - x_j||^2 = ||x_i||^2 "
+[1AMap:   0%|          | 0/39 [00:00<?, ? examples/s]
+[1AMap:  28%|██▊       | 11/39 [00:00<00:00, 89.36 examples/s]
+[1AMap:  85%|████████▍ | 33/39 [00:00<00:00, 153.77 examples/s]
+[1AMap: 100%|██████████| 39/39 [00:00<00:00, 128.08 examples/s]
+[train] rec 0: full_len=2876 prompt_len=663 assistant_tokens=2213
+[train] rec 1: full_len=2047 prompt_len=663 assistant_tokens=1384
+[train] rec 2: full_len=3028 prompt_len=663 assistant_tokens=2365
+
+[1AFilter:   0%|          | 0/39 [00:00<?, ? examples/s]
+[1AFilter: 100%|██████████| 39/39 [00:00<00:00, 452.88 examples/s]
+[train] tokenized: 39 / 39 records have non-empty assistant span
+[train] train_size=35 eval_size=4
+[train] input lengths: min=860 p50=2243 max=4112 cap=12288
+warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+[RANK 0] Detected kernel version 4.4.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+[train] starting training
+
+[1A  0%|          | 0/27 [00:00<?, ?it/s]
+[1A  4%|▎         | 1/27 [00:03<01:26,  3.31s/it]
+[1A                                              
+{'loss': '-0.6937', 'grad_norm': '23.7', 'learning_rate': '0', 'epoch': '0.1143'}
+[1A
+[1A  4%|▎         | 1/27 [00:03<01:26,  3.31s/it]
+[1A  7%|▋         | 2/27 [00:07<01:28,  3.56s/it]
+[1A                                              
+{'loss': '9.176', 'grad_norm': '14.64', 'learning_rate': '5e-05', 'epoch': '0.2286'}
+[1A
+[1A  7%|▋         | 2/27 [00:07<01:28,  3.56s/it]
+[1A 11%|█         | 3/27 [00:11<01:30,  3.79s/it]
+[1A                                              
+{'loss': '8.845', 'grad_norm': '13.26', 'learning_rate': '4.982e-05', 'epoch': '0.3429'}
+[1A
+[1A 11%|█         | 3/27 [00:11<01:30,  3.79s/it]
+[1A 15%|█▍        | 4/27 [00:14<01:26,  3.77s/it]
+[1A                                              
+{'loss': '18', 'grad_norm': '24.64', 'learning_rate': '4.927e-05', 'epoch': '0.4571'}
+[1A
+[1A 15%|█▍        | 4/27 [00:14<01:26,  3.77s/it]
+[1A 19%|█▊        | 5/27 [00:18<01:20,  3.66s/it]
+[1A                                              
+{'loss': '17.65', 'grad_norm': '24.83', 'learning_rate': '4.838e-05', 'epoch': '0.5714'}
+[1A
+[1A 19%|█▊        | 5/27 [00:18<01:20,  3.66s/it]
+[1A 22%|██▏       | 6/27 [00:21<01:11,  3.39s/it]
+[1A                                              
+{'loss': '16.34', 'grad_norm': '28.64', 'learning_rate': '4.714e-05', 'epoch': '0.6857'}
+[1A
+[1A 22%|██▏       | 6/27 [00:21<01:11,  3.39s/it]
+[1A 26%|██▌       | 7/27 [00:24<01:07,  3.37s/it]
+[1A                                              
+{'loss': '15.27', 'grad_norm': '25.24', 'learning_rate': '4.557e-05', 'epoch': '0.8'}
+[1A
+[1A 26%|██▌       | 7/27 [00:24<01:07,  3.37s/it]
+[1A 30%|██▉       | 8/27 [00:27<01:01,  3.24s/it]
+[1A                                              
+{'loss': '7.201', 'grad_norm': '20.32', 'learning_rate': '4.371e-05', 'epoch': '0.9143'}
+[1A
+[1A 30%|██▉       | 8/27 [00:27<01:01,  3.24s/it]
+[1A 33%|███▎      | 9/27 [00:29<00:51,  2.86s/it]
+[1A                                              
+{'loss': '2.929', 'grad_norm': '10.4', 'learning_rate': '4.158e-05', 'epoch': '1'}
+[1A
+[1A 33%|███▎      | 9/27 [00:29<00:51,  2.86s/it]
+
+[1A
+[1A  0%|          | 0/4 [00:00<?, ?it/s][A
+
+[1A
+[1A 50%|█████     | 2/4 [00:00<00:00, 12.50it/s][A
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.94it/s][A
+[1A                                              
+[1A
+
+[1A                                             
+[1A
+{'eval_loss': '1.812', 'eval_runtime': '0.8996', 'eval_samples_per_second': '4.446', 'eval_steps_per_second': '4.446', 'epoch': '1'}
+[1A[A
+[1A 33%|███▎      | 9/27 [00:30<00:51,  2.86s/it]
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.94it/s][A
+
+[1A
+[1A                                             [A
+[1A 37%|███▋      | 10/27 [00:34<01:00,  3.53s/it]
+[1A                                               
+{'loss': '13.19', 'grad_norm': '24.5', 'learning_rate': '3.92e-05', 'epoch': '1.114'}
+[1A
+[1A 37%|███▋      | 10/27 [00:34<01:00,  3.53s/it]
+[1A 41%|████      | 11/27 [00:38<00:58,  3.63s/it]
+[1A                                               
+{'loss': '6.703', 'grad_norm': '13.48', 'learning_rate': '3.662e-05', 'epoch': '1.229'}
+[1A
+[1A 41%|████      | 11/27 [00:38<00:58,  3.63s/it]
+[1A 44%|████▍     | 12/27 [00:42<00:55,  3.68s/it]
+[1A                                               
+{'loss': '12.15', 'grad_norm': '23.01', 'learning_rate': '3.387e-05', 'epoch': '1.343'}
+[1A
+[1A 44%|████▍     | 12/27 [00:42<00:55,  3.68s/it]
+[1A 48%|████▊     | 13/27 [00:45<00:50,  3.59s/it]
+[1A                                               
+{'loss': '11.62', 'grad_norm': '23.83', 'learning_rate': '3.098e-05', 'epoch': '1.457'}
+[1A
+[1A 48%|████▊     | 13/27 [00:45<00:50,  3.59s/it]
+[1A 52%|█████▏    | 14/27 [00:48<00:45,  3.52s/it]
+[1A                                               
+{'loss': '10.81', 'grad_norm': '20.85', 'learning_rate': '2.801e-05', 'epoch': '1.571'}
+[1A
+[1A 52%|█████▏    | 14/27 [00:48<00:45,  3.52s/it]
+[1A 56%|█████▌    | 15/27 [00:51<00:39,  3.27s/it]
+[1A                                               
+{'loss': '-0.1523', 'grad_norm': '8.671', 'learning_rate': '2.5e-05', 'epoch': '1.686'}
+[1A
+[1A 56%|█████▌    | 15/27 [00:51<00:39,  3.27s/it]
+[1A 59%|█████▉    | 16/27 [00:54<00:35,  3.19s/it]
+[1A                                               
+{'loss': '0.02211', 'grad_norm': '6.309', 'learning_rate': '2.199e-05', 'epoch': '1.8'}
+[1A
+[1A 59%|█████▉    | 16/27 [00:54<00:35,  3.19s/it]
+[1A 63%|██████▎   | 17/27 [00:57<00:30,  3.06s/it]
+[1A                                               
+{'loss': '9.486', 'grad_norm': '24.38', 'learning_rate': '1.902e-05', 'epoch': '1.914'}
+[1A
+[1A 63%|██████▎   | 17/27 [00:57<00:30,  3.06s/it]
+[1A 67%|██████▋   | 18/27 [00:59<00:25,  2.80s/it]
+[1A                                               
+{'loss': '1.906', 'grad_norm': '13.99', 'learning_rate': '1.613e-05', 'epoch': '2'}
+[1A
+[1A 67%|██████▋   | 18/27 [00:59<00:25,  2.80s/it]
+
+[1A
+[1A  0%|          | 0/4 [00:00<?, ?it/s][A
+
+[1A
+[1A 50%|█████     | 2/4 [00:00<00:00, 12.67it/s][A
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.93it/s][A
+[1A                                               
+[1A
+
+[1A                                             
+[1A
+{'eval_loss': '1.289', 'eval_runtime': '0.9008', 'eval_samples_per_second': '4.44', 'eval_steps_per_second': '4.44', 'epoch': '2'}
+[1A[A
+[1A 67%|██████▋   | 18/27 [01:00<00:25,  2.80s/it]
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.93it/s][A
+
+[1A
+[1A                                             [A
+[1A 70%|███████   | 19/27 [01:04<00:27,  3.47s/it]
+[1A                                               
+{'loss': '4.708', 'grad_norm': '11.83', 'learning_rate': '1.338e-05', 'epoch': '2.114'}
+[1A
+[1A 70%|███████   | 19/27 [01:04<00:27,  3.47s/it]
+[1A 74%|███████▍  | 20/27 [01:07<00:23,  3.33s/it]
+[1A                                               
+{'loss': '-0.2045', 'grad_norm': '6.447', 'learning_rate': '1.08e-05', 'epoch': '2.229'}
+[1A
+[1A 74%|███████▍  | 20/27 [01:07<00:23,  3.33s/it]
+[1A 78%|███████▊  | 21/27 [01:10<00:18,  3.15s/it]
+[1A                                               
+{'loss': '4.759', 'grad_norm': '12.64', 'learning_rate': '8.422e-06', 'epoch': '2.343'}
+[1A
+[1A 78%|███████▊  | 21/27 [01:10<00:18,  3.15s/it]
+[1A 81%|████████▏ | 22/27 [01:13<00:15,  3.05s/it]
+[1A                                               
+{'loss': '8.981', 'grad_norm': '20.54', 'learning_rate': '6.287e-06', 'epoch': '2.457'}
+[1A
+[1A 81%|████████▏ | 22/27 [01:13<00:15,  3.05s/it]
+[1A 85%|████████▌ | 23/27 [01:16<00:12,  3.03s/it]
+[1A                                               
+{'loss': '4.861', 'grad_norm': '11.22', 'learning_rate': '4.425e-06', 'epoch': '2.571'}
+[1A
+[1A 85%|████████▌ | 23/27 [01:16<00:12,  3.03s/it]
+[1A 89%|████████▉ | 24/27 [01:20<00:10,  3.55s/it]
+[1A                                               
+{'loss': '9.385', 'grad_norm': '18.36', 'learning_rate': '2.864e-06', 'epoch': '2.686'}
+[1A
+[1A 89%|████████▉ | 24/27 [01:20<00:10,  3.55s/it]
+[1A 93%|█████████▎| 25/27 [01:23<00:06,  3.29s/it]
+[1A                                               
+{'loss': '3.853', 'grad_norm': '13.51', 'learning_rate': '1.625e-06', 'epoch': '2.8'}
+[1A
+[1A 93%|█████████▎| 25/27 [01:23<00:06,  3.29s/it]
+[1A 96%|█████████▋| 26/27 [01:27<00:03,  3.44s/it]
+[1A                                               
+{'loss': '9.038', 'grad_norm': '18.89', 'learning_rate': '7.265e-07', 'epoch': '2.914'}
+[1A
+[1A 96%|█████████▋| 26/27 [01:27<00:03,  3.44s/it]
+[1A100%|██████████| 27/27 [01:29<00:00,  3.19s/it]
+[1A                                               
+{'loss': '6.396', 'grad_norm': '16.91', 'learning_rate': '1.823e-07', 'epoch': '3'}
+[1A
+[1A100%|██████████| 27/27 [01:29<00:00,  3.19s/it]
+
+[1A
+[1A  0%|          | 0/4 [00:00<?, ?it/s][A
+
+[1A
+[1A 50%|█████     | 2/4 [00:00<00:00, 12.39it/s][A
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.89it/s][A
+[1A                                               
+[1A
+
+[1A                                             
+[1A
+{'eval_loss': '1.206', 'eval_runtime': '0.9096', 'eval_samples_per_second': '4.398', 'eval_steps_per_second': '4.398', 'epoch': '3'}
+[1A[A
+[1A100%|██████████| 27/27 [01:30<00:00,  3.19s/it]
+
+[1A
+[1A100%|██████████| 4/4 [00:00<00:00,  4.89it/s][A
+
+[1A
+[1A                                             [A
+[1A                                               
+{'train_runtime': '91.47', 'train_samples_per_second': '1.148', 'train_steps_per_second': '0.295', 'train_loss': '7.861', 'epoch': '3'}
+[1A
+[1A100%|██████████| 27/27 [01:31<00:00,  3.19s/it]
+[1A100%|██████████| 27/27 [01:31<00:00,  3.39s/it]
+[train] done: {'train_runtime': 91.4666, 'train_samples_per_second': 1.148, 'train_steps_per_second': 0.295, 'total_flos': 2.861109780643699e+16, 'train_loss': 7.860556425871672, 'epoch': 3.0}
+[train] saving adapter to /outputs/atlas_algotune_pairwise_adv_v1
+
+=== TRAINING SUMMARY ===
+  phase: phase2
+  run_name: atlas_algotune_pairwise_adv_v1
+  resume_from: None
+  base_model: openai/gpt-oss-20b
+  num_records_primary: 39
+  num_records_total_after_tok_filter: 39
+  train_size: 35
+  eval_size: 4
+  epochs: 3
+  lr: 5e-05
+  max_seq_len: 12288
+  lora_rank: 16
+  metrics: {'train_runtime': 91.4666, 'train_samples_per_second': 1.148, 
+'train_steps_per_second': 0.295, 'total_flos': 2.861109780643699e+16, 
+'train_loss': 7.860556425871672, 'epoch': 3.0}
+
+Adapter saved to atlas-models Volume under: atlas_algotune_pairwise_adv_v1
+Download with: modal volume get atlas-models atlas_algotune_pairwise_adv_v1 
+./atlas_models/
+
+[train] saved adapter + tokenizer + summary → /outputs/atlas_algotune_pairwise_adv_v1
+✓ App completed. View run at 
+https://modal.com/apps/mlab-org/main/ap-GYvAFanzVEZjKT1Wd0rVnb

@@ -1,0 +1,31 @@
+We need to provide a faster implementation. Use vectorized operations. Compute squared distance matrix as:
+
+D = np.sum(X**2, axis=1)[:,None] + np.sum(X**2, axis=1)[None,:] - 2 * X @ X.T
+
+Return float64. Ensure shape (N,N). Use np.dot.
+
+Edge cases: X may not be float64? But doc says dtype float64. Use np.asarray. Use np.maximum to avoid negative small due to numerical error? Not necessary if we trust formula. But to be safe we could clip small negative values to zero.
+
+Return np.array with dtype float64.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    D = sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T
+    # due to numerical errors, small negative values may appear; set to zero
+    np.maximum(D, 0, out=D)
+    return D
+
+Also we can use np.dot.
+
+Should be fine.
+
+Return shape (N,N).
+
+We need to import numpy as np.
+
+Make sure to include if __name__ == "__main__":? Not necessary but fine.
+
+But the instruction: produce a single python fenced block containing a complete runnable file. So include imports and function definition. No extra code. Provide final answer.

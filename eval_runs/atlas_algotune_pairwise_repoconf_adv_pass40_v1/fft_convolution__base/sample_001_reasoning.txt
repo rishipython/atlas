@@ -1,0 +1,47 @@
+We need to write a fast convolution function. Use numpy. We need to preserve same signature. Use np.fft.fft. For real input, we can use np.fft.rfft and irfft. But for general arrays, use fft. Use np.fft.fft with appropriate length. For real arrays, rfft may be faster but careful with rounding. Use np.fft.fft. Compute size L = N+M-1. Next power of two? Actually we can use np.fft.fft with length L. But convolution in frequency domain requires zero-padding to length L. Use np.fft.fft(x, n=L) and same for h. Multiply, then np.fft.ifft, take real part. Ensure dtype float64. Use np.real. That should produce same as np.convolve. For large arrays, should be fast.
+
+Edge cases: if either array empty? But likely not. But we can handle.
+
+We must import numpy.
+
+Also, ensure using np.fft.fft which returns complex. For real arrays, the result may have negligible imaginary due to numerical error. Use np.real.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N+M-1
+    # Use next power of two? Not necessary but faster for some lengths. Use np.fft.fft with n=L
+    # Actually np.fft.fft uses length L directly. Good.
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    Y = X*H
+    y = np.fft.ifft(Y)
+    return np.real(y)
+
+But we must ensure dtype float64: np.fft.ifft returns complex dtype. np.real returns float64.
+
+Also, we can use np.fft.rfft and irfft for real input: faster. Let's do that. For real inputs, rfft returns N/2+1 length. Then multiply, then irfft with n=L. That returns real array length L. That is more efficient. So:
+
+X = np.fft.rfft(x, n=L)
+H = np.fft.rfft(h, n=L)
+Y = X*H
+y = np.fft.irfft(Y, n=L)
+return y
+
+But we need to ensure dtype float64. rfft returns complex128. irfft returns float64.
+
+Ok.
+
+Edge: if input not real? Problem says float64 arrays. So real.
+
+Return y.
+
+Should match np.convolve. Let's test with random arrays.
+
+Also, we need to keep same function signature. Add imports. Provide file.
+
+Also, we might want to handle case when one array length 0? But not needed.
+
+Let's produce code.

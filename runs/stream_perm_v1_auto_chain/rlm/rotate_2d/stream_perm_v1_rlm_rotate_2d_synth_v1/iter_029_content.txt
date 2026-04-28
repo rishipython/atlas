@@ -1,0 +1,85 @@
+We need to think about rotate_2d algorithm. Probably rotating 2D points by some angle? Let's assume problem dict contains array of points and angle. Need efficient vectorized solution using scipy.ndimage maybe for interpolation? Could be image rotation. Let's think: rotate_2d might rotate a 2D array (image) by arbitrary angle. Use scipy.ndimage.rotate which is fast and uses spline interpolation. So design: run_solver receives problem dict with 'image' and 'angle'. We return rotated image.
+
+But need to use numpy, scipy.ndimage, no loops. So implement:
+
+def run_solver(problem):
+    img = np.asarray(problem['image'])
+    angle = float(problem['angle'])
+    return scipy.ndimage.rotate(img, angle, reshape=False, order=3, mode='constant', cval=0.0)
+
+But maybe need to handle multiple channels? Use axis? Might need to preserve shape.
+
+Edge cases: angle 0 returns original; negative angles fine.
+
+We should import from __future__ annotations; typing.Any, Dict; numpy as np; scipy.ndimage.
+
+Return type maybe np.ndarray.
+
+Also we might need to cast dtype to float32 for speed? But keep same dtype as input.
+
+We can also use scipy.ndimage.affine_transform with rotation matrix for more control. But rotate is fine.
+
+Potential numeric issues: rounding errors small but okay.
+
+Ok final design: single file with imports and run_solver.
+
+We must ensure no loops. Use vectorized operations only.
+
+Check shape: if input is 2D array, rotate around center. If reshape=False keeps same shape; but maybe test expects reshape=True? Not sure.
+
+Better to preserve shape? The baseline might use reshape=True? Hard to guess. But we can allow both by reading 'reshape' flag in problem dict default True.
+
+Implement:
+
+reshape = problem.get('reshape', True)
+
+Return rotated = scipy.ndimage.rotate(img, angle, reshape=reshape, order=3, mode='constant', cval=0.0)
+
+That uses no loops.
+
+Edge cases: empty array -> return empty.
+
+Ok done.
+We need to take the incoming `problem` dictionary and produce a rotated version of whatever 2‑D data it carries. The reference implementation is slow because it probably loops over every pixel or point and applies a hand‑rolled rotation formula. We can ditch that entirely by leveraging SciPy’s built‑in `ndimage.rotate`, which is written in C and already vectorised over the whole array. That satisfies the “no Python‑level loops” rule and gives us a huge speed boost.
+
+First thought: just call `scipy.ndimage.rotate` on the input array with the supplied angle. That’s the simplest thing that works for images or any 2‑D array of floats or ints. But we should be careful about a few things:
+
+- The input could be any NumPy‑compatible array, so we’ll cast it with `np.asarray` to be safe.
+- The caller might expect the output shape to stay the same as the input (common for image processing pipelines). SciPy’s `rotate` has a `reshape` flag – if `False` it keeps the original shape and crops/pads as needed; if `True` it expands the output so nothing gets clipped.
+- The rotation order (interpolation) matters for quality vs speed trade‑off. The baseline likely used nearest‑neighbour or bilinear interpolation; we’ll go with cubic (`order=3`) because it’s still fast enough and gives good visual results without being too heavy.
+- Mode handling: default `'constant'` with `cval=0.0` matches many image rotation use‑cases where out‑of‑bounds pixels are set to zero.
+- Angle can be negative or larger than 360 – SciPy handles that internally.
+- We should expose an optional `reshape` key in the problem dict so callers can override the default behaviour if they want.
+- No explicit loops anywhere – all operations are delegated to SciPy/C code.
+
+With that in mind, the minimal skeleton looks like:
+
+```python
+from __future__ import annotations
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    img = np.asarray(problem["data"])
+    angle = float(problem["angle"])
+    reshape = bool(problem.get("reshape", True))
+    return scipy.ndimage.rotate(
+        img,
+        angle,
+        reshape=reshape,
+        order=3,
+        mode="constant",
+        cval=0.0,
+    )
+```
+
+That satisfies all constraints:
+
+- Uses only NumPy and SciPy (specifically `scipy.ndimage`).
+- No Python loops.
+- Fully vectorised.
+- Handles typical edge cases (empty arrays, zero angles).
+- Keeps the same function name and signature expected by the test harness.
+
+OK, I think I have the design. Time to write it.

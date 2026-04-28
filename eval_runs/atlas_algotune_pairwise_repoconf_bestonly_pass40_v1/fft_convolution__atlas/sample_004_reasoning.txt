@@ -1,0 +1,47 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use np.fft.rfft but easier: use np.fft.fft of length L = N+M-1, next power of two maybe for speed? But evaluator maybe small. Use np.fft.fft of length L. Compute y = ifft(fft(x_padded) * fft(h_padded)). Real part.
+
+We must handle dtype float64. Use np.fft.fft with dtype=complex128. Then take real part.
+
+Edge cases: if one of arrays empty? But shapes positive. We'll implement general.
+
+We'll also support broadcasting? No.
+
+Let's produce final code.
+
+Also, we can use scipy.signal.fftconvolve but they said may use. But we can implement ourselves.
+
+Let's write conv1d(x, h). Determine length L = N+M-1. Find next power of two >= L for speed? Not necessary but fine.
+
+Use np.fft.rfft for real to speed but we need length L. Let's use rfft. Compute X = np.fft.rfft(x, n=L), H = np.fft.rfft(h, n=L). Multiply, then irfft.
+
+Return real part.
+
+Ok.
+
+Let's produce final file.
+
+Need imports: numpy as np.
+
+Let's write:
+
+def conv1d(x, h):
+
+    N = x.size; M = h.size; L = N+M-1
+
+    nfft = 1 << (L-1).bit_length()  # next power of two >= L
+
+    X = np.fft.rfft(x, n=nfft)
+
+    H = np.fft.rfft(h, n=nfft)
+
+    y = np.fft.irfft(X * H, n=nfft)
+
+    return y[:L]  # slice to full length
+
+Return dtype float64.
+
+Ok.
+
+Edge: if L==0? Not possible.
+
+Let's produce final code.

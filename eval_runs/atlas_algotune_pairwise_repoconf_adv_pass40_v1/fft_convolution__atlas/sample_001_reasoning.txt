@@ -1,0 +1,47 @@
+We need to write a fast convolution function. Use numpy. We need to preserve same signature. Use np.fft.fft. For real input, we can use np.fft.rfft and irfft. But for general arrays, use fft. Use np.fft.fft with appropriate length. For real arrays, rfft may be more efficient but must handle shape. Use np.fft.fft(x, n), same for h. Multiply, then ifft, take real part. Use np.fft.ifft. For double precision, results are real. Ensure dtype float64. The output length should be N+M-1. Use nfft = N+M-1. Use np.fft.fft(x, nfft) etc.
+
+But careful: if input arrays are not real? They are float64. Use rfft? For speed, rfft is faster for real. We can compute nfft = N+M-1. But rfft expects length nfft. The result length for rfft is nfft//2+1. Multiply, then irfft to nfft. That yields length nfft. So conv.
+
+Edge cases: zero-length? But N>=1? Not specified. But typical conv. Use np.fft.rfft.
+
+Return real part.
+
+Let's implement conv1d using rfft.
+
+Also need to import numpy.
+
+Let's produce code.
+
+Check that for small arrays, it's correct. Use np.allclose.
+
+Also maybe use np.fft.fft and ifft for simplicity, but rfft is faster.
+
+We need to ensure dtype float64.
+
+Implementation:
+
+def conv1d(x,h):
+    N=x.shape[0]; M=h.shape[0]
+    nfft = N+M-1
+    # choose rfft
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, nfft)
+    return y
+
+But need to cast to float64. irfft returns float64 by default.
+
+Edge: maybe input dtype is float32? But specified float64. Ok.
+
+Return y.
+
+That's it.
+
+But we need to import numpy.
+
+We should also handle case when arrays are 1-D, but they might be 0-D? Not likely.
+
+Ok.
+
+Let's produce final code.

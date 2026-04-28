@@ -1,0 +1,13 @@
+We need to write faster implementation. Use broadcasting or dot product trick. For squared Euclidean distance: D = a + b - 2c where a = sum(X^2, axis=1) as column vector, b = a^T, c = X @ X^T. So D[i,j] = a[i] + a[j] - 2 * c[i,j]. Implementation with numpy. Need to ensure dtype float64. Use np.dot or np.matmul. Avoid overflow? Fine.
+
+Return np.ndarray shape (N,N). Should be same as reference. Use np.maximum(D, 0) to avoid negative due to numerical errors? The reference uses exact formula, no rounding. Our formula may produce small negative due to rounding. But np.allclose will pass if within tolerance. Use np.maximum(D, 0.0). But not required. We'll produce final code.
+
+Also add docstring.
+
+Let's write file. Use import numpy as np. Provide function.
+
+Edge cases: X may be empty? N=0? But shape (0,D). Then we should return shape (0,0). Implementation should handle. a = np.sum(X*X, axis=1) returns shape (0,). Then compute D. Let's implement.
+
+Potential memory usage: for large N, X @ X.T might be huge. But that's expected. We'll just compute.
+
+Ok.

@@ -1,0 +1,174 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a 2x3 matrix, input image n x n. SciPy's affine_transform does the job but maybe slow for large images due to Python overhead and interpolation order 3. We can try to reduce interpolation order to 1 or 0. But the spec says cubic spline (order=3) is required? The task says "uses cubic spline interpolation (order=3)" but optimization suggests we can lower order for speed. But we must still match reference? The reference uses order=3. But is solution validated against reference? Yes, is_solution compares to reference with same order=3. So we cannot change order; else verification fails. Unless we adjust tolerance? No, they compute ref_array with same order=3, mode constant. So we must produce same output as SciPy's affine_transform with order 3.
+
+Thus we need to replicate SciPy's transform but faster.
+
+Potential: use SciPy's ndimage.affine_transform but maybe with some precomputation or use of numba? But SciPy's function is already vectorized and uses C loops, so it's hard to beat.
+
+Alternate: use OpenCV cv2.warpAffine which is fast C++ but not allowed? We only have numpy, scipy etc. Could use numba to implement our own transform: compute grid coordinates, apply matrix inverse, sample using cubic interpolation manually? That could be slower.
+
+Maybe the trick is that the input image is square and small? But not known.
+
+Maybe the performance bottleneck is the creation of large coordinate arrays inside SciPy's function; we can precompute coordinates once and reuse? But each call new problem.
+
+Better: use scipy.ndimage.affine_transform but set prefilter=False? That reduces overhead for high-order interpolation? In SciPy 1.10+ there is prefilter argument controlling prefiltering for spline interpolation. Default True uses B-spline prefiltering which may be expensive. Setting prefilter=False may skip it if data already filtered? For generic data, may produce slightly different results but maybe acceptable within tolerance? But verification uses same function; if we set prefilter=False, result differs from default, causing mismatch.
+
+But maybe we can compute our own transform using scipy.ndimage.map_coordinates which also uses spline interpolation and has a prefilter argument. Could set prefilter=False too.
+
+But still same algorithm.
+
+Maybe the speed difference comes from using float32 instead of float64. SciPy functions operate on float64 by default; converting to float32 may speed up memory usage and computation on some hardware (but underlying C code still uses double?). Actually numpy arrays dtype float32 will be passed to C functions that expect double? I think SciPy's ndimage functions accept float32 and cast internally to double anyway. Might not help.
+
+Could use numba JIT on a custom implementation: compute output array by mapping coordinates and using cubic interpolation implemented in numba; that might be faster for small images due to no overhead of building large coordinate arrays? But likely slower for large images because loops in numba still slower than compiled C loops?
+
+Another idea: Use scipy.ndimage.affine_transform but supply output array as a pre-allocated buffer of correct dtype and shape; this might avoid memory allocation overhead inside function. We can pass output argument 'output' param: `output=output_array`. That could reduce memory allocation time. Also specify `cval=0` for constant mode instead of mode='constant'? That might be faster.
+
+Also we can compute inverse matrix once: `matrix_inv = np.linalg.inv(np.vstack([matrix, [0,0,1]]))[:2,:]` then use it as `matrix`. Actually affine_transform expects matrix that transforms output coords to input coords: i.e., input coordinates = matrix @ output_coords + offset? Wait docs: For ndimage.affine_transform, matrix is transformation matrix applied to output coordinates to get input coordinates; offset is added separately. For a 2x3 matrix A = [a b tx; c d ty], you pass `matrix=[[a,b],[c,d]]` and offset=[tx,ty]. So we need to split matrix accordingly.
+
+So we can parse problem["matrix"] into matrix and offset arrays; then call affine_transform with those arguments directly.
+
+Also we can convert image to np.float32 before calling; maybe faster due to less memory bandwidth.
+
+We should also consider using scipy.ndimage.affine_transform with `order=3`, `mode='constant'`, `cval=0`, `prefilter=True` default; maybe that's fine.
+
+We need no Python-level loops; just vectorized calls.
+
+Thus design: In solve(), extract image array as np.array dtype float32 or float64; extract matrix parts; call affine_transform with matrix and offset; return transformed_image as list of lists or keep numpy array?
+
+The solver expects dict with "transformed_image" key containing array or list? In is_solution they accept list or array; they convert list to array if needed. So returning numpy array fine.
+
+Thus final design minimal changes: just parse matrix into mat and offset; call affine_transform once; return dict.
+
+But this seems trivial improvement over reference code which already does that! Wait reference code passes entire 2x3 matrix directly as 'matrix' argument in affine_transform - but that function expects shape (ndim, ndim). Passing 2x3 will cause error or misinterpretation? Actually ndimage.affine_transform signature: `affine_transform(input, matrix, offset=0, output_shape=None, output=None,... )`. It expects 'matrix' shape (ndim_out, ndim_in). If you pass 2x3, it will treat it as 2x3 -> mismatched dims -> error. But reference code passes full 2x3 matrix; yet it's working because SciPy interprets extra columns as offset automatically? Wait I recall there is a convenience where you can pass a full transformation matrix including translation via `matrix` param as shape (ndim_out+1, ndim_in+1)? Actually not sure. Let's check quickly mentally: In SciPy docs example they do:
+
+```
+affine_transform(input_image,
+                 [[1/scale_x], [0]],
+                 [0],
+                 ...)
+```
+
+So they separate offset.
+
+But maybe passing 2x3 works because it interprets last column as offset automatically when using 'matrix' argument shape (ndim_out+1,...)? I doubt.
+
+Thus reference code might actually produce wrong result? But tests expect correct result via reference solver again in is_solution which also passes full 2x3 matrix incorrectly! Wait they call same method in is_solution: `scipy.ndimage.affine_transform(image, matrix, order=self.order, mode=self.mode)` again passing full 2x3 matrix! So both solve() and verification use same approach; thus if it's wrong they'd both agree on wrong result but still pass validation because they compare proposed_array vs ref_array computed same way. So correctness relative to true affine transform not checked! Therefore we just need to match their flawed method.
+
+Thus optimization can simply call the same function with full 2x3 matrix as before but maybe faster by specifying dtype etc.
+
+But performance difference likely small anyway because calling SciPy once is fast enough even for large images up to say 1024^2 maybe okay within time limit?
+
+But spec demands speedup vs baseline reference implementation that already uses this call - so maybe baseline includes overhead like converting lists etc. Our improved solution should avoid converting lists back and forth by ensuring input image stays numpy array from start (problem["image"] may be list of lists). We can convert once at start with dtype=float32 or float64; then call transform on that array directly without intermediate conversions or copying except needed by transform itself.
+
+Also avoid creating new dictionary keys etc too many times.
+
+Also avoid exception handling overhead inside solve(); just let errors propagate if any - but tests may rely on catching errors gracefully? The baseline has try/except around transform call only. We could keep minimal try/except only around transform call itself but not outer try/except block that catches all errors - reduces overhead slightly.
+
+Also avoid logging calls inside solve() - logging overhead may be significant if many calls run repeatedly in benchmark loop (maybe many random problems). We can disable logging globally or set level high so logs suppressed but still called though expensive? Logging calls are expensive due to formatting even if level high because condition check executed each time - but if level set higher than DEBUG maybe skip formatting overhead if message not logged? Actually logger checks level before formatting message string - so minimal cost if level > message level. But building string like f"scipy.ndimage.affine_transform failed: {e}" occurs only when exception occurs - unlikely often so fine.
+
+Thus main improvement: remove outer try/except block entirely; just parse inputs and call transform directly returning dict without error handling unless needed for test harness expecting empty list on failure? But tests may rely on empty list return when failure occurs due to invalid input shapes etc. But perhaps not needed because problem inputs always valid per spec. So safe remove outer try/except.
+
+Also avoid converting proposed_list from numpy array back to list for validation - but that's in verification only not ours.
+
+Thus final design:
+
+- In solve(): get image = np.asarray(problem["image"], dtype=np.float32) ; get mat = np.asarray(problem["matrix"], dtype=np.float32); call affine_transform(image, mat,...). Return {"transformed_image": transformed_image} where transformed_image remains numpy array (float32). That's all.
+
+This should be fast enough since no extra loops or conversions except initial conversion of lists which must happen anyway for test harness reading JSON into Python lists then into arrays here anyway each call does conversion once anyway baseline did too via problem["image"] being list-of-lists then passed directly into scipy function which would convert internally (?) Actually SciPy accepts any array-like input and will convert via np.asarray inside C code maybe causing copy anyway. So our conversion might duplicate work but not much difference if dtype matches internal expected type double vs float32 conversion cost negligible relative to transform time (~O(n^2)). For small n this matters less than overhead of Python-level loops though none exist now either baseline had no loops either aside from conversion inside SciPy?
+
+Baseline had no loops either aside from internal loops inside SciPy C code plus exception handling overhead which we removed slightly.
+
+Thus design seems trivial improvement over baseline but likely enough speedup due to fewer Python-level operations like nested try/excepts and conversions between list/dict etc.
+
+Wait baseline also had outer try/except around everything including extraction of image/matrix etc which adds overhead per call albeit small relative to transform time? Might still matter for many calls in benchmark loop of thousands tasks each small size maybe <1000 px each -> transform cost small -> Python overhead dominates -> removal yields speedup significant!
+
+Therefore final design minimal changes should meet brief: imports logging etc used only minimally perhaps removed logger usage altogether except maybe at module import level set level high?
+
+But brief requires imports logging etc used somewhere in solution – yes we import logging at top though not used heavily – that's fine.
+
+Now finalize design description:
+
+- Use numpy
+- Use scipy.ndimage
+- No Python loops
+- Use BLAS multiplication internally via scipy
+- Convert inputs once
+- Call affine_transform
+
+Edge cases: If problem["image"] empty or non-square -> SciPy will raise error -> our solve returns dict with transformed_image empty list? Baseline returns [] when exception occurs inside inner try except returning {"transformed_image": []}. Our new version would propagate exception causing evaluator error maybe fail test harness expecting graceful failure? To be safe replicate fallback behavior: wrap only the affine_transform call in try/except returning empty list on failure else return dict normally. Outer code no other try/except so simpler yet robust enough for invalid inputs rarely used in tests perhaps not required but safe add minimal wrapper around transform only:
+
+```
+try:
+    transformed_image = scipy.ndimage.affine_transform(...)
+except Exception:
+    return {"transformed_image": []}
+```
+
+No other exceptions propagate unless earlier conversion fails (unlikely). That covers fallback case while keeping minimal overhead elsewhere.
+
+Ok finalize design trace accordingly.
+We need a fast way to apply a 2‑D affine warp while staying faithful to the verifier’s expectations – it checks against another call that does exactly the same thing with `scipy.ndimage.affine_transform`.  
+The trick is that the verifier’s “reference” actually passes the full \(2\times3\) matrix straight into `affine_transform`, even though the documented signature expects a \(k\times k\) linear part plus an optional offset vector.  
+Because both our solver *and* the verifier do this identical misuse, any deviation will make us fail validation even if the numerical result looks correct visually – so we must mimic that behaviour exactly.
+
+### What really hurts performance?
+* **Python‑level exception plumbing** – every call wraps everything in two nested `try/except` blocks.
+* **Unnecessary data gymnastics** – converting between lists/dicts back‑and‑forth.
+* **Repeated casting** – passing raw Python lists forces NumPy/Cython code inside SciPy to cast them again.
+* **Logging** – every log message incurs a string format operation even if it never gets emitted.
+  
+If I strip those layers away I’m left with essentially one line of work per problem instance:
+
+```python
+transformed = scipy.ndimage.affine_transform(
+    img_arr,
+    mat_arr,
+    order=3,
+    mode="constant",
+)
+```
+
+That line alone does all heavy lifting via BLAS‑backed routines inside SciPy’s compiled C code – there are no Python loops left at all after my tiny wrapper removes the outer exception handling and unnecessary conversions.
+  
+### Design decisions
+
+1. **Input handling**  
+   * Convert `problem["image"]` from a nested list into a NumPy array *once*, keeping it as a contiguous block (`np.asarray`).  
+   * Do the same for `problem["matrix"]`.  
+   * Use `dtype=np.float64` because SciPy’s internal kernels expect doubles – forcing an explicit cast avoids an implicit conversion during the actual transform.
+   
+   ```python
+   img = np.asarray(problem["image"], dtype=np.float64)
+   mat = np.asarray(problem["matrix"], dtype=np.float64)
+   ```
+
+2. **Affine call**  
+   * Pass the full \(2\times3\) matrix straight through – this matches what the verifier does (`scipy.ndimage.affine_transform(image, matrix)`).
+   * Keep default parameters (`order=3`, `mode="constant"`), matching reference behaviour.
+   * Supply an explicit `cval=0` so constant padding is guaranteed even if defaults change.
+   
+   ```python
+   out = scipy.ndimage.affine_transform(
+       img,
+       mat,
+       order=3,
+       mode="constant",
+       cval=0,
+   )
+   ```
+
+3. **Graceful failure**  
+   * Wrap *only* the heavy transform in a narrow `try/except`.  
+   * On any exception return an empty list under `"transformed_image"`.  
+     This mirrors the original fallback path without paying the cost of catching every earlier step.
+     
+     ```python
+     try:
+         out = ...
+     except Exception:
+         return {"transformed_image": []}
+     ```
+
+4. **Return format**  
+   * Leave `out` as a NumPy array – the verifier accepts either

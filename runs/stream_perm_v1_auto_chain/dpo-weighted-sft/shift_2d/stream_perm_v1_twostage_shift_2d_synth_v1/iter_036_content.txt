@@ -1,0 +1,45 @@
+We need to replace the slow `Shift2D.solve` with something that only uses vectorised numpy and a single scipy call.  
+The core of the task is finding the integer 2‑D shift that maximises the similarity between two arrays – essentially a cross‑correlation problem.  
+The naive implementation probably loops over all possible offsets and sums element‑wise products – that’s O(n²) with an inner loop in Python, which is brutal for anything but tiny images.  
+
+Let’s think about alternatives:
+
+* **Numba** could JIT‑compile a double loop, but we’re told “no Python‑level loops”, so that route is out.
+* **FFT‑based cross‑correlation** via `scipy.signal.ifftconvolve` would give us all shifts in one shot, but it requires careful handling of padding and complex numbers; plus the FFT overhead might not be worth it for moderate sizes.
+* **`scipy.signal.correlate2d`** already does exactly what we need – it computes the full cross‑correlation using highly optimised C code under the hood and returns a 2‑D array of correlation values for every possible offset.
+  That means we can just call it once and then pick the maximum.
+* **`scipy.ndimage.shift`** is for shifting an array given a known offset; it doesn’t help us search over offsets.
+
+So the plan is:
+
+1. Pull out the two arrays from `problem`.  
+   The baseline probably expects keys like `'a'` and `'b'`.  
+   We’ll cast them to `np.ndarray` just in case.
+2. Compute `corr = correlate2d(a, b, mode='valid')`.  
+   Using `'valid'` ensures we only consider offsets where `b` fully overlaps `a`.  
+   If the user wants wrap‑around behaviour we could switch modes later, but `'valid'` matches most alignment tasks.
+3. Find the index of the maximum value in `corr`: `idx = np.unravel_index(np.argmax(corr), corr.shape)`.
+4. Translate that index back into a signed shift relative to zero offset:
+   ```
+   dy = idx[0] - (b.shape[0] - 1)
+   dx = idx[1] - (b.shape[1] - 1)
+   ```
+   This works because in `'valid'` mode the top‑left corner corresponds to shifting `b` by `-(b.shape-1)` relative to `a`.
+5. Return the result in whatever structure the rest of the framework expects – probably a dict with a `'shift'` key holding a tuple `(dy, dx)`.
+
+That’s it! No loops at all – just one fast C routine and a couple of NumPy calls.
+
+Edge cases to keep in mind:
+
+* If either input is empty or not 2‑D we should raise an informative error – but since this is a competitive setting we’ll trust the caller.
+* The arrays might be float32 or float64; `correlate2d` handles both fine.
+* The maximum might be flat (multiple equal peaks). In that case `np.argmax` returns the first occurrence – acceptable unless otherwise specified.
+* We don’t clip negative values because correlation can be negative if images are anti‑correlated; we’re only interested in the maximum regardless of sign.
+
+With this design we satisfy all constraints:
+- Uses only vectorised operations (`correlate2d`, NumPy indexing).
+- No Python loops.
+- Relies on SciPy (`scipy.signal.correlate2d`) as required.
+- Keeps imports minimal and clean (`__future__`, logging, typing).
+
+OK, I think I have the design. Time to write it.

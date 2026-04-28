@@ -1,0 +1,45 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use rfft? But easiest: use np.fft.fft with appropriate size. Complexity: use next power of two maybe. Use np.fft.ifft. Ensure real output. Use dtype float64.
+
+We need to handle arbitrary length arrays. Use np.fft.fftpack? Use np.fft.fft. For real data, we can use np.fft.rfft. But simpler: use np.fft.fft on combined length L = N+M-1. Need to zero pad to length L. Compute FFT of x padded to L, h padded to L. Multiply, inverse FFT. Take real part.
+
+But careful: np.fft.fft returns complex; but convolution of real signals is real; but due to numerical errors, imaginary parts near zero. We can take real part. Use np.fft.fft(x, L) etc. Use np.fft.ifft.
+
+Edge cases: if x or h empty? Probably not. But we can handle.
+
+Implementation:
+
+def conv1d(x,h):
+    N = x.size
+    M = h.size
+    L = N+M-1
+    # next power of two for speed? Not necessary but maybe faster. Use np.fft.next_fast_len(L)
+    L_fft = np.fft.next_fast_len(L)
+    X = np.fft.fft(x, L_fft)
+    H = np.fft.fft(h, L_fft)
+    y = np.fft.ifft(X*H).real
+    return y[:L]
+
+This returns float64.
+
+Need to import numpy.
+
+Also, we need to consider dtype: x and h may be not float64? But we cast to float64. Use np.asarray(x, dtype=np.float64). But the input is float64 arrays. We'll keep.
+
+Also, we might want to use np.fft.rfft and irfft for speed: use rfft(x, L_fft) * rfft(h, L_fft) then irfft. That may be slightly faster. Let's implement using rfft/irfft. But careful: rfft returns real frequency domain of length L_fft//2+1. Multiply. Then irfft to get length L_fft. Then slice.
+
+Implementation:
+
+X = np.fft.rfft(x, L_fft)
+H = np.fft.rfft(h, L_fft)
+y = np.fft.irfft(X*H, L_fft)
+return y[:L]
+
+This uses real FFT.
+
+Edge cases: L_fft might be less than L? No, next_fast_len ensures >= L. Good.
+
+Let's produce final code.
+
+Also, we could use np.fft.fftpack? but fine.
+
+Let's produce final answer.

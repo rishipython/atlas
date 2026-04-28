@@ -1,0 +1,30 @@
+We need to implement conv1d with FFT. Must be correct, numerically close. Use numpy. Use np.fft.rfft? For real data. We can use np.fft.fft for complex. Convolution length L = N+M-1. Next power of two >= L for speed. Or use scipy.signal.fftconvolve. But maybe we don't want to import scipy. But allowed. Use numpy only.
+
+Implementation:
+
+def conv1d(x,h):
+    N, M = len(x), len(h)
+    L = N+M-1
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+Return float64. Works.
+
+Edge cases: empty arrays? Not needed? But maybe.
+
+Check type: x,h np.ndarray float64.
+
+Return dtype float64.
+
+Ok.
+
+We must keep same function signature.
+
+Add imports.
+
+Return.
+
+Let's produce final file.

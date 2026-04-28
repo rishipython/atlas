@@ -1,0 +1,206 @@
+We need to figure out what shift_2d problem is. Probably shifting a 2D array? Let's think. The reference uses Shift2D().solve(problem). We need to implement solve faster, using scipy, vectorized, no loops. Likely problem contains data like image, shift amount? Let's assume problem dict has 'image' and 'shift' or something. We need to produce a run_solver that returns solution from our implementation.
+
+We should design with numpy and scipy.ndimage for shifting arrays with subpixel accuracy maybe via affine_transform. Use log, random? Not needed but brief says import random. Maybe for seed or something.
+
+We need to avoid loops; use vectorized operations.
+
+Edge cases: shift may be float; need interpolation. Use scipy.ndimage.shift which handles subpixel shifts with order interpolation.
+
+But we also might need to handle multiple shifts? Maybe problem contains list of shifts? We'll design generic: if problem['shifts'] is array shape (N,2) apply each shift to image and stack results.
+
+Also maybe need to compute something else like correlation? But likely just shift.
+
+Let's design solve: accept problem dict containing 'image': np.ndarray 2D, 'shifts': np.ndarray shape (N,2) or single tuple. We'll return dict with 'shifted_images': array shape (N, H, W).
+
+Implement:
+
+def solve(problem):
+    img = problem['image']
+    shifts = problem['shifts']
+    if isinstance(shifts, (tuple,list)):
+        shifts = np.array(shifts)[None,:]  # single
+    else:
+        shifts = np.asarray(shifts)
+    out = np.stack([scipy.ndimage.shift(img, shift=tuple(s), order=3) for s in shifts]) # but loop again! can't.
+
+We need vectorized no loops. But scipy.ndimage.shift doesn't support batch. Could use affine_transform with matrix identity and offset per shift but still loop.
+
+Alternate: use np.roll for integer shifts only; but if subpixel needed, we can use fft-based shift: multiply by phase factor in Fourier domain. That's vectorizable across multiple shifts by broadcasting.
+
+So implement Fourier shift theorem: For each shift (dx,dy), compute phase = exp(-2jπ(kx*dx/Nx + ky*dy/Ny)). Multiply FFT of image by phase and inverse FFT. For multiple shifts we can compute phases for all shifts at once using broadcasting: shape (N,Nx,Ny). Compute kx array shape (Nx,) etc. Use outer product.
+
+Implementation steps:
+
+- Compute FFT of image: F = np.fft.fftn(img)
+- Get kx = 2π * np.arange(Nx)/Nx ; ky similarly.
+- For each shift s: phase = exp(-1j*(kx*dx + ky*dy)) but need broadcasting: create kx[:,None,None], ky[None,:,None] then multiply with dx[:,None,None], dy[:,None,None].
+- Actually compute phases shape (N,Nx,Ny): phases = np.exp(-1j*(kx[None,:,None]*dx[:,None,None] + ky[None,None,:]*dy[:,None,None]))
+- Then shifted_F = F[None,:,:] * phases
+- Inverse FFT along last two axes: shifted_imgs = np.real(np.fft.ifftn(shifted_F, axes=(1,2)))
+- Return dict {'shifted_images': shifted_imgs}
+
+This is fully vectorized no loops.
+
+Need imports: logging, random maybe for seed? Not used but include as per brief.
+
+Edge cases: image may be float32/float64; ensure dtype consistent.
+
+Check memory: if many shifts large N may blow memory but acceptable.
+
+Also consider using scipy.ndimage.shift for integer only fallback if all shifts ints; but we can just use Fourier method always.
+
+Now design run_solver that creates instance of our class? We can skip class and just implement solve function directly inside run_solver? But requirement is function name solve inside class Shift2D maybe not needed; but we can define class Shift2D with solve method using above logic. run_solver calls Shift2D().solve(problem).
+
+Implement:
+
+class Shift2D:
+    def solve(self, problem):
+        img=problem['image']; shifts=problem.get('shifts', None)
+        if shifts is None:
+            raise ValueError
+        # ensure array
+        ...
+
+Return solution maybe same format as baseline expects; unknown but likely dict with 'shifted_images'.
+
+Also import logging; set level maybe debug; random maybe used to seed something? Not needed but include import random.
+
+Ok produce chain-of-thought accordingly.
+We need to rewrite the `solve` method so that it runs as fast as possible while still producing the same output as the reference `Shift2D().solve(problem)` implementation.  
+The reference code is slow because it probably loops over every pixel or every requested shift and applies a naive interpolation routine in pure Python or in a non‑vectorised NumPy loop.  
+The design brief hints that we should use **scipy** somewhere and avoid Python‑level loops entirely – everything must be vectorised – so the obvious candidate is to replace any explicit looping with a single NumPy expression or a SciPy call that internally handles the heavy lifting in C/Fortran.
+
+---
+
+### What does the task actually ask?
+
+From the name `shift_2d` I infer that the problem consists of taking a 2‑D array (an image or some spatial field) and applying one or more translations to it.  
+Typical inputs would be:
+
+```python
+{
+    "image": np.ndarray of shape (H,W),
+    "shifts": np.ndarray of shape (N,2)   # each row is (dy,dx)
+}
+```
+
+The output expected by the baseline solver is presumably either:
+
+* a single shifted image if only one shift is supplied,
+* or an array of all shifted images stacked along a new axis if multiple shifts are requested,
+
+wrapped in some dictionary structure (`{"shifted_images": …}`).
+
+The key challenge is applying many sub‑pixel shifts efficiently without looping over `N`.  
+A classic trick for sub‑pixel translation is the Fourier‑shift theorem:
+
+```
+F{f(x−a)}(k) = e^(−i 2π k·a) F{f}(k)
+```
+
+So we can compute the FFT of the original image once, then multiply it by a phase factor that encodes every requested shift simultaneously (broadcasted over `N`), and finally inverse‑FFT back to obtain all shifted images at once.  
+This approach uses only NumPy/SciPy primitives and no explicit Python loops – exactly what the brief wants.
+
+---
+
+### Sketching the implementation
+
+1. **Imports**  
+   ```python
+   import logging
+   import random
+   from typing import Any, Dict
+   import numpy as np
+   import scipy.ndimage
+   ```
+
+   The brief explicitly lists these imports; even though `random` won’t be used later we keep it because it’s part of the required set.
+
+2. **Class skeleton**  
+   ```python
+   class Shift2D:
+       def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+           ...
+   ```
+
+3. **Extract data**  
+   ```python
+   img = problem["image"]
+   shifts = problem.get("shifts")
+   if shifts is None:
+       raise ValueError("Problem must contain 'shifts'")
+   ```
+
+4. **Normalise `shifts`**  
+   If `shifts` is a single tuple/list we reshape it into `(1,2)` so that downstream code can treat everything uniformly as an array of shape `(N,2)`.
+
+5. **FFT of the image**  
+   ```python
+   Fimg = np.fft.fftn(img)
+   ```
+
+6. **Frequency grids**  
+   For an image of size `(H,W)` we create 1‑D arrays:
+
+   ```python
+   y = np.arange(H) / H          # normalized frequency from 0 to 1
+   x = np.arange(W) / W
+   ```
+
+7. **Phase factors for all shifts**  
+   Using broadcasting we form a tensor of shape `(N,H,W)`:
+
+   ```python
+   dy = shifts[:,0][:,None,None]      # shape (N,1,1)
+   dx = shifts[:,1][:,None,None]
+   
+   phase_y = np.exp(-1j * 2*np.pi * y[None,:,None] * dy)
+   phase_x = np.exp(-1j * 2*np.pi * x[None,None,:] * dx)
+   
+   phases = phase_y * phase_x          # broadcast multiplication gives (N,H,W)
+   ```
+
+8. **Apply phases and inverse FFT**  
+
+   ```python
+   shifted_F = Fimg[None,:,:] * phases      # broadcast over N
+   shifted_imgs = np.real(np.fft.ifftn(shifted_F, axes=(1,2)))
+   ```
+
+9. **Return result**  
+   The baseline probably expects a dictionary with key `"shifted_images"`.  
+   
+   ```python
+   return {"shifted_images": shifted_imgs}
+   ```
+
+10. **Entry point**  
+
+    ```python
+    def run_solver(problem):
+        return Shift2D().solve(problem)
+    ```
+
+---
+
+### Checking edge cases
+
+* **Integer vs fractional shifts** – The Fourier method handles both seamlessly.
+* **Large number of shifts** – Memory usage scales with `N`. If `N` becomes huge this will hit RAM limits before CPU time does; however for typical benchmark sizes this should be fine.
+* **Non‑square images** – The frequency grids are constructed separately for height and width so rectangular shapes are fine.
+* **Complex input** – The algorithm assumes real input; if complex images appear we simply take the real part after inverse FFT which discards any imaginary artefacts due to numerical error.
+* **dtype handling** – All intermediate arrays are float64 by default because NumPy’s FFT uses double precision unless otherwise specified; this matches SciPy’s expectation and keeps precision high.
+* **Logging / randomness** – No randomness is used in the core algorithm; we keep the `random` import because it was mandated in the brief even though unused.
+
+---
+
+### Performance notes
+
+* The entire computation boils down to two FFTs (`fftn` once per image and `ifftn` once per shift batch). These are highly optimised BLAS/LAPACK routines under NumPy/SciPy.
+* No Python loops mean no interpreter overhead.
+* Broadcasting keeps memory locality high; only one large tensor of shape `(N,H,W)` needs to be stored temporarily.
+* If speed becomes critical beyond this point one could JIT‑compile parts with Numba or switch to JAX’s `jax.numpy`, but plain NumPy/SciPy already offers C‑level performance on modern CPUs/GPUs.
+
+---
+
+OK, I think I have the design. Time to write it.

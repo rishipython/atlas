@@ -1,0 +1,47 @@
+We need to produce optimized solve. Use numpy. We can use numpy.fft.fft which uses complex. For real signals, use rfft? But simpler: use np.fft.fft, multiply, ifft. Need correct mode. We'll implement same logic.
+
+Also need to handle empty inputs. Use real signals: use rfft to speed? For general, use np.fft.fft.
+
+Compute size = len_x + len_y -1 for full. For same and valid, we can compute full and slice.
+
+Implement zero-padding to next power of two for speed. Use np.fft.next_fast_len.
+
+Implementation:
+
+def solve(problem):
+
+extract arrays, mode. If any empty -> return empty list.
+
+Compute n = len_x + len_y -1
+
+n_fft = np.fft.next_fast_len(n)
+
+fft_x = np.fft.rfft(signal_x, n_fft)  # real FFT
+
+fft_y = np.fft.rfft(signal_y, n_fft)
+
+conv = np.fft.irfft(fft_x * fft_y, n_fft)
+
+conv = conv[:n]  # full length
+
+Then slice according to mode:
+
+if mode=="same": start = (n - max(len_x,len_y))//2? Actually same returns length max(len_x,len_y). For same, we need center part of full result. For lengths Lx, Ly. If len_x >= len_y: same length = len_x, start = (len_y -1)//2? Wait typical numpy.convolve with mode='same' returns length max(len_x,len_y) and aligns central part. For full length n. For same, start = (n - max(len_x,len_y))//2. So compute start = (n - max(len_x,len_y))//2, end = start + max(len_x,len_y). Use integer division. For odd difference, numpy's convolve uses floor? Let's test mentally: convolve([1,2,3], [1,1]) full length 4. same length 3. Full result [1,3,5,3]. same should be [1,3,5]? Actually np.convolve with same gives [1,3,5] for len 3. start=0? Let's compute: n=4, max=3, start=(4-3)//2=0. Good. For longer: x len 4, y len 3, full len 6. same len 4. start=(6-4)//2=1. So slice [1:5]. That matches numpy? Quick check: convolve([1,2,3,4],[1,1,1]) full [1,3,6,9,7,4] same length 4 -> [3,6,9,7]? start=1 gives [3,6,9,7]. Yes.
+
+For valid: output length max(0, len_x - len_y +1) if len_x>=len_y else max(0, len_y - len_x +1). Actually formula: if len_x>=len_y: len_x - len_y +1 else len_y - len_x +1. So start = (len_y-1) if len_x>=len_y else (len_x-1). Actually compute start = (len_y-1) if len_x>=len_y else (len_x-1). Then length = max(0, min(len_x,len_y)-1)+1? Let's derive: For x longer: valid length = len_x - len_y +1. start = len_y-1. For x shorter: start = len_x-1, length = len_y - len_x +1. So implement.
+
+Edge: empty inputs: return empty list.
+
+Return dict {"convolution": conv.tolist()}.
+
+Also handle mode default full.
+
+Implement.
+
+Also maybe use numba? But simpler.
+
+Also ensure dtype float64.
+
+We'll produce code accordingly.
+
+Let's craft final code.

@@ -1,0 +1,68 @@
+We need to replace slow implementation with fast one using FFT. We need to keep same function signature. Use scipy.signal.fftconvolve or numpy. Use numpy.fft.fft. But we must be careful about dtype: float64. Also need to handle potential large sizes.
+
+We can use numpy.fft.rfft? But simpler: use np.fft.fft with appropriate length. Compute convolution via FFT: y = ifft(fft(x, L) * fft(h, L)). But we need full convolution length N+M-1. We need to zero-pad to length L = next power of two >= N+M-1 or maybe use np.fft.next_fast_len.
+
+Use np.fft.rfft for real data to speed. Use np.fft.rfft(x, L) and rfft(h, L). Then compute product and irfft. That will give length L. Then take first N+M-1 elements. Use np.fft.next_fast_len for L.
+
+Edge cases: if either array is empty? Not specified but maybe not. We'll assume non-empty.
+
+We need to import numpy as np.
+
+Also, we might consider using scipy.signal.fftconvolve, but may not be available? But SciPy likely available. But we can implement ourselves.
+
+We'll produce conv1d:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = np.fft.next_fast_len(N + M - 1)
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X * H, n=L)
+    return y[:N + M - 1]
+
+Make sure dtype float64. Irfft returns float64.
+
+But we need to ensure that input arrays may not be float64; but we can cast.
+
+Return type: np.ndarray.
+
+This should produce numerically close results.
+
+Edge: if N+M-1==0? That would mean one of them zero length. But maybe not.
+
+We can also use np.fft.fft. But rfft is fine.
+
+Ok produce file.
+
+Also we can handle case of small arrays where next_fast_len might be large; but fine.
+
+Let's write.
+
+Also maybe we need to import numpy as np at top.
+
+Thus final code:
+
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    # ensure float64
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    L = np.fft.next_fast_len(N + M - 1)
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X * H, n=L)
+    return y[:N + M - 1]
+
+Test with random arrays.
+
+Edge: if N+M-1 > L? No, L >= N+M-1.
+
+Ok.
+
+Let's produce final code.

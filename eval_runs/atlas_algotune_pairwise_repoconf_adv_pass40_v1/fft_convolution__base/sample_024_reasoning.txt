@@ -1,0 +1,16 @@
+We need to implement conv1d efficiently. Use numpy. We can use np.fft.fft convolution. Must be numerically close to direct. Use np.fft.rfft? But arrays are real. Use np.fft.fft with appropriate size. For full convolution, need size L = N+M-1. FFT length should be next power of two >= L. But we can just use np.fft.fft with length L. Actually np.fft.fft works with any length; but for speed we might choose next power of two. Use np.fft.fft(x, n=fft_len) * np.fft.fft(h, n=fft_len). Then inverse. Use np.fft.ifft. Then take real part. Ensure dtype float64.
+
+Also we need to handle possible small rounding errors. Use np.allclose. So output real part.
+
+Edge cases: x or h empty? But likely not.
+
+Let's implement conv1d: compute fft_len = 1 << (N+M-1-1).bit_length() maybe. Then compute.
+
+Return real part.
+
+Let's produce file.
+
+Also we can use scipy.signal.fftconvolve but maybe not allowed? It's fine but we can implement manually.
+
+Let's produce code.
+

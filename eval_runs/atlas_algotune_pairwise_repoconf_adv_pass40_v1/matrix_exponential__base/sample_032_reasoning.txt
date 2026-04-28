@@ -1,0 +1,29 @@
+We need to implement a fast, numerically stable matrix exponential. Use scipy.linalg.expm? But we should not call that? We can import scipy.linalg.expm. The requirement: produce same output as scipy.linalg.expm within tight tolerance. We can simply return scipy.linalg.expm(A). That would be fast and accurate. But maybe they want us to implement ourselves? But using scipy.linalg.expm is allowed. It's a drop-in replacement. That satisfies correctness and speed. We need to keep same signature. So just import scipy.linalg.expm and return it.
+
+However, the problem might require to implement algorithmic improvement, but using the library is fine. They didn't forbid it. They said you may import numpy, scipy, numba, or any package from standard scientific-Python distribution. So simplest: return scipy.linalg.expm(A). Ensure dtype float64. That should be fine.
+
+Edge: The reference implementation uses 40 terms; but our implementation returns exactly SciPy's. That will be accurate.
+
+Thus code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But we need to ensure A is float64. The expm expects array-like. But fine.
+
+Make sure to import.
+
+Return type: np.ndarray.
+
+Ok.
+
+But maybe they want to preserve the same shape. SciPy returns shape same.
+
+Hence final.
+
+But we must produce a single python file, with imports at top. No extraneous prints.
+
+Ok.

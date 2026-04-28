@@ -1,0 +1,48 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. The straightforward vectorized approach uses broadcasting or dot product: D = np.sum(X**2, axis=1)[:,None] + np.sum(X**2, axis=1)[None,:] - 2*np.dot(X, X.T). That returns squared distances.
+
+We need to ensure numeric equality to reference: The reference uses double precision float64. So we can produce same dtype.
+
+We need to return np.ndarray shape (N,N). Implementation must be efficient.
+
+Edge cases: X may be empty? shape (0,D). Should handle gracefully: output (0,0). The formula works.
+
+We also need to keep docstring same? Not necessary.
+
+We just need to implement function.
+
+Also, we might consider using np.einsum or other. The dot product approach is fine.
+
+Potential pitfalls: For large arrays, memory may be high but fine.
+
+We'll produce code file with import numpy as np and function.
+
+Return out.
+
+Also need to maintain function signature: pairwise_sq_dist(X: np.ndarray) -> np.ndarray.
+
+Let's produce final code.
+
+Also, we may want to use np.linalg.norm? But dot product is best.
+
+Also we may use np.add.outer.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    sq_norm = np.sum(X**2, axis=1)
+    out = sq_norm[:, None] + sq_norm[None, :] - 2 * X @ X.T
+    return out
+
+But ensure dtype float64.
+
+Also we might cast to float64.
+
+But X is float64 by spec.
+
+Edge case: negative zeros? Not important.
+
+Return out.
+
+Ok.
+
+Let's produce final code.

@@ -1,0 +1,40 @@
+We need to write a fast `run_solver` that takes a problem dictionary and returns a solution that matches the behaviour of the original `Shift2D.solve` but without any Python‑level loops and using only vectorised NumPy/​SciPy calls.  
+The problem is essentially “find the integer pixel shift that best aligns two 2‑D images”.  The canonical way to do that in a fully vectorised manner is by computing the cross‑correlation of the two arrays and locating its maximum.  Cross‑correlation can be evaluated in O(N log N) time with an FFT‑based convolution – `scipy.signal.fftconvolve` is a ready‑made routine for this.  
+
+So the plan is:
+
+* Grab the two input arrays (`image` and `target`) from the problem dict.
+* Cast them to `float64` (the default precision for FFTs) – this avoids any accidental integer overflow or loss of precision when we multiply in Fourier space.
+* Compute the full cross‑correlation with `scipy.signal.fftconvolve`.  
+  The trick is to flip one of the arrays (`[::-1, ::-1]`) before convolving so that convolution becomes correlation.
+* Find the index of the maximum value in the resulting correlation matrix with `np.argmax` and `np.unravel_index`.  
+  Because we used full mode, the centre of the correlation matrix corresponds to zero shift; any offset from that centre gives us the required pixel displacement.
+* Convert that index offset into a pair `(dy, dx)` where positive values mean that the target must be shifted down/right relative to the image.
+* Optionally produce an aligned version of the original image by calling `scipy.ndimage.shift`.  
+  We negate the computed shift because `ndimage.shift` moves pixels in the opposite direction compared with our convention.
+* Return a dictionary containing at least `'shift'` and `'aligned_image'`.  
+  The exact keys are not specified by the task, but returning both makes it easy for downstream code or tests to inspect what happened.
+
+All of this uses only NumPy and SciPy functions – no explicit Python loops at all.  
+The only imports required are:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+import scipy.signal
+```
+
+The random module isn’t strictly needed for computation but may be used for seeding any stochastic parts (none here), so it satisfies the brief requirement that it be imported.  
+Logging is included so that debugging output can be enabled if necessary without affecting performance when turned off.
+
+Potential pitfalls:
+
+* **Memory consumption** – `fftconvolve` creates intermediate arrays twice as large as the inputs in full mode; if images are huge this could blow memory.  The task does not specify extreme sizes so we accept this trade‑off for speed.
+* **Floating‑point noise** – after FFTs small negative values can appear in what should be non‑negative correlations; however we only look at indices of maxima so this is harmless.
+* **Tie handling** – if multiple positions have exactly equal maximum values `np.argmax` returns the first occurrence which is deterministic and acceptable here.
+* **Sub‑pixel shifts** – this implementation only handles integer shifts because it works on discrete pixel grids; if sub‑pixel accuracy were required we'd need interpolation or phase correlation techniques, which are outside scope here.
+
+With these points settled I’m ready to write up the final file containing a single `run_solver` function that follows this design. OK, I think I have the design. Time to write it.

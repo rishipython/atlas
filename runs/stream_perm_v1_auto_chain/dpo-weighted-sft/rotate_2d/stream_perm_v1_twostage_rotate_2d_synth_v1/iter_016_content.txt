@@ -1,0 +1,105 @@
+We need to speed up a rotate_2d solver. Let's think.
+
+We have a reference implementation that is correct but slow. We want to replace its body with a faster implementation, keeping the same function signature. The function run_solver(problem) returns Rotate2D().solve(problem). So we need to implement Rotate2D.solve efficiently.
+
+We don't know the exact problem format, but typical rotate_2d: given a set of 2D points, find rotation that aligns them or something. Maybe it's about rotating an image? Could be about rotating an array of points to align with axes. But we can design generically: given an array of 2D points (N,2), find rotation matrix that best aligns them to some target? Or maybe it's about rotating a 2D array (image) by arbitrary angle using interpolation? The brief mentions scipy.ndimage, which provides rotate functions. So likely the task is rotating an image.
+
+Thus we can use scipy.ndimage.rotate for efficient rotation. That uses spline interpolation and is fast.
+
+We also need matrix multiplication and vectorization, no Python loops. Use numpy for matrix ops.
+
+Let's design:
+
+- Input problem: likely dict containing 'image' as 2D numpy array, 'angle' as float degrees or radians, maybe 'center', 'order', etc.
+
+- We'll parse problem dict: get image, angle, maybe other options.
+
+- Use scipy.ndimage.rotate(image, angle, reshape=False, order=1) or similar.
+
+- Return rotated image as output.
+
+But we need to match reference baseline's output format. Might be returning a dict with rotated image under key 'rotated'. But we don't know. We'll assume return rotated image directly.
+
+Alternatively maybe it's about rotating a set of points: then use matrix multiplication: R = [[cosθ,-sinθ],[sinθ,cosθ]]; new_pts = pts @ R.T.
+
+We need to use BLAS-backed matrix multiplication; numpy's dot uses BLAS.
+
+Also no loops; just vectorized ops.
+
+Also use logging and random imports as per brief; maybe for debugging or seeding.
+
+So final design:
+
+- import logging; import random; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+- Define class Rotate2D:
+
+    def solve(self, problem: Dict[str, Any]) -> Any:
+        # parse
+        img = problem.get('image')
+        angle = problem.get('angle', 0)
+        center = problem.get('center', None)
+        order = problem.get('order', 1)
+        reshape = problem.get('reshape', False)
+
+        # Use scipy.ndimage.rotate
+        rotated = scipy.ndimage.rotate(img, angle=angle, reshape=reshape,
+                                       order=order, mode='nearest',
+                                       prefilter=False)
+        return rotated
+
+But we also need matrix multiplication example maybe for point rotation: if 'points' key present:
+
+if 'points' in problem:
+    pts = np.asarray(problem['points'])
+    theta = np.deg2rad(angle) if isinstance(angle,float) else angle
+    R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]], dtype=pts.dtype)
+    rotated_pts = pts @ R.T
+    return rotated_pts
+
+So we can handle both cases based on presence of 'points'.
+
+Also ensure no loops; all vectorized.
+
+Edge cases: empty arrays; non-numeric types; ensure dtype float64 for rotation matrix.
+
+Add random seed for reproducibility? Not needed but we can call random.seed(0) in init.
+
+Add logging to debug shapes.
+
+Now think about performance: Using scipy.ndimage.rotate is fast due to C code and possibly multithreaded via OpenMP. For point rotation, numpy dot is efficient.
+
+Potential numeric issues: For large arrays, memory usage high but okay.
+
+Testing: ensure output shape matches input if reshape=False else bigger shape.
+
+Now confirm design meets brief: imports include logging, random, typing.Any/Dict, numpy as np, scipy.ndimage. Uses scipy functions (rotate). Uses matrix multiplication (pts @ R.T). No loops. Final solution ~8697 characters - that's fine.
+
+Edge cases: If image has multiple channels (3D array), rotate will apply per slice? SciPy's rotate supports ND arrays; it rotates each axis pair separately? But we can assume grayscale 2D image only. For multi-channel we might need to loop over channels but that's not allowed loops; but we could reshape to (-1,) etc. But keep simple.
+
+Also ensure we handle integer images properly by converting to float before rotate? SciPy handles integer too but may cast internally. We'll cast to float64 for safety then convert back if needed.
+
+Return type: just rotated array; baseline may expect dict but unknown; keep simple return rotated array.
+
+Let's think if there are alternative designs:
+
+1. Use JAX jitted function for rotation using custom grid sampling and interpolation. That would be fast but requires writing interpolation manually or using jax.scipy.ndimage.rotate which exists? JAX has jax.scipy.ndimage.rotate maybe not efficient yet. Could also use numba for point rotation loop but loops not allowed. So skip JAX.
+
+2. Use OpenCV cv2.warpAffine for image rotation; would be faster than SciPy but requires cv2 import not in brief but available library list includes opencv? Not listed but cvxpy etc but not cv2. So can't rely on cv2 unless available by default (maybe not). So stick with SciPy.
+
+3. Use FFT-based convolution for rotation? Not appropriate.
+
+Thus final design stands.
+
+Edge cases check:
+
+- Problem dict missing keys: default values used.
+- Angle zero returns original.
+- Points empty returns empty array.
+- Image dtype int -> cast to float64 then back to original dtype after rotate if necessary.
+- If reshape=True then output shape bigger; fine.
+- Logging prints shapes and types when DEBUG level enabled.
+- random seed used maybe for reproducibility of any stochastic operations (none used).
+
+Ok ready to handoff.
+OK, I think I have the design. Time to write it.

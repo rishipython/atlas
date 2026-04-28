@@ -1,0 +1,33 @@
+We need to implement efficient pairwise squared Euclidean distance. Standard formula: D = A + A^T - 2*X*X^T. Where A[i] = sum(X[i]^2). Implementation with broadcasting or np.dot. Use np.dot for speed.
+
+Edge: large N, D. Use np.dot. Use np.newaxis to compute. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    # compute pairwise squared distances
+    # using broadcasting: sq_norms[:, None] + sq_norms[None, :] - 2*X @ X.T
+    dist_sq = sq_norms[:, None] + sq_norms[None, :] - 2*np.dot(X, X.T)
+    # due to floating errors, set negative small values to zero
+    dist_sq = np.maximum(dist_sq, 0.0)
+    return dist_sq
+
+Return np.ndarray.
+
+We need to keep same function signature. Also we must import numpy.
+
+Thus final code: import numpy as np
+
+Define pairwise_sq_dist.
+
+Should we handle dtype? Accept float64. The algorithm uses float64.
+
+Edge: For large arrays, memory may be high but fine.
+
+Return out.
+
+Thus produce code.
+
+Also we may optionally use np.einsum for speed but dot is fine.
+
+Thus final answer.

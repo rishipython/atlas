@@ -1,0 +1,28 @@
+We need to write efficient convolution. We can use np.fft.fft or scipy.signal.fftconvolve. But we must ensure numeric closeness. Use numpy.fft.rfft? But data real. Use np.fft.fft of length N+M-1 padded to next power of 2 or minimal. We'll implement using np.fft.fft.
+
+Return dtype float64.
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); L=N+M-1
+    nfft=1<< (L-1).bit_length()  # next power of 2
+    X=np.fft.rfft(x, nfft)
+    H=np.fft.rfft(h, nfft)
+    Y=X*H
+    y=np.fft.irfft(Y, nfft)
+    return y[:L]
+
+Alternatively use np.fft.fft with complex. But rfft is efficient.
+
+Edge cases: if either empty? Not expected maybe. But we can handle.
+
+Also ensure dtype float64.
+
+Let's produce file.
+
+We must import numpy.
+
+We'll keep same signature.
+
+Let's produce code.

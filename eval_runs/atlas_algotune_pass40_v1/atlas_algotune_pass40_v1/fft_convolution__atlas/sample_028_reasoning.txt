@@ -1,0 +1,52 @@
+We need to replace the slow double loop with efficient FFT convolution. Use numpy. For 1D convolution, we can use np.fft.fft, but need to use real FFT (rfft) to speed? For float64, we can use np.fft.fft and then ifft. But need to handle real input; but easiest is to use scipy.signal.fftconvolve if available. But we may not have scipy? The instruction says we can import scipy. But to be safe, we can implement using numpy's fft. For real inputs, we can use rfft and irfft. But rfft returns half-spectrum. For convolution, we need linear convolution length N+M-1. So we need to zero-pad both to length L = next power of two >= N+M-1. Use np.fft.rfft to compute FFTs of length L, multiply, then irfft to length L. Then slice first N+M-1.
+
+We must return dtype float64. Ensure shape. Use np.array of dtype float64.
+
+Edge cases: if one array is empty? According to np.convolve, if either is empty, return empty? Actually np.convolve([] , ...) returns empty. But we can handle: if len(x)==0 or len(h)==0: return np.array([], dtype=np.float64). But also shape may be 0? But okay.
+
+We need to preserve same semantics: np.convolve(x,h,mode='full').
+
+Check if any of x or h is complex? The problem states float64 arrays. So we can assume real.
+
+We also need to handle dtype: input arrays may not be float64? They can be any numeric type. We convert to float64.
+
+Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = 1 << ((N+M-1-1).bit_length())  # next power of 2
+    # compute rfft
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+
+Potential numeric differences: rfft/irfft might give slightly different results but should be close.
+
+We can also use np.fft.fft with full complex arrays; that might be simpler. But rfft is more efficient.
+
+Edge: if N+M-1 is odd? rfft length n returns n//2+1 frequencies. For L=next power of two, no issue.
+
+Return dtype float64.
+
+Also we may use np.fft.rfftn etc but 1D is fine.
+
+Let's produce code.
+
+Add imports: import numpy as np
+
+Define function conv1d.
+
+Add docstring same as before.
+
+Test: compare with np.convolve for random arrays.
+
+We also need to ensure that for large arrays, performance is good.
+
+Ok produce final code.

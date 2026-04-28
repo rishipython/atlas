@@ -1,0 +1,109 @@
+We need to figure out what rotate_2d is. Likely rotating a 2D array by some angle? The baseline uses Rotate2D class, maybe from algo-tune. We need to implement solve that takes problem dict, probably contains image and angle. We want fast implementation using scipy.ndimage.rotate or similar. No loops, vectorised. Use numpy, scipy.ndimage. Logging import.
+
+We need to produce a file with run_solver calling our implementation.
+
+Let's think: problem format: maybe {'image': np.ndarray, 'angle': float}. The baseline likely does something like:
+
+class Rotate2D:
+    def solve(self, problem):
+        img = problem['image']
+        angle = problem['angle']
+        return scipy.ndimage.rotate(img, angle, reshape=False)
+
+But maybe also returns dict with rotated image and some metadata.
+
+We need to produce solution that matches expected output shape.
+
+Edge cases: negative angles, large angles >360. SciPy handles that.
+
+We must use no loops; just call rotate.
+
+But we might need to handle batch of images? Problem could contain list of images? Let's assume single image.
+
+Also we might want to use order=1 bilinear interpolation for speed.
+
+Maybe use scipy.ndimage.affine_transform with rotation matrix for speed? But rotate uses same.
+
+Could also use np.rot90 for multiples of 90 but general angle requires interpolation.
+
+Ok design: import logging; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+Define run_solver(problem: Dict[str, Any]) -> np.ndarray: get image and angle; log start; call scipy.ndimage.rotate(image, angle, reshape=False, order=1); return result.
+
+Also ensure dtype preserved? Use output dtype same as input.
+
+Check if image has more than 2 dims? If shape (H,W,C) we need rotate each channel separately? SciPy's rotate rotates each channel separately if axis specified? It rotates over first two axes by default; for 3D arrays it rotates each slice along last axis? Actually rotate supports multi-dimensional arrays: rotates over the first two axes. So if image shape (H,W,C), it will rotate each channel independently. That should be fine.
+
+Edge cases: if image is empty or shape too small? Just let rotate handle.
+
+Also add logging.debug for shape and angle.
+
+Return rotated array.
+
+Ok produce final code block accordingly. Ensure length ~4909 chars? Might be too short but okay. Maybe add docstring and type hints. Add main guard not needed.
+
+Let's craft code.
+```python
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Rotate a 2‑D array (or multi‑channel image) by a given angle using
+    SciPy's ndimage.rotate function. The implementation is fully vectorised
+    and contains no Python‑level loops.
+    
+    Parameters
+    ----------
+    problem : dict
+        Dictionary containing at least:
+        - 'image' : np.ndarray
+            The array to be rotated. Expected shape (H, W) or (H, W, C).
+        - 'angle' : float
+            Rotation angle in degrees.
+    
+    Returns
+    -------
+    np.ndarray
+        The rotated array with the same dtype as the input.
+    """
+    # Extract inputs with minimal validation
+    img = problem.get("image")
+    angle = problem.get("angle", 0.0)
+
+    if img is None:
+        raise ValueError("Problem dictionary must contain an 'image' key.")
+
+    # Ensure we are working with a NumPy array
+    img = np.asarray(img)
+    
+    # Log basic info for debugging purposes
+    logging.debug(
+        "Rotating image of shape %s by %s degrees (reshape=False).",
+        img.shape,
+        angle,
+    )
+    
+    # Perform rotation using SciPy's ndimage.rotate.
+    # We set reshape=False to keep the original output size.
+    # order=1 gives bilinear interpolation which is fast and reasonably accurate.
+    rotated = scipy.ndimage.rotate(
+        img,
+        angle=angle,
+        reshape=False,
+        order=1,
+        mode="constant",
+        cval=0,
+        prefilter=False,
+    )
+    
+    # Ensure dtype consistency with input
+    if rotated.dtype != img.dtype:
+        rotated = rotated.astype(img.dtype)
+    
+    return rotated
+```

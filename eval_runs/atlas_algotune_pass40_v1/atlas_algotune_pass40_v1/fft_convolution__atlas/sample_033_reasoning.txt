@@ -1,0 +1,36 @@
+We need to implement conv1d faster. Use scipy.signal.fftconvolve or numpy.fft. Let's use numpy.fft.fftconvolve from scipy.signal is fine.
+
+But we need to avoid extra imports? Allowed. Use scipy.signal.fftconvolve.
+
+But maybe not available? Usually yes. But to be safe, implement with numpy FFT.
+
+Compute next power of two length >= N+M-1. Use np.fft.rfft.
+
+We must keep dtype float64. Use np.fft.rfft for real input. Use rfft of both arrays, multiply, irfft to get real result, then take first N+M-1 elements.
+
+Need to handle dtype.
+
+Let's implement:
+
+def conv1d(x,h):
+    N=x.size; M=h.size; L=N+M-1; nfft=1<< (L-1).bit_length()
+    X=np.fft.rfft(x, nfft)
+    H=np.fft.rfft(h, nfft)
+    y=np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+Edge cases: zero length? Not needed.
+
+Return float64.
+
+We should also import numpy.
+
+Let's produce file.
+
+Check that for small arrays works same.
+
+Edge: if x or h empty? Not required.
+
+Return dtype float64.
+
+Let's code.

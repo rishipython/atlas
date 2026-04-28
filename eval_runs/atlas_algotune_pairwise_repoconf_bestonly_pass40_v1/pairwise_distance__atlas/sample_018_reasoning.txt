@@ -1,0 +1,23 @@
+We need to replace triple loops with efficient numpy vectorization. Compute squared distances: D = (X**2).sum(axis=1)[:,None] + (X**2).sum(axis=1)[None,:] - 2*X.dot(X.T). That yields squared distances. Ensure dtype float64. Use np.asarray. Return matrix. Provide function.
+
+Edge cases: N=0? Should handle. If X shape (0,D), return empty array (0,0). The formula works: dot of empty arrays? X.dot(X.T) returns shape (0,0). sum axis1 gives zeros. Works.
+
+We can implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1, keepdims=True)
+    dist2 = sq_norms + sq_norms.T - 2 * X @ X.T
+    # due to numerical errors, small negative values may appear; clip to zero
+    np.maximum(dist2, 0, out=dist2)
+    return dist2
+
+Return.
+
+We need to import numpy.
+
+Return dtype float64.
+
+Add docstring.
+
+Ok. Provide final code.

@@ -1,0 +1,34 @@
+We need to implement fast conv1d using FFT. Use numpy. The input arrays are 1-D float64. We need to return full convolution. We can use np.fft.fft or scipy.signal.fftconvolve. But we should avoid external dependencies maybe. But scipy is allowed. But simpler: use np.fft.rfft or fft. Use np.fft.fft of length L = next power of two >= N+M-1 maybe for speed. Use np.fft.fft(x, L) * np.fft.fft(h, L). Then inverse fft. Take real part. Ensure dtype float64. The result might have small imaginary due to numeric errors. Use np.real. Then slice first N+M-1.
+
+Edge cases: x or h might be length 0? Usually not. But we can handle.
+
+Implement conv1d:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = 1 << ((N+M-1-1).bit_length())   # next power of two
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    y = np.fft.ifft(X*H).real
+    return y[:N+M-1]
+```
+
+Make sure dtype is float64. Use np.fft.fft which returns complex64? Actually returns complex128 for float64 input. Good.
+
+Alternatively, we can use np.fft.rfft for real input and use np.fft.irfft. But easier above.
+
+Also handle case when N+M-1 <= L? It's fine.
+
+Let's produce final code. Ensure imports. Provide docstring.
+
+Return np.array of dtype float64.
+
+Edge: If N+M-1 > L? but L computed as next power of two > N+M-2. So fine.
+
+Ok produce final.

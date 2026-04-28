@@ -14,9 +14,25 @@ from .base import TaskFamily, TaskSpec
 _THIS_DIR = Path(__file__).resolve().parent
 _ALGOTUNE_ROOT = _THIS_DIR / "_oe_problems" / "algotune_examples"
 
-# Chosen sample of relatively simple problems for quick experiments.
+# Active AlgoTune problems available in this codebase.
 SIMPLE_SAMPLE_PROBLEMS: list[str] = [
+    "convolve_1d",
+    "correlate_1d",
+    "dct_type_I_scipy_fftpack",
+    "dst_type_II_scipy_fftpack",
+    "fft_real_scipy_fftpack",
+    "matrix_multiplication",
+    "outer_product",
+    "shift_2d",
+    "base64_encoding",
+    "sha256_hashing",
+    "rotate_2d",
+    "eigenvectors_complex",
+    "fft_cmplx_scipy_fftpack",
     "fft_convolution",
+    "lu_factorization",
+    "polynomial_real",
+    "psd_cone_projection",
     "convolve2d_full_fill",
     "affine_transform_2d",
 ]

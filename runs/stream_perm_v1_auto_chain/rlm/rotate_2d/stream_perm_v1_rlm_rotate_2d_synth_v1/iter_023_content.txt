@@ -1,0 +1,7 @@
+We need a fast way to rotate a 2‑D array given an angle while staying completely vectorised and using SciPy somewhere in the pipeline – the easiest hit is `scipy.ndimage.rotate`.  
+Let’s pull the image out of the `problem` dictionary – it might be stored under either `"data"` or `"image"` – then grab the rotation parameters (`"angle"` defaults to 0 and `"reshape"` defaults to False).  
+The rotation itself should be done once in C via SciPy’s routine – no Python loops at all – so just call `scipy.ndimage.rotate(img.astype(np.float32), ...)`.  
+After rotating we cast back to the original dtype so that the result type matches what the caller expects (`np.int32`, `np.uint8`, etc.).  
+Finally we return a dictionary keyed by whatever name was used in the input (`"data"` or `"image"`), mapping that key to the rotated array – this mirrors what the original `Rotate2D.solve` would have returned and keeps the API stable while giving us a huge speedup over any naïve loop‑based approach.  
+
+OK, I think I have the design. Time to write it.

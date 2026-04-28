@@ -1,0 +1,50 @@
+We need to produce a faster implementation. Use FFT-based convolution. Use numpy. But we must ensure same results as np.convolve. For floating point, we can use numpy.fft. But for real signals, we can use np.fft.rfft? but simpler: use np.fft.fft on padded arrays.
+
+We need to return dtype float64. Use np.fft.fft. Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); outlen=N+M-1
+    size=1<< (outlen-1).bit_length()  # next power of 2
+    # or we can use size = outlen
+    # But for efficiency, use power of 2.
+    X=np.fft.rfft(x, size)
+    H=np.fft.rfft(h, size)
+    Y=X*H
+    y=np.fft.irfft(Y, size)[:outlen]
+    return y
+
+But we need to return float64. np.fft.irfft returns float64 by default if inputs are float64. Should be fine.
+
+Edge cases: x or h may be empty? Not typical. But we should handle if any length 0: return empty array? np.convolve with empty returns empty. So we should handle that.
+
+Also handle if dtype not float64? But spec says float64.
+
+We should also support 1-D arrays.
+
+Return dtype float64.
+
+Also handle when x or h are 0-length: outlen = N+M-1 = -1? Actually if one is zero-length, conv returns empty. np.convolve([],[...]) returns array([]). So we can treat: if N==0 or M==0: return np.array([], dtype=np.float64). So handle.
+
+Also we might compute size = outlen if outlen > 0 else 0. But np.fft.rfft cannot accept size 0. So we handle early.
+
+Let's implement.
+
+Also we can use np.fft.fft with size = next_pow2. That's okay.
+
+Potential numeric difference: The FFT-based result may have small errors but should be within tolerance.
+
+Also we can use np.fft.fftpack? But default is fine.
+
+Better: Use np.fft.fft with size = outlen? For large arrays, power-of-2 might be faster. Use bit_length.
+
+Edge: outlen may be 1: size=1.
+
+Edge: outlen=0: we return empty.
+
+Let's implement.
+
+Also we may use np.fft.rfft for real input to save memory. Then we use irfft.
+
+We need to import numpy.
+
+Let's craft file.

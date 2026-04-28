@@ -1,0 +1,110 @@
+```python
+import numpy as np
+import logging
+from typing import Dict, Any
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _next_fast_len(n: int) -> int:
+        """
+        Return the next power‑of‑two length greater than or equal to n.
+        This is a simple and fast choice for FFT size.
+        """
+        return 1 << (n - 1).bit_length()
+
+    @staticmethod
+    def _convolve_full(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Compute linear convolution of two real 1‑D arrays using FFT.
+        """
+        len_x, len_y = len(x), len(y)
+        if len_x == 0 or len_y == 0:
+            return np.array([], dtype=np.float64)
+
+        # Full convolution length
+        L = len_x + len_y - 1
+        # Choose FFT length (next power of two)
+        fftlen = FFTConvolution._next_fast_len(L)
+
+        # Real FFTs
+        X = np.fft.rfft(x, n=fftlen)
+        Y = np.fft.rfft(y, n=fftlen)
+
+        # Element‑wise multiplication
+        Z = X * Y
+
+        # Inverse real FFT to obtain full convolution
+        full = np.fft.irfft(Z, n=fftlen)[:L]
+        return full
+
+    @staticmethod
+    def _slice_result(full: np.ndarray, mode: str, len_x: int, len_y: int) -> np.ndarray:
+        """
+        Slice the full convolution according to the requested mode.
+        """
+        if mode == "full":
+            return full
+
+        if mode == "same":
+            # Desired output length
+            out_len = max(len_x, len_y)
+            # Start index for the central part
+            start = (len_y - 1) // 2
+            end = start + out_len
+            return full[start:end]
+
+        if mode == "valid":
+            # Length of valid part
+            out_len = max(0, max(len_x, len_y) - min(len_x, len_y) + 1)
+            if out_len == 0:
+                return np.array([], dtype=np.float64)
+            # Start index
+            start = min(len_x, len_y) - 1
+            end = start + out_len
+            return full[start:end]
+
+        raise ValueError(f"Unsupported mode: {mode}")
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two real signals using FFT.
+        """
+        try:
+            signal_x = np.array(problem["signal_x"], dtype=np.float64)
+            signal_y = np.array(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Handle trivial cases
+            if len(signal_x) == 0 or len(signal_y) == 0:
+                return {"convolution": []}
+
+            # For very small signals use direct convolution to avoid FFT overhead
+            SMALL_THRESHOLD = 128
+            if len(signal_x) < SMALL_THRESHOLD and len(signal_y) < SMALL_THRESHOLD:
+                # Use numpy's convolution and then slice
+                full = np.convolve(signal_x, signal_y, mode="full")
+                result = self._slice_result(full, mode, len(signal_x), len(signal_y))
+            else:
+                full = self._convolve_full(signal_x, signal_y)
+                result = self._slice_result(full, mode, len(signal_x), len(signal_y))
+
+            return {"convolution": result.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve method: {e}")
+            raise
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point for the evaluator.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)
+```

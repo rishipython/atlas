@@ -1,0 +1,11 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. The reference is slow triple loop. We can use vectorized broadcasting or efficient linear algebra. The simplest: compute squared norms, then use broadcasting: dist^2 = a^2 + b^2 - 2ab. For N up to maybe thousands, we can compute Gram matrix: G = X @ X.T, then diag = np.sum(X**2, axis=1). Then dist2 = diag[:, None] + diag[None, :] - 2*G. Ensure dtype float64. Also ensure non-negative due to rounding: clip to zero. That will be fast.
+
+Edge cases: maybe negative due to floating errors. Use np.maximum(dist2, 0). Ensure shape (N,N). Implementation: def pairwise_sq_dist(X): N,D = X.shape; sq_norm = np.sum(X**2, axis=1); dist2 = sq_norm[:,None] + sq_norm[None,:] - 2*np.dot(X, X.T); return np.maximum(dist2, 0). This returns dtype float64.
+
+But to be safe with memory, we can use np.dot. For large N, memory for NxN may be large but same as output. Acceptable.
+
+Also we might want to ensure dtype float64. X may be float64. dot will produce float64. Use np.asarray(X, dtype=np.float64). Implementation.
+
+Let's produce final file. Also include __all__ maybe. We'll import numpy. Provide function. Provide docstring.
+
+Let's produce final.

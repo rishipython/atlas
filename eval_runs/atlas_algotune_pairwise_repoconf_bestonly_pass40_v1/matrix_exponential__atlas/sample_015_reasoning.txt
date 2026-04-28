@@ -1,0 +1,19 @@
+We need to implement fast matrix exponential. We can use scipy.linalg.expm, but we need to import it. Problem likely expects to use scipy's implementation. We can simply call scipy.linalg.expm(A). But we need to match signature. That would be fastest. But need to ensure we import scipy.linalg. The reference function is naive. We can replace with calling scipy.linalg.expm. That should match SciPy's result. But we need to ensure we don't modify tests that might check for not using SciPy? But the problem statement says you may import scipy. So just use that. But maybe they want a custom implementation using Pade approximant with scaling and squaring. But simplest is to call scipy.linalg.expm, which is already fast and accurate. That should pass. But some tasks might restrict not to use SciPy? The problem statement says you may import scipy. So we can use it. But the evaluator might compare with scipy's result? The requirement: "return numerically-close results on the same inputs" within tight tolerance. So we can just call scipy.linalg.expm and return. That will be correct. But maybe they want to avoid external dependencies. But we can use numpy only. But implementing Pade approximant ourselves is more work. But we can use scipy's function.
+
+However, we must consider that the environment might not have scipy. But the problem statement says we may import it. Usually the environment includes SciPy. So we can rely on it.
+
+Thus implement:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But we might want to ensure dtype is float64. SciPy returns same dtype. But we can cast.
+
+Alternatively, we can implement scaling and squaring ourselves using Pade approximant from numpy. But that's more complex.
+
+Thus final solution: just call scipy.linalg.expm. Let's produce full file.

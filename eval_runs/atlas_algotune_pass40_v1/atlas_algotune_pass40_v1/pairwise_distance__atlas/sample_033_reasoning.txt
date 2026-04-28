@@ -1,0 +1,43 @@
+We need to implement efficient pairwise squared Euclidean distance matrix. Standard method: use broadcasting or matrix multiplication. For double precision, we can compute Gram matrix: G = X @ X.T. Then squared distances: D = diag(X^2)[:,None] + diag(X^2)[None,:] - 2*G. Ensure non-negative small negative due to numerical errors: np.maximum(0, D). Use np.einsum or np.dot.
+
+Also can use scipy.spatial.distance.cdist, but we need to implement ourselves.
+
+We need to ensure dtype float64. Input dtype float64. Implementation should be robust.
+
+Edge cases: N=0? If X shape (0,D). Then output shape (0,0). Works.
+
+Also need to maintain same function name and signature.
+
+Add imports: numpy as np.
+
+Return dtype float64.
+
+Let's produce final code.
+
+Make sure to cast to float64: X = np.asarray(X, dtype=np.float64). But input already float64.
+
+Also compute diag = np.sum(X**2, axis=1). Use np.dot.
+
+Potential memory: for large N, computing full X @ X.T may be heavy. But it's fine.
+
+Alternatively use scipy.spatial.distance.squareform but not needed.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+
+    X = np.asarray(X, dtype=np.float64, order='C')
+    N = X.shape[0]
+    # compute dot product
+    G = X @ X.T
+    sq_norms = np.diag(G)
+    D = sq_norms[:,None] + sq_norms[None,:] - 2*G
+    # due to numerical errors, negative small values
+    D = np.maximum(D, 0)
+    return D
+
+Edge case: N=0: X @ X.T returns (0,0). diag empty.
+
+Ok.
+
+Let's output final code.

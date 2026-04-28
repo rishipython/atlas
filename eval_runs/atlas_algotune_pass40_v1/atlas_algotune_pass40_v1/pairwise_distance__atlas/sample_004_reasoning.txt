@@ -1,0 +1,23 @@
+We need to implement a fast pairwise squared distance matrix. The typical formula: dist^2(i,j) = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. So we can compute sum of squares per row, then use broadcasting. Implementation: X @ X.T gives dot products. Compute norms squared: np.sum(X**2, axis=1). Then dist2 = norms[:,None] + norms[None,:] - 2 * (X @ X.T). Use np.maximum(dist2, 0) to avoid negative due to numeric errors.
+
+Also ensure dtype float64. Should return a numpy array shape (N,N). Use np.float64.
+
+Edge cases: N=0? Not sure but probably not. But we can handle.
+
+Also we need to import numpy.
+
+We may also consider using scipy.spatial.distance.cdist but that is fine.
+
+Implementation: Use X = np.asarray(X, dtype=np.float64). Then compute.
+
+Return as np.float64.
+
+Let's produce final code.
+
+Also we might use np.dot for dot product.
+
+Make sure to cast to float64.
+
+Ok.
+
+Let's produce final code.

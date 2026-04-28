@@ -1,0 +1,40 @@
+We need to implement conv1d efficiently. Use np.fft. But need to consider float64. We can use scipy.signal.fftconvolve, but we might avoid importing scipy to keep minimal. Use numpy.fft.fft of size next power of two >= N+M-1. Compute convolution via elementwise product and inverse fft.
+
+We need to handle real inputs. Use np.fft.rfft? But easier: use np.fft.fft.
+
+Implementation:
+
+def conv1d(x, h):
+    N = len(x); M = len(h)
+    size = N + M - 1
+    fft_size = 1 << (size-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, fft_size)
+    H = np.fft.rfft(h, fft_size)
+    y = np.fft.irfft(X*H, fft_size)[:size]
+    return y
+
+But np.fft.rfft returns real output. Use float64.
+
+Edge cases: empty arrays? maybe not.
+
+We need to import numpy.
+
+Return np.float64.
+
+We must ensure dtype of output is float64.
+
+Ok.
+
+Let's produce file with imports and function.
+
+Add docstring.
+
+We should avoid using scipy.
+
+Ok.
+
+Also, for small arrays maybe use np.convolve for speed? But fine.
+
+We'll implement as above.
+
+Let's produce final code.

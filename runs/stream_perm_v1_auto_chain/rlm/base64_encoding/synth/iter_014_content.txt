@@ -1,0 +1,48 @@
+We need to take a byte payload from the `problem` dict and spit out its Base‑64 representation as fast as possible – no Python loops at all, just straight NumPy crunching and a tiny bit of pure Python at the very end for the final string conversion.  
+The core idea is that Base‑64 works on blocks of three bytes → four six‑bit symbols, so we’ll treat the whole buffer as a flat `uint8` array, pad it up to a multiple of three with zeros (the zero‑bytes will turn into “A”s later), reshape it into an `(N//3, 3)` view and then pull out the three source columns `b0`, `b1`, `b2`.  
+From those three columns we can build the four destination indices with only bit‑shift and mask operations:
+
+```
+c0 = (b0 >> 2) & 0x3F
+c1 = ((b0 & 0x03) << 4) | (b1 >> 4)
+c2 = ((b1 & 0x0F) << 2) | (b2 >> 6)
+c3 = b2 & 0x3F
+```
+
+All these are vectorised NumPy integer operations – no Python looping whatsoever.  
+Next we need a lookup table that maps each six‑bit value `[0..63]` back to its ASCII character (`A–Z`, `a–z`, `0–9`, `+`, `/`).  
+We can pre‑create this table once as a `np.ndarray` of type `uint8` holding the ASCII codes for those characters:
+
+```
+BASE64_ALPHABET = np.fromiter(
+    b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+    count=64,
+    dtype=np.uint8
+)
+```
+
+With that in hand we simply index into it:
+
+```
+chars = BASE64_ALPHABET[[c0,c1,c2,c3]].ravel()
+```
+
+`chars` is now a flat array of ASCII codes representing every output character *including* those “A”s that came from padded zero‑bytes at the end of the original data block.  
+The final step is trimming off the correct number of padding characters (`=`).  
+Because our padding only affects the very last quartet(s), it’s safe to just drop as many trailing “A”s as there were zero‑bytes added:
+
+```
+pad_len   # number of zero‑bytes appended (modulo logic gives values in {0, 1, 2})
+encoded   # full ASCII code array including padded “A”s
+final_str = encoded.tobytes().decode('ascii')
+return final_str[:-pad_len] + '=' * pad_len
+```
+
+This handles all edge cases automatically:
+* Empty input → zero‑length arrays → empty string.
+* Input lengths already divisible by three → `pad_len == 0`, nothing trimmed.
+* One or two leftover bytes → proper number of trailing “=” signs inserted exactly where standard Base‑64 dictates them.
+
+The implementation stays well under the character budget once you strip comments – just a handful of lines for imports (`base64`, `hmac`, `numpy`, typing helpers), one class with a single method doing all the work above, and an entry point that forwards the supplied `problem` dict through this solver.  
+
+OK, I think I have the design. Time to write it.

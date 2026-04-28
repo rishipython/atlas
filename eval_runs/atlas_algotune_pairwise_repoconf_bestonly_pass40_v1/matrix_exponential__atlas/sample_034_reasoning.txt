@@ -1,0 +1,28 @@
+We need to provide a faster, numerically stable implementation that matches scipy.linalg.expm. We can use scipy.linalg.expm directly? But that would be trivial but still maybe okay. But the instruction: "Your solution must define the same top-level function name and signature as the reference. Do not rename it." So we can simply call scipy.linalg.expm. But maybe we need to avoid dependencies? It says we may import scipy. So simplest: return scipy.linalg.expm(A). That will be fast and accurate. But maybe they want to implement Pade approximant. But easiest is just to use scipy's function. It will be fast.
+
+But the reference implementation may not import scipy. But we can import.
+
+Will that pass? The evaluator will compare np.allclose with the problem's rtol/atol. SciPy's expm is accurate.
+
+Edge cases: A may not be square? They say square. We can assert shape[0]==shape[1]. But fine.
+
+We just implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A):
+    return expm(A)
+
+But we must ensure dtype float64. SciPy returns same dtype. Should be fine.
+
+But maybe they want to avoid calling SciPy? But it's allowed.
+
+Let's provide that.
+
+But to be safe, we can convert to float64 if not.
+
+Also we might want to handle small matrices with simple formula? Not needed.
+
+Let's produce file.
+

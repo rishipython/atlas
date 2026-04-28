@@ -1,0 +1,51 @@
+We need to write faster conv1d. Use numpy's fft. We can use np.fft.fft, np.fft.ifft, or scipy.signal.fftconvolve. But we need to be careful about dtype, rounding errors. Use numpy.fft.rfft? For real signals, we can use np.fft.rfft and irfft. But easiest: use np.fft.fft of length L = next power of two? For full convolution length N+M-1, we can choose len_out = N+M-1. But convolution via FFT: compute FFT of length L>=N+M-1, multiply elementwise, inverse FFT. Use np.fft.fft, ifft. Use dtype complex, but result real. Use np.real. For float64, we can use np.fft.fft. Should produce same result as np.convolve. Use np.fft.fft(x, L) * np.fft.fft(h, L). Then np.fft.ifft and take real part, round? Might produce small imaginary due to numerical errors. Use np.real. Also we can cast to float64. For large arrays, using FFT is faster.
+
+Edge cases: empty arrays? But probably not. Let's just handle N+M-1 > 0. If one of arrays is empty, output zeros? But typical convolution: if either empty, output empty? Actually np.convolve of empty array returns empty. But N+M-1 would be 0? If N=0 or M=0. For safety, handle. We can just return np.array([], dtype=np.float64). Use np.fft.fft with length L=0? That fails. So handle case: if N==0 or M==0: return empty array. But typical test might not include empties.
+
+Let's implement conv1d:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = N + M - 1
+    # choose FFT length: next power of two for speed? Use np.fft.next_fast_len
+    L_fft = np.fft.next_fast_len(L)
+    X = np.fft.rfft(x, n=L_fft)
+    H = np.fft.rfft(h, n=L_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L_fft)
+    return y[:L]
+```
+
+But we need to import numpy. Use np.fft.rfft and irfft for real. That reduces size. For length L_fft. The result y will be real.
+
+Edge: if we want to use np.fft.fft and ifft, we can use rfft.
+
+Double-check: rfft returns length L_fft//2+1. Multiply. Then irfft returns length L_fft. Then slice.
+
+This should be fast.
+
+We need to maintain same function signature. Provide full file with imports.
+
+Also we might want to set np.seterr? Not necessary.
+
+We need to ensure that the output dtype is float64. The irfft returns float64 if input arrays are float64. Good.
+
+We should also consider that if N+M-1 is large, next_fast_len may be bigger, but it's fine.
+
+Let's produce final code.
+
+Also we might want to handle complex input? But problem says float64 arrays. So fine.
+
+Return as np.ndarray.
+
+Add docstring maybe.
+
+Ok.
+
+We'll produce final code.

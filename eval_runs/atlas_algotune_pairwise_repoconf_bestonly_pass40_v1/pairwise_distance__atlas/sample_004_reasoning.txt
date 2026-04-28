@@ -1,0 +1,39 @@
+We need to implement a fast pairwise squared distance matrix. The typical formula: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. We can compute row norms squared vector: sq_norm = np.sum(X**2, axis=1). Then D = sq_norm[:,None] + sq_norm[None,:] - 2 * X @ X.T. Ensure dtype float64. Also need to ensure no negative due to floating errors: maybe clip to zero. But tests likely allow small negative values.
+
+Implement pairwise_sq_dist accordingly.
+
+Also ensure shape etc.
+
+Return as np.float64.
+
+Add import numpy as np at top.
+
+Thus final code: just that function.
+
+Return.
+
+Also ensure we don't rely on other packages.
+
+Edge cases: N may be 0? But shape (0,D). Then compute accordingly: sq_norm shape (0,). X @ X.T shape (0,0). The formula works.
+
+Make sure to cast to float64.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    D = sq_norm[:,None] + sq_norm[None,:] - 2 * X @ X.T
+    # numerical errors: set small negatives to zero
+    D = np.maximum(D, 0.0)
+    return D
+
+That's it.
+
+Return.
+
+Check: for N=1, returns shape (1,1) with 0.
+
+Ok.
+
+Let's produce final code.

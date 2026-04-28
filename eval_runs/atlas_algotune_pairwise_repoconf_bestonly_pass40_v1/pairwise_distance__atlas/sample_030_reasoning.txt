@@ -1,0 +1,18 @@
+We need to replace the slow implementation with efficient vectorized approach. The standard formula: pairwise squared distances can be computed as:
+
+Let G = X @ X.T (dot product). Then distances: D[i,j] = ||X[i]||^2 + ||X[j]||^2 - 2*G[i,j]. Where ||X[i]||^2 is dot product of row with itself. So compute squared norms: sq_norm = np.sum(X**2, axis=1). Then D = sq_norm[:,None] + sq_norm[None,:] - 2*G. Ensure non-negative due to numerical errors: max(D,0). Or use np.maximum.
+
+Also ensure dtype float64.
+
+Edge cases: N can be zero? but shape (N,D). If N=0, return empty (0,0). Should handle. So implement.
+
+Also maybe memory: G is N,N; but that's expected.
+
+Let's produce final code.
+
+Also mention that for large N memory may be huge, but that's fine.
+
+Return result.
+
+Ok produce final python file.
+

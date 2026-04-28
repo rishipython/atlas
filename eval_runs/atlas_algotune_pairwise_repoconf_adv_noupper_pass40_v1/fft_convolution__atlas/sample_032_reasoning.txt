@@ -1,0 +1,37 @@
+We need to produce a faster implementation. Use FFT-based convolution. Use numpy. But we must ensure same results as np.convolve. For floating point, we can use numpy.fft.fft with proper size. For real inputs, we can use rfft but simpler to use fft. We'll compute size L = next power of two >= N+M-1. Use numpy.fft.fft, multiply, ifft, real part. Ensure dtype float64. Use np.real. Also handle small sizes maybe fallback to direct? But performance is fine for any.
+
+Edge cases: empty arrays? np.convolve expects 1-d arrays. If either empty? np.convolve([], []) returns array([], dtype=float). Our algorithm: N=0 M=0 => out length -1? N+M-1 = -1. Not good. But maybe test doesn't include empty. But safe to handle: if N==0 or M==0: return np.array([], dtype=float). Similarly.
+
+Also if length 1? Works.
+
+We need to ensure numerical equivalence within rtol/atol. Use np.fft.fft with float64. The result might have small imaginary parts due to numerical error; we take real part.
+
+Return dtype float64.
+
+We can also use scipy.signal.fftconvolve but we might not want to depend on scipy. But allowed. But simpler to use numpy.
+
+Let's implement:
+
+def conv1d(x,h):
+
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+
+    N = x.size
+    M = h.size
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    conv_len = N+M-1
+    L = 1 << (conv_len-1).bit_length()  # next power of 2
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    y = np.fft.ifft(X*H).real
+    return y[:conv_len]
+
+Also maybe use np.fft.rfft for speed, but fine.
+
+Return type np.ndarray. Use dtype float64.
+
+Let's produce final code with imports and function. Use __all__ maybe. Provide docstring.
+
+That's it.

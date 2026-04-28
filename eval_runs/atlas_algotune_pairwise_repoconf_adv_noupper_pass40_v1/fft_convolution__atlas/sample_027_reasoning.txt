@@ -1,0 +1,50 @@
+We need to write a fast implementation of 1D convolution. Use numpy. Use numpy.fft.fft or scipy.signal.fftconvolve. We can implement using numpy's FFT with real input. For float64. Implementation: compute next power of 2 length >= N+M-1. Use np.fft.rfft or fft. Use rfft for speed. Use rfft for real. But we need to handle float64. We'll use np.fft.rfft for both arrays, multiply, then irfft. rfft returns complex. Then we need to cast to float64. Use np.fft.rfftfreq? Not needed. Steps:
+
+n = N+M-1
+size = 1 << (n-1).bit_length()  # next power of two >= n
+
+X = np.fft.rfft(x, n=size)
+H = np.fft.rfft(h, n=size)
+Y = X * H
+y = np.fft.irfft(Y, n=size)
+return y[:n]
+
+But careful: if arrays are real, rfft returns real? Actually rfft returns complex of length n/2+1. Irfft will produce real array length n. Works.
+
+Edge cases: zero-length arrays? But inputs length >0 presumably. But we should handle gracefully.
+
+Also we can use np.fft.fft with complex arrays. But rfft is fine.
+
+Need to import numpy as np. So final code:
+
+def conv1d(x,h): ... as above.
+
+Check type: x and h are np.ndarray. Use np.asarray? We'll trust.
+
+Return dtype float64.
+
+Potential numeric difference: rounding errors small. np.allclose should pass.
+
+Also we can optionally use np.fft.rfft with dtype np.float64; output is complex dtype. Multiply.
+
+Return y[:n] as float64.
+
+Also we may need to cast to float64: y = y[:n].astype(np.float64). But it's already float64.
+
+Return y.
+
+Test: For small arrays: conv1d(np.array([1,2]), np.array([3,4])) -> [3,10,8]. Check.
+
+Also we might consider using np.fft.fft with real arrays and use np.real of irfft. But rfft is fine.
+
+Also we need to consider memory overhead but fine.
+
+Let's produce final code.
+
+We should also implement fallback for small arrays? Not needed.
+
+Add docstring.
+
+Return.
+
+Ok.

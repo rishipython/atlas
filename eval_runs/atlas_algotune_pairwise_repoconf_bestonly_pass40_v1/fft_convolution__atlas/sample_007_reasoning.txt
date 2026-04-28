@@ -1,0 +1,42 @@
+We need to produce a fast implementation. Use numpy. Use np.fft.fftconvolve? But we can implement ourselves: use np.fft.fft with appropriate size. The input arrays are float64. For speed, use np.fft.rfft? But conv1d expects full convolution, so length N+M-1. We can use np.fft.fft of length next power of two >= N+M-1. Use np.fft.fft on real arrays? Use np.fft.rfft for speed but then need to handle multiplication properly.
+
+Simplest: use np.fft.fft. Compute L = nextpow2(N+M-1). Use np.fft.fft(x, L)*np.fft.fft(h, L). Then inverse FFT to get full convolution. Use np.fft.ifft. Then take real part. Use np.real. Then slice first N+M-1 elements. Should be fine.
+
+Also we can use np.fft.fftpack? But standard np.fft is fine. Ensure dtype float64. Use np.fft.fft returns complex64? Actually returns complex128 for float64 input.
+
+Edge cases: N=0 or M=0? Not specified but likely non-empty. But handle gracefully: if any zero length, return empty array.
+
+Also we may consider using scipy.signal.fftconvolve but that's fine. But we can't import scipy? The problem says we can import scipy. But we can just use numpy.
+
+Let's write conv1d as:
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]; M = h.shape[0]
+    if N==0 or M==0:
+        return np.empty(0, dtype=np.float64)
+    L = 1 << (N+M-2).bit_length()  # next power of two >= N+M-1
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+
+But need to ensure dtype float64. rfft returns complex128. irfft returns float64.
+
+Edge: N+M-1 may be 1? bit_length(0) -> 0? For N=1 M=1 => N+M-2=0 bit_length=0 -> L=1 << 0 =1. Good.
+
+But for N=0 or M=0, we return empty.
+
+Let's produce file.
+
+Also we should include imports: numpy as np. Provide docstring.
+
+Add __all__ maybe.
+
+Testing: Should produce same as np.convolve.
+
+Potential numeric difference? Usually FFT-based convolution may introduce small errors but within tolerance. Use np.allclose.
+
+Ok produce final code.

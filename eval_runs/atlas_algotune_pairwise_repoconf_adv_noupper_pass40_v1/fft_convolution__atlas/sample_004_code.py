@@ -1,0 +1,20 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    # Handle empty inputs like np.convolve
+    if N == 0 or M == 0:
+        return np.empty(0, dtype=np.float64)
+
+    L = N + M - 1  # length of the full convolution result
+
+    # Use real FFTs for speed and memory efficiency
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = np.fft.irfft(X * H, n=L)
+
+    return Y

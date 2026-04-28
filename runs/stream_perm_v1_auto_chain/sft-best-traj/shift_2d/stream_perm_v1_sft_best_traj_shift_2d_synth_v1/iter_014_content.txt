@@ -1,0 +1,27 @@
+We need to figure out exactly what the solver expects from the `problem` dictionary – it probably contains two 2‑D arrays that should be aligned by a pure integer pixel shift.  The reference implementation probably loops over all possible shifts and keeps the best one, which is O(n²) per pixel and very slow on large images.  The key idea is that this “search” can be done in one shot by computing the full 2‑D cross‑correlation between the two inputs and picking its maximum location – no explicit Python loop needed because the heavy lifting is done inside SciPy’s C routines or even FFTs under the hood.
+
+First thought was just using `scipy.ndimage.shift` repeatedly inside a loop over candidate shifts – obviously that defeats the point because you still have a Python loop over all shifts and you’re paying the cost of an image copy each time.  Next idea was manually implementing the cross‑correlation by sliding window – again Python loops are unavoidable unless you vectorise the whole operation into one giant matrix multiplication or an FFT product – too much memory overhead for this simple task and not worth it compared to SciPy’s ready‑made routine `scipy.signal.correlate2d`.
+
+So I settle on `scipy.signal.correlate2d`.  It accepts two arrays of equal shape and returns a matrix whose size is `(H+H−1, W+W−1)` – exactly what we want for “all possible shifts”.  The peak of this matrix tells us where the target best aligns with the reference.  The trick is converting that peak’s indices back into an integer shift pair `(dy, dx)` relative to the original coordinate system:
+
+```
+idx_y , idx_x   ← location of maximum
+dy   ← idx_y − (H−1)
+dx   ← idx_x − (W−1)
+```
+
+Because `correlate2d` places the zero‑lag alignment at index `(H−1,W−1)` in its output array (`full` mode), subtracting `(H−1,W−1)` gives us exactly how many rows/columns we must move one image relative to the other to achieve optimal overlap.
+
+A few sanity checks:
+* If either input array is missing from `problem`, raise an informative error.
+* If shapes differ – also error.
+* Work in `float64` internally so that rounding errors don’t affect the argmax.
+* No Python‑level loops anywhere – everything is delegated to NumPy/SciPy under the hood.
+* The result dictionary contains just one key `shift` holding a tuple `(dy,dx)` so it matches whatever API the baseline expects.
+* We keep imports minimal: `numpy as np`, `scipy.signal` for `correlate2d`, and typing helpers (`Any`, `Dict`) only if needed for clarity.
+* No extra logic such as padding tricks or manual FFTs – those would add complexity without measurable speed gains given that `correlate2d` already uses them internally when appropriate.
+* Edge cases like empty arrays are caught early by shape checks before any heavy computation runs.
+* Because there are no explicit loops in our own code path, vectorisation guarantees that even very large images are handled efficiently by SciPy’s optimized kernels.
+* Finally wrap everything inside a tiny class `Shift2D` with a single method `solve(problem)` so that `run_solver` can simply instantiate it and call `.solve`.
+
+With this design in place I’m confident that we satisfy all constraints: pure vectorised SciPy usage, no Python loops, fast execution thanks to C/Fortran backends, and correct handling of input format while producing a valid solution quickly. OK, I think I have the design. Time to write it.

@@ -1,0 +1,28 @@
+We need to provide faster implementation. Use numpy's fft. Use numpy.fft.fft. Use real FFT or rfft? For speed, use np.fft.fft with size L = nextpow2(N+M-1). But maybe simpler: use np.fft.fft directly with length N+M-1, but need zero pad to that length. But we can just compute conv via FFT of length N+M-1. Complexity O(N+M). For float64. Use np.fft.fft(x, n) * np.fft.fft(h, n). Then inverse. Use np.fft.ifft. Real output; cast to float64. Use np.real. Return. Should be numerically close. Use np.fft.fft. The function conv1d: compute L = N+M-1. Then do X = np.fft.rfft(x, n=L) maybe faster. But rfft returns real to half. Then product with rfft of h. Then ifft via irfft. That yields length L. Use np.fft.irfft. That is efficient. So:
+
+def conv1d(x,h):
+    N=x.size; M=h.size; L=N+M-1
+    X=np.fft.rfft(x, n=L)
+    H=np.fft.rfft(h, n=L)
+    y=np.fft.irfft(X*H, n=L)
+    return y.astype(np.float64)
+
+Check shapes: rfft returns complex array length floor(n/2)+1. Multiplication fine. irfft returns real array length n. Good.
+
+Edge cases: if N or M zero? They may be empty? Not specified. But likely non-empty. But safe: if x.size==0 or h.size==0: return np.array([], dtype=np.float64). But conv of empty array? In numpy, conv of empty and non-empty returns empty? Let's test: np.convolve([], [1,2,3]) returns array([], dtype=float64). So we should handle that.
+
+Thus:
+
+if x.size==0 or h.size==0: return np.array([], dtype=np.float64)
+
+Return y.
+
+Also ensure dtype float64. Use np.asarray(x, dtype=np.float64). But input might be already float64. Use x = np.asarray(x, dtype=np.float64). Similarly h.
+
+Return np.asarray(y, dtype=np.float64). But y is already float64.
+
+Ok.
+
+Also, we might need to import numpy as np at top.
+
+Let's produce final code.

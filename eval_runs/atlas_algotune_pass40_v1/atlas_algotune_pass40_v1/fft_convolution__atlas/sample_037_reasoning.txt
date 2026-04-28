@@ -1,0 +1,23 @@
+We need to replace the naive double loop with efficient FFT-based convolution. Use numpy. Use np.fft.fft. For real arrays, we can use rfft. But easiest: use np.fft.fft of size L = N+M-1 next power of two? But direct convolution via FFT: compute FFT of both padded to length L, multiply, inverse FFT, take real part. Use np.fft.rfft? For speed, rfft might be faster. Use dtype float64.
+
+Implementation:
+
+def conv1d(x,h):
+
+    N=len(x); M=len(h); n_out=N+M-1; L=1<< (n_out-1).bit_length()  # next power of two >= n_out
+
+    X=np.fft.rfft(x, n=L); H=np.fft.rfft(h, n=L); Y=X*H; y=np.fft.irfft(Y, n=L); return y[:n_out]
+
+Alternatively use np.fft.fft with n=L.
+
+Edge cases: if x or h empty? Not expected. But handle.
+
+Return dtype float64.
+
+Let's produce code.
+
+Also may import numpy as np.
+
+Check numeric closeness: Should be close.
+
+Ok. Provide final code.

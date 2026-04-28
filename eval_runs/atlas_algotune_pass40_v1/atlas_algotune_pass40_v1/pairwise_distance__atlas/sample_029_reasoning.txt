@@ -1,0 +1,33 @@
+We need to provide a fast implementation. Use vectorized operations: compute squared norms and use broadcasting: dist^2 = a + b - 2 ab^T. Implementation:
+
+X shape (N, D). Compute norms squared: sum(X**2, axis=1). Then outer add and subtract 2*X @ X.T. Ensure numeric stability: result should be non-negative, may produce tiny negative due to floating error; clip to 0.
+
+Return float64 array.
+
+Edge cases: N=0? Not typical. But handle.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist2 = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # due to numerical errors, small negative values -> zero
+    dist2 = np.maximum(dist2, 0.0)
+    return dist2
+
+Need to keep shape (N,N). Works.
+
+Also could use np.einsum for dot product: X @ X.T. Works.
+
+Return dtype float64.
+
+Also ensure memory usage moderate; but fine.
+
+Let's produce final code file. Ensure import numpy as np at top.
+
+Also could add optional argument to handle large N? Not necessary.
+
+Return as is.
+
+Let's produce final answer.

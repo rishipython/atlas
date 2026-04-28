@@ -1,0 +1,129 @@
+```python
+import numpy as np
+from scipy import signal
+import logging
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _next_pow_two(n: int) -> int:
+        """Return the next power of two greater than or equal to n."""
+        return 1 << (n - 1).bit_length()
+
+    @staticmethod
+    def _direct_convolve(x: np.ndarray, y: np.ndarray, mode: str) -> np.ndarray:
+        """Fallback direct convolution for very small inputs."""
+        return np.convolve(x, y, mode=mode)
+
+    def solve(self, problem):
+        """
+        Compute convolution of two real signals using FFT.
+        Handles 'full', 'same', and 'valid' modes.
+        """
+        try:
+            # Convert inputs
+            x = np.asarray(problem.get("signal_x", []), dtype=np.float64)
+            y = np.asarray(problem.get("signal_y", []), dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Empty input handling
+            if x.size == 0 or y.size == 0:
+                return {"convolution": []}
+
+            # Small-size direct convolution threshold
+            threshold = 5000
+            if x.size * y.size <= threshold:
+                conv = self._direct_convolve(x, y, mode)
+                return {"convolution": conv.tolist()}
+
+            # Lengths
+            nx, ny = x.size, y.size
+            nfull = nx + ny - 1
+
+            # FFT length: next power of two >= nfull
+            nfft = self._next_pow_two(nfull)
+
+            # Real FFTs
+            X = np.fft.rfft(x, n=nfft)
+            Y = np.fft.rfft(y, n=nfft)
+            conv_full = np.fft.irfft(X * Y, n=nfft)
+
+            # Slice according to mode
+            if mode == "full":
+                result = conv_full[:nfull]
+            elif mode == "same":
+                # Centered output of length max(nx, ny)
+                start = (ny - 1) // 2
+                length = max(nx, ny)
+                result = conv_full[start:start + length]
+            elif mode == "valid":
+                if nx >= ny:
+                    start = ny - 1
+                    length = nx - ny + 1
+                else:
+                    start = nx - 1
+                    length = ny - nx + 1
+                if length > 0:
+                    result = conv_full[start:start + length]
+                else:
+                    result = np.array([], dtype=np.float64)
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+            return {"convolution": result.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve: {e}")
+            raise
+
+    def is_solution(self, problem, solution):
+        """
+        Validate the solution against scipy's reference implementation.
+        """
+        try:
+            if "convolution" not in solution:
+                logging.error("Missing 'convolution' key.")
+                return False
+
+            student = np.asarray(solution["convolution"], dtype=np.float64)
+            if not np.all(np.isfinite(student)):
+                logging.error("Non‑finite values in result.")
+                return False
+
+            x = np.asarray(problem.get("signal_x", []), dtype=np.float64)
+            y = np.asarray(problem.get("signal_y", []), dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Reference result
+            try:
+                ref = signal.fftconvolve(x, y, mode=mode)
+            except Exception as e:
+                logging.error(f"Reference calculation failed: {e}")
+                return False
+
+            # Numerical comparison
+            if not np.allclose(student, ref, rtol=1e-6, atol=1e-6):
+                diff = np.abs(student - ref)
+                logging.error(
+                    f"Result differs from reference. Max diff: {diff.max():.2e}, "
+                    f"Avg diff: {diff.mean():.2e}"
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            logging.error(f"is_solution error: {e}")
+            return False
+
+
+def run_solver(problem):
+    solver = FFTConvolution()
+    return solver.solve(problem)
+```

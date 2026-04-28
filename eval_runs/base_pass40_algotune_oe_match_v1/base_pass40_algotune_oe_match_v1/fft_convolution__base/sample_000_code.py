@@ -1,0 +1,137 @@
+import numpy as np
+import logging
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    Uses real‑FFT (rfft/irfft) and minimal padding for speed.
+    """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _linear_convolution(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """
+        Compute the full linear convolution of two real 1‑D signals using rfft.
+        """
+        if x.size == 0 or y.size == 0:
+            return np.array([], dtype=np.float64)
+
+        # Full convolution length
+        full_len = x.size + y.size - 1
+
+        # Next power‑of‑two length for efficient FFT
+        n = 1 << (full_len - 1).bit_length()
+
+        # Forward FFTs (real‑to‑complex)
+        X = np.fft.rfft(x, n)
+        Y = np.fft.rfft(y, n)
+
+        # Point‑wise multiplication and inverse FFT
+        conv = np.fft.irfft(X * Y, n)[:full_len]
+
+        return conv
+
+    def solve(self, problem):
+        """
+        Compute convolution according to the requested mode.
+        """
+        try:
+            signal_x = np.asarray(problem["signal_x"], dtype=np.float64)
+            signal_y = np.asarray(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full").lower()
+
+            # Compute full convolution first
+            full_conv = self._linear_convolution(signal_x, signal_y)
+
+            # Handle empty inputs
+            if full_conv.size == 0:
+                result = np.array([], dtype=np.float64)
+            else:
+                if mode == "full":
+                    result = full_conv
+                elif mode == "same":
+                    # Desired length is max(len(x), len(y))
+                    same_len = max(signal_x.size, signal_y.size)
+                    start = (full_conv.size - same_len) // 2
+                    result = full_conv[start:start + same_len]
+                elif mode == "valid":
+                    # Length where signals fully overlap
+                    valid_len = max(0, max(signal_x.size, signal_y.size) -
+                                    min(signal_x.size, signal_y.size) + 1)
+                    if valid_len == 0:
+                        result = np.array([], dtype=np.float64)
+                    else:
+                        start = (full_conv.size - valid_len) // 2
+                        result = full_conv[start:start + valid_len]
+                else:
+                    raise ValueError(f"Unsupported mode: {mode}")
+
+            # Return as list for compatibility with the checker
+            return {"convolution": result.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve method: {e}")
+            raise
+
+    def is_solution(self, problem, solution):
+        """
+        Reference implementation for validation.
+        """
+        import scipy.signal
+
+        try:
+            if "convolution" not in solution:
+                logging.error("Missing 'convolution' key.")
+                return False
+
+            student_result = np.asarray(solution["convolution"], dtype=np.float64)
+            if not np.all(np.isfinite(student_result)):
+                logging.error("Result contains non‑finite values.")
+                return False
+
+            signal_x = np.asarray(problem["signal_x"], dtype=np.float64)
+            signal_y = np.asarray(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Expected length
+            len_x, len_y = signal_x.size, signal_y.size
+            if mode == "full":
+                expected_len = len_x + len_y - 1
+            elif mode == "same":
+                expected_len = max(len_x, len_y)
+            elif mode == "valid":
+                expected_len = max(0, max(len_x, len_y) - min(len_x, len_y) + 1)
+            else:
+                logging.error(f"Invalid mode: {mode}")
+                return False
+
+            if len_x == 0 or len_y == 0:
+                expected_len = 0
+
+            if student_result.size != expected_len:
+                logging.error(f"Length mismatch: expected {expected_len}, got {student_result.size}")
+                return False
+
+            # Reference result
+            ref = scipy.signal.fftconvolve(signal_x, signal_y, mode=mode)
+
+            if not np.allclose(student_result, ref, rtol=1e-6, atol=1e-6):
+                diff = np.abs(student_result - ref)
+                logging.error(f"Numerical mismatch: max {diff.max():.2e}, mean {diff.mean():.2e}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Error in is_solution: {e}")
+            return False
+
+
+def run_solver(problem):
+    """
+    Entry point used by the evaluator.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)

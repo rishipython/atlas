@@ -1,0 +1,139 @@
+We need to speed up affine_transform_2d. The reference uses scipy.ndimage.affine_transform, which is already fast but maybe overhead in Python and maybe we can replace with a custom implementation that uses numba for loops, or vectorized matrix multiplication.
+
+We have to keep same function signature, return dictionary with key transformed_image. Input image is n x n array of floats. Matrix is 2x3 affine matrix. We need to apply cubic spline interpolation order=3, constant mode padding zeros. But we can consider lower order for speed? But the task expects correct output, so we must match reference exactly. The reference uses order=3 by default. So we need to produce same output as scipy's affine_transform with order=3. That might be tricky to replicate manually.
+
+Alternatively, we can call scipy.ndimage.affine_transform but maybe use a faster variant? But the reference already uses it; maybe the overhead is in converting data types or something? The reference uses image = problem["image"], which may be list of lists; converting to numpy array each time might be overhead. We could convert once and use dtype float32 for speed? But must preserve accuracy; but order=3 may produce small differences.
+
+Better approach: Use scipy's affine_transform but ensure we pass numpy array of type float32 or float64? The reference uses default dtype of image list: probably python floats -> numpy array of dtype float64 when passed to scipy. That is fine.
+
+The main overhead might be the call to scipy.ndimage.affine_transform itself. But it's C-optimized; can't easily replace.
+
+But the brief says "Uses scipy functions somewhere in the solution". So we must use scipy somewhere. So we can keep the call but maybe wrap it with numba JIT? But numba cannot call C functions like scipy.ndimage.affine_transform easily.
+
+Alternatively, we can implement our own affine transform using grid mapping and interpolation via SciPy's map_coordinates which is also C-optimized. But that also calls C code.
+
+Maybe we can accelerate by precomputing coordinate grids once, then using map_coordinates with vectorized coordinates? That still calls C code.
+
+But the brief expects at most 1 Python-level loop(s). So maybe we will implement a loop over output pixels? That would be too slow.
+
+Maybe we can use numba to compile a function that does bilinear interpolation manually, but order=3 cubic interpolation is heavy.
+
+But maybe we can cheat: use SciPy's ndimage.affine_transform inside a numba njit wrapper? Numba cannot compile calls to SciPy functions unless they are pure Python or Numba-supported functions. So that won't work.
+
+Alternatively, we can use JIT on the coordinate mapping step only: compute inverse transform matrix once, generate grid of output coordinates, then call scipy.ndimage.map_coordinates with order=3. That's basically same as affine_transform but maybe less overhead? Actually ndimage.affine_transform internally does similar things.
+
+Maybe the bottleneck is memory conversion: problem["image"] may be nested lists; converting to np.array each time is overhead. We could convert once at start and store in self.image perhaps.
+
+But given the brief constraints (final solution ~7109 chars), it's likely that they expect us to write a custom implementation using numba for loops over pixels but still using SciPy for interpolation? Wait, you can't combine both easily.
+
+Let's think: Use SciPy's ndimage.map_coordinates which takes coordinates array and image array and returns interpolated values. We can compute coordinates grid for all output pixels using vectorized operations (np.meshgrid). Then flatten coordinates and call map_coordinates with order=3 and mode='constant', cval=0. That will produce output flattened array; reshape back to n x n. This avoids calling affine_transform directly; but map_coordinates also uses C code for interpolation; but it's similar performance.
+
+However, this approach still has Python-level loop only for generating grid (which is vectorized). No loops needed. We don't need numba at all then. But brief says must use numba JIT compilation somewhere. So maybe we can wrap the coordinate generation in numba? But coordinate generation is vectorized anyway; no loops.
+
+We could use numba to implement a manual interpolation kernel over flattened coordinates array; that would involve loops but could be compiled and fast.
+
+Alternatively, use numba to compute inverse transform matrix and apply mapping inside a compiled function that iterates over output indices (i,j) and computes input coords and then uses SciPy's spline interpolation via precomputed coefficients? That's too complex.
+
+Maybe simpler: Use SciPy's ndimage.affine_transform as baseline but add some pre-optimizations: convert image to np.float32 before passing; convert matrix to np.float32; set prefilter=False if not needed? For cubic interpolation, prefiltering adds overhead; but if image is float32 or float64? Actually ndimage.affine_transform automatically prefilters if order > 1 unless prefilter=False. Prefiltering uses convolution with spline coefficients; that's expensive. We could set prefilter=False if input image already filtered appropriately? But that would change result slightly.
+
+But maybe SciPy's default prefilter=True ensures correct cubic interpolation by applying Gaussian smoothing before transformation. If we disable it, results differ slightly -> might fail validation due to tolerance 1e-5/1e-7 difference maybe too strict.
+
+Alternatively, we could implement our own cubic spline interpolation using SciPy's interpn or regular_grid_interpolation which may be faster?
+
+Hmm.
+
+Let's consider using JAX instead of SciPy: JAX has jax.scipy.ndimage.affine_transform? Not sure.
+
+Better approach: Use Numba's njit on a function that calls SciPy's ndimage.map_coordinates via Numba's cfunc interface? Not straightforward.
+
+Wait brief says "Uses scipy functions somewhere in the solution". So at least one call to a scipy function must appear somewhere in code - not necessarily main transform function, could be helper like np.linalg.inv etc from scipy.linalg perhaps?
+
+We can call np.linalg.inv from numpy though not required SciPy.
+
+Maybe just import from scipy.linalg import inv and use it for inverse transform matrix calculation inside numba compiled function via pyobject interface? That might not work because Numba cannot compile calls to arbitrary Python functions unless they are supported or typed via object mode which disables speedup.
+
+Thus better keep transformation outside numba and only use numba for some small part like computing coordinates grid or performing element-wise operations on arrays after mapping coordinates result - but that's trivial.
+
+Given constraints, perhaps simplest solution: Use SciPy's ndimage.affine_transform directly as reference did, but add small optimization: convert input lists to numpy arrays once at start using np.asarray(image) instead of direct passing list - but that's what happens anyway because scipy will convert internally too?
+
+Actually passing list directly triggers conversion inside SciPy as well; so no difference.
+
+Could optimize by caching shape n from image.shape and preallocating output array of same shape then calling affine_transform with output argument out=... This avoids allocation overhead inside function maybe slight improvement?
+
+Also set order=self.order (3). Maybe set mode=self.mode ('constant') cval=0 explicitly for clarity though default constant mode uses cval=0 anyway.
+
+Also maybe convert matrix into numpy array dtype float64 before passing - again similar effect.
+
+Thus minimal improvement may not yield huge speedup though test may accept small improvements within tolerance of evaluation metric (speed). But likely they'd want more advanced optimization using numba loops on coordinates grid generation etc.
+
+Let's design:
+
+- In solve method:
+    - Convert problem["image"] into np.ndarray dtype=np.float32 (or float64).
+    - Convert problem["matrix"] into np.ndarray dtype=np.float32.
+    - Compute inverse transform matrix manually via np.linalg.inv extended 3x3 homogeneous matrix.
+    - Generate grid of output indices using np.mgrid[0:n,0:n] or np.indices.
+    - Flatten grid coordinates into shape (2,N).
+    - Append ones row for homogeneous coords.
+    - Multiply inverse matrix * coords -> input coords.
+    - Use map_coordinates with order=3 constant mode cval=0.
+    - Reshape back.
+This avoids calling affine_transform directly but uses map_coordinates which is also C-optimized but may be faster because less overhead of computing Jacobian etc?
+
+However map_coordinates requires coordinates array shape (ndim,N). For 2D image shape (n,n), coordinates shape should be (2,N). We'll compute inv_matrix @ coords_homog where coords_homog shape (3,N). Then take first two rows as coords_x,y for map_coordinates which expects shape (ndim,N) where ndim=2 dims of input array. Good.
+
+But note that map_coordinates expects coordinates in terms of input array indices starting from 0 at top-left corner. Our output indices are integer positions i,j starting from 0..n-1; that's fine. After transformation we get fractional input coords; map_coordinates will interpolate accordingly with cubic spline order 3 if specified.
+
+Need to set mode='constant', cval=0. That matches constant padding zeros requirement.
+
+So overall algorithm:
+
+```
+def solve(problem):
+    img = np.asarray(problem["image"], dtype=np.float64)
+    mat = np.asarray(problem["matrix"], dtype=np.float64)
+    n = img.shape[0]
+    # Build homogeneous transform
+    H = np.eye(3)
+    H[:2,:] = mat
+    invH = np.linalg.inv(H)
+    # Generate output grid
+    y,x = np.mgrid[0:n, 0:n]   # shape (n,n)
+    coords = np.vstack((x.ravel(), y.ravel(), np.ones(n*n)))  # shape (3,N)
+    src_coords = invH @ coords
+    src_coords = src_coords[:2,:]  # ignore homogeneous row
+    transformed_flat = scipy.ndimage.map_coordinates(img,
+                                                     src_coords,
+                                                     order=3,
+                                                     mode='constant',
+                                                     cval=0,
+                                                     prefilter=True)
+    transformed_img = transformed_flat.reshape((n,n))
+```
+
+This should produce same result as affine_transform likely identical except maybe small differences due to ordering of operations or rounding errors due to different path through algorithm. But test expects close within rtol=1e-5 atol=1e-7 relative difference between proposed_array and ref_array computed by solve() originally used affine_transform with same parameters. Our new method should produce nearly identical results; differences may be <1e-7 due to floating point differences from different algorithm path (affine_transform vs map_coordinates). Might still pass tolerance if within limits else fail validation complaining about max absolute error > tolerance threshold ~1e-7 maybe too strict relative difference due to rounding errors ~1e-12 etc so okay.
+
+Now incorporate numba JIT: Where do we use it? We could compile a small helper that does the coordinate transformation multiplication quickly: e.g.,
+
+```
+@njit(parallel=True)
+def compute_src_coords(invH, x_flat, y_flat):
+   N = x_flat.size
+   src_x = np.empty(N)
+   src_y = np.empty(N)
+   for i in prange(N):
+       xi = x_flat[i]
+       yi = y_flat[i]
+       src_x[i] = invH[0,0]*xi + invH[0,1]*yi + invH[0,2]
+       src_y[i] = invH[1,0]*xi + invH[1,1]*yi + invH[1,2]
+   return src_x, src_y
+```
+
+Then feed these into map_coordinates as [src_y,src_x]? Wait map_coordinates expects coords in terms of axis order: first dimension corresponds to axis 0 of img (row index y), second dimension axis 1 (col index x). So need coordinates arrays shape (2,N) where first row corresponds y coordinate values (row index), second row x coordinate values (col index). In our mapping above we computed src_x from invH[0,*] applied to x,y?? Actually homogeneous transform maps [x_out,y_out] -> [x_in,y_in]. Our H defined such that [x_in,y_in] = H * [x_out,y_out,1]? Wait typical affine transformation representation: For an input point p_in mapped by A -> p_out where p_out = A * p_in_homog where A is 2x3 matrix extended with last row [0 0 1]. But scipy.ndimage.affine_transform applies transformation inverse mapping from output space back into input space using given matrix M such that M maps input coordinates into output coordinates? Let's check docs: ndimage.affine_transform(input, matrix,... ) applies linear transformation defined by `matrix`. It transforms the input array by applying linear transformation defined by `matrix` such that each pixel location in output array corresponds to location `matrix @ [i,j,k,...]` in input space minus offset etc... Actually it uses matrix as forward transform applied on input coordinates while computing output positions via inverse mapping internally because it's easier computationally. So our approach should mimic this behavior exactly: compute inverse transform matrix H_inv such that p_in_homog = H_inv @ [x_out,y_out,1]. Then feed p_in coords into map_coordinates which expects coordinates arrays shaped accordingly: first dimension corresponds axis 0 -> y coordinate values; second dimension axis 1 -> x coordinate values. So our computed src_y should correspond to y_in values derived from inverse transform applied on out indices y,x positions accordingly:
+
+Given out indices i(row), j(col) => position vector [j,i]?? Wait typical indexing convention: For image array indexing arr[row,column], row index corresponds y coordinate increasing downward; column index corresponds x coordinate increasing rightwards. In homogeneous representation often use [x,y] ordering when applying transforms mathematically on vectors representing position relative origin at top-left corner? The transformation matrix given likely expects [x,y] ordering consistent with typical computer graphics conventions where first column maps x component etc? In scipy.ndimage.affine_transform docs: "The transformation matrix defines how pixel positions are mapped from input space into output space." It expects matrix such that each pixel location in output array corresponds to location `matrix @ [i,j,k,...]` in input space minus offset... Actually let's check typical usage: If you want rotate image about center you compute rotation matrix R and then apply ndimage.affine_transform(image,R) yields rotated image around origin top-left corner not center unless you adjust offset etc... Usually they require you supply offset separately if you want translation/center shift etc... The provided problem gives a 2x3 matrix combining rotation scaling shearing translation presumably relative origin top-left corner at (0,0). So applying affine_transform directly yields correct mapping from input space onto output space accordingly using forward mapping M applied on input coordinates??? I'm not entirely certain but I think our approach using inverse transform should produce same result as affine_transform because both do same math internally albeit reversed orientation maybe transposed?
+
+Better test quickly mentally: Suppose identity matrix [[1,0,t],[0,1,t']] translation only shifts image right/upwards accordingly when applying affine_transform(...). If we pass identity+translation [[1,0,t],[0,1,t']] into affine_transform(image,M) what does it do? It will shift image left/upwards because mapping from output pixel location p_out back into input location p_in via M^-T ??? Actually I'd better check docs quickly mentally: In Scipy docs example:
+
+```
+>>> import numpy as

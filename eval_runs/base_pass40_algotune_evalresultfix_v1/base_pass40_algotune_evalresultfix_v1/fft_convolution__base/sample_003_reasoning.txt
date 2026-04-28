@@ -1,0 +1,54 @@
+We need to optimize FFT convolution solve. The baseline uses scipy.signal.fftconvolve. We can keep that, but maybe use numpy.fft.fft for speed. But scipy's may be fine. But we can also use numpy.fft.rfft for real signals. The input lists could be floats. We can convert to numpy array. We need to support modes: full, same, valid. Implementation: compute convolution via FFT with minimal padding: next power of two of len_x+len_y-1. For same, we can compute full then slice center. For valid, slice accordingly. Let's implement efficient.
+
+Also need to handle empty signals: if either zero length, result empty.
+
+Edge: mode 'same' output length = len_x? Actually convolution same length is len_x (or len_y if different). But typical numpy.convolve same returns len_x. In problem: output length is max(len(x), len(y)). We'll follow that.
+
+Implementation steps:
+
+- Get lengths
+- If any zero: return []
+- Compute conv_len_full = len_x + len_y -1
+- n_fft = 2**np.ceil(np.log2(conv_len_full)).astype(int)
+- Use np.fft.rfft for real signals: compute rfft of both padded arrays of length n_fft
+- Multiply and ifft via irfft to get length n_fft real result
+- Truncate to conv_len_full
+
+- For same: output length = max(len_x, len_y). start index = (conv_len_full - out_len)//2, then slice out_len
+- For valid: output length = max(0, conv_len_full - max(len_x, len_y)+1? Wait formula: valid length = max(len_x, len_y) - min(len_x, len_y) +1? Problem statement: "output length is max(len(x) - len(y) + 1, 0)". But typical valid length: len_x - len_y + 1 if len_x>=len_y else len_y - len_x +1. So use max(len_x,len_y)-min(len_x,len_y)+1. But ensure non-negative.
+
+Start index for valid: (conv_len_full - out_len). //2? For valid, convolution fully overlapping: for x length Lx, y length Ly, valid length = Lx-Ly+1 if Lx>=Ly else Ly-Lx+1. The valid region starts at index (Ly-1) in full conv? Let's compute: For full conv indices 0..Lx+Ly-2. Valid indices are from Ly-1 to Lx-1 if Lx>=Ly. So start = Ly-1. For Lx<Ly, start = Lx-1. Equivalent start = min(Lx, Ly)-1. So start = min(Lx, Ly)-1.
+
+Thus out_len = abs(Lx-Ly)+1. We can compute out_len = max(Lx, Ly)-min(Lx, Ly)+1.
+
+start = min(Lx, Ly)-1.
+
+Return slice start:start+out_len.
+
+Edge: if out_len <=0 return [].
+
+Implementation.
+
+Also note that numpy's rfft returns complex. Use np.fft.rfft. For n_fft maybe use next power of two.
+
+We need to import numpy as np.
+
+We need to avoid overhead of converting to list for output? The expected solution key 'convolution' maybe list. But is_solution expects 'convolution' key. They check array conversion. So we can return list via .tolist().
+
+We'll create class FFTConvolution with solve method.
+
+We should also consider using np.fft.fft if length not too small. But rfft is fine.
+
+Also we might want to check if lengths small (< some threshold like 64) use direct convolution via np.convolve. But overhead maybe.
+
+We'll implement threshold 64: if conv_len_full <= 64 use np.convolve.
+
+Let's implement.
+
+Also for mode 'same', output length = max(len_x, len_y). If conv_len_full < out_len? But conv_len_full >= out_len always? For example Lx=1, Ly=1 => conv_len_full=1, out_len=1. ok.
+
+Implementation details.
+
+Return dictionary with key 'convolution'.
+
+Let's write final code.

@@ -1,0 +1,21 @@
+We need to replace the triple loop with efficient vectorized or broadcasting approach.
+
+The standard formula: pairwise squared distance matrix D = A + A.T - 2*X @ X.T, where A is vector of squared norms per row. Use np.add.outer or broadcasting.
+
+Implementation: compute norms = np.sum(X**2, axis=1). Then D = norms[:,None] + norms[None,:] - 2*np.dot(X, X.T). Ensure dtype float64.
+
+Also ensure non-negative due to numerical errors: np.maximum(D, 0.0).
+
+Return D.
+
+Edge cases: small N, D.
+
+We should also guard for negative zeros? Use np.maximum.
+
+Let's produce file. Ensure import numpy as np.
+
+Define pairwise_sq_dist same signature.
+
+Return as np.ndarray dtype float64.
+
+Ok. Provide code.

@@ -1,0 +1,29 @@
+We need to provide a faster implementation. Use vectorized operations. The standard formula: D[i,j] = ||X[i]-X[j]||^2 = sum(X[i]^2) + sum(X[j]^2) - 2 X[i]·X[j]. So we can compute row norms squared and dot product matrix. Use np.dot. So:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    # compute distance matrix
+    # Use broadcasting: sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T
+    # Ensure non-negative due to numerical errors
+    dist2 = sq_norms[:,None] + sq_norms[None,:] - 2 * X.dot(X.T)
+    # clip small negative values to zero
+    np.maximum(dist2, 0, out=dist2)
+    return dist2
+
+This is fast.
+
+Edge cases: shape (N,D). If D=0? Should still work: X**2 sums to zero. Dot product zero. Works.
+
+We need to keep dtype float64. Use np.asarray.
+
+Return np.ndarray.
+
+Also we can use np.einsum for dot product: but dot is fine.
+
+Let's produce final code.
+
+Also we can import numpy as np. Provide function docstring.
+
+Let's output.
+

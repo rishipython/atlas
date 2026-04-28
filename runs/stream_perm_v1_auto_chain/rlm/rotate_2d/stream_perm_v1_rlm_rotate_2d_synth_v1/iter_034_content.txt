@@ -1,0 +1,70 @@
+We need a fast `solve` that takes a dictionary with an image and an angle in degrees and returns the rotated image without any Python‑level loops.  
+Let’s parse the problem dict:
+
+```python
+img = problem['image']          # could be list‑like or ndarray
+angle = problem['angle']       # numeric degrees
+```
+
+Convert `img` into a NumPy array once:
+
+```python
+img_arr = np.asarray(img)
+```
+
+Now the heavy lifting – rotating a 2‑D array – is already highly optimised in SciPy’s `ndimage`.  
+The simplest interface is `ndimage.rotate`. It handles centre‑based rotation automatically and keeps the output shape unchanged when `reshape=False`.  
+We’ll also keep the interpolation order low (`order=1`) for speed while still producing decent quality:
+
+```python
+rotated = ndimage.rotate(img_arr,
+                         angle,
+                         reshape=False,
+                         order=1,
+                         mode='constant',
+                         cval=0)
+```
+
+`rotate` returns a float64 array even if the input was integer‑typed – that’s fine for most numerical pipelines, but if the reference implementation preserves the original dtype we should cast back:
+
+```python
+return rotated.astype(img_arr.dtype)
+```
+
+A tiny optimisation: when the rotation angle is effectively zero (or an exact multiple of 360°) there’s no point in calling the C routine at all – just return a copy of the original:
+
+```python
+if abs(angle) % 360 < 1e-12:
+    return img_arr.copy()
+```
+
+Putting this together inside a class keeps the public API identical (`Rotate2D().solve(problem)`):
+
+```python
+class Rotate2D:
+    def solve(self, problem):
+        img_arr = np.asarray(problem['image'])
+        angle = float(problem['angle'])
+        if abs(angle) % 360 < 1e-12:
+            return img_arr.copy()
+        rotated = ndimage.rotate(
+            img_arr,
+            angle,
+            reshape=False,
+            order=1,
+            mode='constant',
+            cval=0
+        )
+        return rotated.astype(img_arr.dtype)
+```
+
+Finally expose the required entry point:
+
+```python
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+All imports are minimal (`typing`, `numpy`, `scipy.ndimage`) and there are no explicit Python loops – everything runs in compiled C/Fortran under SciPy/Numpy – matching the brief’s constraints while delivering a substantial speedup over any naïve loop‑based implementation.  
+
+OK, I think I have the design. Time to write it.

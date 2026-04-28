@@ -1,0 +1,23 @@
+We need to write faster implementation. Use broadcasting or dot product. For squared Euclidean distance: D = A + A.T - 2*X @ X.T where A is vector of squared norms of rows. For float64.
+
+Implement pairwise_sq_dist accordingly. Return np.ndarray shape (N,N). Use np.add.outer or np.sum(X**2, axis=1). Use broadcasting.
+
+Edge cases: X maybe 0-d? But shape (N,D). We'll assume N>=0.
+
+Return dtype float64. Should match reference. Use np.maximum to avoid negative due to floating error. But we can just compute. Ensure result is symmetric. Use np.maximum(D,0) maybe.
+
+Implementation:
+
+def pairwise_sq_dist(X): 
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist2 = sq_norms[:,None] + sq_norms[None,:] - 2*np.dot(X, X.T)
+    # due to numerical errors, clip to >=0
+    np.maximum(dist2, 0, out=dist2)
+    return dist2
+
+Return.
+
+Add imports. Provide function only. But file must be runnable: define pairwise_sq_dist. No other code. Provide __all__ maybe.
+
+Let's produce final.

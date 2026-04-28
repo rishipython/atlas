@@ -1,0 +1,33 @@
+We need to replace the triple loop with efficient numpy operations. Standard formula: pairwise squared distance matrix: D = (X**2).sum(axis=1)[:,None] + (X**2).sum(axis=1)[None,:] - 2*X.dot(X.T). This yields shape (N,N). Works with float64.
+
+But must ensure non-negative due to numerical errors. Use np.maximum(D, 0.0). But not necessary.
+
+Let's implement:
+
+def pairwise_sq_dist(X):
+    # check shape, dtype
+    X = np.asarray(X, dtype=np.float64)
+    N = X.shape[0]
+    # compute dot product
+    G = X @ X.T  # shape N,N
+    # compute squared norms
+    sq_norm = np.sum(X**2, axis=1)
+    # compute distance matrix
+    D = sq_norm[:, None] + sq_norm[None, :] - 2 * G
+    # due to numerical errors, small negative values set to zero
+    np.maximum(D, 0, out=D)
+    return D
+
+Also handle if X shape is (N,D). Should work.
+
+Edge cases: N=0? Not likely. But if N==0, return empty (0,0). Implementation will produce shape (0,0). Works.
+
+Return dtype float64.
+
+Add imports: numpy as np. Provide docstring.
+
+Let's produce final code.
+
+Also maybe we can use numba for speed but not necessary.
+
+Ok produce final.

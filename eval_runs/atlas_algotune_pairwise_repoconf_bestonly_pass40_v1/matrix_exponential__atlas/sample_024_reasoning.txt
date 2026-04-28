@@ -1,0 +1,35 @@
+We need to implement a fast, numerically stable matrix exponential, matching scipy.linalg.expm within tolerance. We can just import scipy.linalg.expm and call that. But we need to keep same signature. That would be trivial: return scipy.linalg.expm(A). That's allowed. But maybe we need to avoid importing scipy? It's allowed. But the instruction: "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So we can just call scipy.linalg.expm. That would be fastest and accurate. But we need to be careful: ensure dtype float64 and shape. The reference uses np.float64. We'll just call scipy.linalg.expm(A). That returns float64. Should be fine.
+
+However, maybe the evaluator expects we implement algorithm ourselves? But it's allowed to use scipy. The instruction: "Your solution must define the same top-level function name and signature as the reference." We can simply delegate to scipy.linalg.expm. That's a drop-in replacement. That is fast and accurate.
+
+We need to produce a complete Python file. So we need imports, define expm_fast.
+
+Potential nuance: For large matrices, SciPy's expm uses Pade approximants and scaling/squaring. Should be fine.
+
+Edge cases: None.
+
+Return type: np.ndarray.
+
+We should ensure that A is square. If not, SciPy will raise. We can trust.
+
+Ok.
+
+We produce:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But we may want to cast to float64: return expm(A).astype(np.float64). But expm returns float64 anyway.
+
+Let's do:
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    return expm(A)
+
+Add docstring.
+
+That's it.

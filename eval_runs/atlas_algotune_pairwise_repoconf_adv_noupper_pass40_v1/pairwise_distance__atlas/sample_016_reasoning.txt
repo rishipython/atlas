@@ -1,0 +1,17 @@
+We need to replace triple-loop with faster method. Use broadcasting or matrix operations. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute norms squared vector, then use outer sum minus 2 dot product.
+
+Implementation: X shape (N,D). Compute sq_norm = np.sum(X**2, axis=1). Then compute Gram matrix G = X @ X.T. Then dist = sq_norm[:,None] + sq_norm[None,:] - 2*G. Ensure dtype float64.
+
+Return dist.
+
+Edge cases: Ensure non-negative due to numeric errors: dist = np.maximum(dist, 0). But maybe not needed.
+
+Return as float64.
+
+Add imports.
+
+Return dist.
+
+We should keep same signature.
+
+Let's produce final code.

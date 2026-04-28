@@ -1,0 +1,7 @@
+We need to produce faster implementation. Use vectorized approach: compute squared Euclidean distances via broadcasting: dist[i,j] = ||X[i]-X[j]||^2 = sum X[i]^2 + sum X[j]^2 - 2 X[i].X[j]. So compute row_norms = np.sum(X**2, axis=1). Then dist = row_norms[:,None] + row_norms[None,:] - 2*X.dot(X.T). Ensure dtype float64. Return dist. Might need to clip small negative due to floating errors. Use np.maximum(dist, 0). Also ensure symmetry. Should be fine. Provide function.
+
+Also maybe handle large N memory: but fine.
+
+Return dtype float64.
+
+Let's write code.

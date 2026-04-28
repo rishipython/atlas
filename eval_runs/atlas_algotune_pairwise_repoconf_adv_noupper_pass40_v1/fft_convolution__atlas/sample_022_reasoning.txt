@@ -1,0 +1,32 @@
+We need to write faster implementation. Use scipy.signal.fftconvolve or numpy. Use numpy.fft.fft. Since input arrays are 1-D float64, we can compute convolution via FFT: y = ifft(fft(x, n) * fft(h, n)). n should be next power of two >= N+M-1. Use np.fft.fft. Avoid extra dependencies like scipy. So implement:
+
+def conv1d(x,h):
+    N = x.shape[0]; M = h.shape[0]
+    size = N+M-1
+    nfft = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)
+    return y[:size]
+
+Need to cast to float64. Should match np.convolve. Use np.float64 dtype.
+
+Edge cases: if x or h empty? But length >=1 presumably. Could handle empty: return empty.
+
+Let's implement. Also we can use numpy.fft.fft with complex, but rfft is efficient.
+
+Also we can handle small sizes with direct method if size small? But not necessary.
+
+Return dtype float64.
+
+Let's produce file with imports.
+
+Also we may need to ensure y dtype float64. rfft returns complex64? Actually rfft returns complex128 for float64 input. Good.
+
+Let's implement.
+
+Also note that if N+M-1 > nfft? no, nfft >= size.
+
+Return y[:size].
+
+Ok. Provide code.

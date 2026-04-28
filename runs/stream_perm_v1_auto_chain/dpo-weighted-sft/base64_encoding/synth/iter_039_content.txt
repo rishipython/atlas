@@ -1,0 +1,173 @@
+We need to figure out what the base64_encoding problem actually is. The prompt says "base64_encoding algorithm implementation with baseline comparison". Likely we have a problem where we need to encode something in base64? But the reference implementation is slow; we need to speed it up. We have base64, hmac, typing, numpy. No Python loops, vectorized. The final solution ~4959 chars.
+
+We need to think about how base64 encoding works: it's mapping 3 bytes to 4 ASCII characters from a 64-char alphabet. We can vectorize by treating the input as bytes, grouping into 3-byte blocks, then mapping to indices via bit operations, then mapping indices to characters via a lookup table.
+
+But maybe the problem is something else: "base64_encoding" might be a challenge where given a message and a key, we need to compute HMAC-SHA256 and then base64 encode? Or maybe just encode arbitrary data.
+
+We have hmac imported; maybe the problem is computing HMAC of some data and then base64 encode it. The reference implementation might do it in a naive way.
+
+We need to produce a faster implementation using numpy vectorization. We can use np.frombuffer to interpret bytes as uint8 array. Then group into triples: reshape(-1,3). For each triple, compute index = (b0 << 16) | (b1 << 8) | b2. Then shift and mask: first char index = (index >> 18) & 63; second = (index >> 12) & 63; third = (index >> 6) & 63; fourth = index & 63. Then map indices to characters via a precomputed array of ascii codes or string.
+
+Edge cases: padding when input length not multiple of 3: we need '=' padding. We can handle by adding zeros and later adjusting output length.
+
+Also maybe the input is string or bytes? The problem likely gives a dictionary with 'data' field containing bytes or string? We don't know.
+
+We also have hmac imported; maybe we need to compute HMAC of data using key provided in problem dict.
+
+So design: run_solver(problem) -> Base64Encoding().solve(problem). So Base64Encoding class has solve method that takes problem dict and returns result string? We need to implement solve efficiently.
+
+Let's think about possible structure of problem dict: It might contain 'message' as string, 'key' as string? Or 'data'? We can assume typical base64 encoding: given bytes, return base64 string.
+
+But why hmac? Maybe they want us to compute HMAC-SHA256 of message and then base64 encode that digest.
+
+Thus algorithm: compute digest = hmac.new(key.encode(), msg.encode(), hashlib.sha256).digest(); then base64 encode digest.
+
+But that would use Python loops inside hmac but that's fine because it's C-optimized. But maybe the baseline uses manual bit operations which are slow; we can use built-in base64.b64encode which is fast C code.
+
+So maybe we just call base64.b64encode on the digest directly. That would be simplest and fastest.
+
+But the brief says no Python-level loops, vectorised. But calling built-in functions is okay.
+
+However maybe the challenge expects us to implement base64 encoding ourselves using numpy for speed test? But built-in should be fastest anyway.
+
+But requirement: imports include base64, hmac, typing.Any, Dict, numpy as np. So they expect us to use numpy in some way. But could be just for demonstration; but they explicitly say no Python loops and all work vectorised. So maybe they want us to implement encoding of many inputs at once? Maybe problem contains list of messages and keys?
+
+Let's imagine problem dict contains 'messages': list of strings; 'keys': list of strings same length. We need to produce list of base64-encoded HMACs for each pair.
+
+Thus naive approach loops over each pair computing hmac and base64 encode individually; slow for large N. Vectorize by converting all messages into bytes arrays concatenated? But hmac cannot be vectorized easily because key per message may differ.
+
+Alternatively if keys same for all messages, we can compute digest in batch by using numpy's vectorized operations on byte arrays? But hmac uses SHA256 which is not trivial vectorizable without specialized libs like pyopenssl or cryptography which may support batch but not sure.
+
+Maybe simpler: They want us to process single message only; but still use numpy for something like converting input string into array and doing bit ops manually. That seems odd because built-in would be faster.
+
+Maybe the baseline was manual bit ops with Python loops over each byte block; we replace with numpy vectorized approach as described earlier (group into triples). That would avoid loops and be faster than pure Python loops but still slower than built-in but acceptable for challenge.
+
+Thus design: solve(problem): get data bytes from problem['data'] (maybe string). Convert to np.frombuffer(data_bytes, dtype=np.uint8). Compute len %3 padding etc. Reshape into (-1,3). For last incomplete block handle separately? Could pad zeros and later trim output accordingly.
+
+Compute indices via bitwise ops on uint32 array created from triple bytes: idx = (a << 16) | (b << 8) | c. Then compute four indices via shifts/masks as described. Flatten them into one-dimensional array of indices shape (n_blocks*4). Map indices to characters via an array of ascii codes representing "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/". Use np.take or advanced indexing: chars = lookup[idx_flat]. Then convert to bytes or str via .tobytes() or .decode('ascii') after slicing appropriate length minus padding adjustments.
+
+Padding: if original length mod3 ==1 -> output last two chars are actual encoded from padded zeros but last two should be '=' signs instead of actual chars for last two positions? Actually standard base64: if one byte leftover -> produce two chars from that byte plus two '=' padding at end. If two bytes leftover -> produce three chars + one '=' padding at end.
+
+Our method with zero padding will produce four chars from padded zeros; we then replace last 2 or 1 char with '=' accordingly before final output trimming length accordingly.
+
+Specifically:
+- Let n = len(data)
+- n_blocks = ceil(n/3)
+- padded_len = n_blocks*3
+- Pad data with zeros at end.
+- After computing all indices and mapping chars, convert entire char array.
+- Then adjust final output length:
+    - If n %3 ==1 -> set last two chars (positions -2,-1) to '='
+    - If n%3 ==2 -> set last char (-1) to '='
+    - Else nothing.
+- Finally slice first n_blocks*4 characters (since padded produced full blocks).
+
+Edge case: empty data -> return empty string.
+
+Also handle potential Unicode decode errors if input string contains non-ascii; treat as utf-8 encoded bytes probably.
+
+Thus algorithm uses only numpy operations except final mapping using lookup array which is also numpy array indexing; no Python loops except minimal logic for padding decisions but that's fine since it's constant-time small operations not per-element loops.
+
+Now about hmac import: Not used? Maybe not needed unless required by spec. But brief includes it so perhaps expected usage somewhere else? Could ignore if not needed but risk failing tests expecting HMAC usage?
+
+Maybe problem expects us to compute HMAC first then encode result in base64 using our vectorized method on digest bytes which are always fixed length (32 bytes). That would still use our method but on small fixed size input so overhead negligible but still okay.
+
+Thus incorporate optional key param in problem dict; if present compute digest else just encode raw data.
+
+Design:
+
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem.get('data')
+        if isinstance(data,str):
+            data_bytes = data.encode()
+        elif isinstance(data,bytes):
+            data_bytes = data
+        else:
+            raise ValueError
+
+        key = problem.get('key')
+        if key is not None:
+            # compute HMAC-SHA256
+            import hashlib
+            import hmac
+            digest = hmac.new(key.encode(), data_bytes, hashlib.sha256).digest()
+            data_bytes = digest
+
+        # Now encode data_bytes using our vectorized method
+        return self._vectorized_b64encode(data_bytes)
+
+    def _vectorized_b64encode(self,data_bytes):
+        if len(data_bytes)==0:
+            return ''
+        arr = np.frombuffer(data_bytes,dtype=np.uint8)
+        n=len(arr)
+        pad_len=(3-(n%3))%3
+        if pad_len:
+            arr_padded=np.concatenate([arr,np.zeros(pad_len,dtype=np.uint8)])
+        else:
+            arr_padded=arr
+        # reshape
+        blocks=arr_padded.reshape(-1,3)
+        # compute combined int32 values
+        vals=(blocks[:,0].astype(np.uint32)<<16)|(blocks[:,1].astype(np.uint32)<<8)|blocks[:,2].astype(np.uint32)
+        # get indices
+        idx0=(vals>>18)&63
+        idx1=(vals>>12)&63
+        idx2=(vals>>6)&63
+        idx3=vals&63
+        # concatenate indices
+        idx=np.stack([idx0,idx1,idx2,idx3],axis=1).reshape(-1)
+        # lookup table
+        tbl=np.frombuffer(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",dtype=np.uint8)
+        out=tbl[idx]
+        # apply padding
+        if pad_len==1:
+            out[-2:-0] = ord('=')
+            out_len=len(arr)*4//3+4 # Actually formula: ceil(n/3)*4 - 2?
+            out_len=len(arr)*4//3+4-2 # Wait simpler: out_len= len(arr)//3*4 + ((len(arr)%3)==1)*2 + ((len(arr)%3)==2)*3?
+            # Let's compute directly after generating full output then slice accordingly.
+        elif pad_len==2:
+            out[-1] = ord('=')
+        
+Let's recompute lengths properly:
+
+If original n mod 3 ==0 -> output length = n*4/3 exactly.
+If mod==1 -> output length = n*4/3 + 4 -2? Actually standard formula: ceil(n/3)*4 - number_of_padding_chars.
+Number_of_padding_chars=2 when mod==1.
+So out_len=ceil(n/3)*4 -2.
+Similarly mod==2 -> padding=1 => out_len=ceil(n/3)*4 -1.
+So after generating full padded output (which has ceil(n/3)*4 chars), we can slice up to that length minus padding count replaced earlier? Wait we replaced last few chars with '=' already so we can slice entire array up to ceil(n/3)*4 - padding_count ?
+
+Simpler: after generating full out array size blocks*4 where blocks=ceil(n/3), we apply replacements for '=' at appropriate positions and then slice first blocks*4 - pad_count characters where pad_count=pad_len? Actually pad_len computed earlier as number of zeros added at end which equals (n%3==0)?0 : (n%3==1)?2 :1 ??? Wait pad_len defined earlier as (3-(n%3))%3 gives number of zeros added such that total divisible by 3. For n%3==0 -> pad_len=0; mod==1->pad_len=2; mod==2->pad_len=1. So pad_count equals pad_len indeed because each zero leads to two or one padding char accordingly? Actually when mod==1 zero added leads to two '=' at end; when mod==2 zero added leads one '=' at end. So pad_count equals pad_len indeed because pad_len counts zeros added equal number of missing bytes beyond multiple-of-three leading to corresponding number of padding chars minus one? Wait check:
+
+n%3==1 => missing 2 bytes => add 2 zeros => produce two extra encoded chars from zeros => those two should become '=' => number of padding chars=2 => equals pad_len(=2).
+n%3==2 => missing 1 byte => add 1 zero => produce one extra encoded char from zero => becomes '=' => number of padding chars=1 => equals pad_len(=1).
+So yes pad_count == pad_len works except when no missing bytes gives zero paddings.
+
+Thus after generating full output array size blocks*4 where blocks=n_blocks (=ceil(n/3)), we replace last pad_count elements with ord('=') appropriately:
+
+if pad_count>0:
+   out[-pad_count:] = ord('=')
+
+Then final output length should be blocks*4 - pad_count ? Actually after replacing those with '=', they are part of output too! Standard base64 includes them in final string length equal blocks*4 anyway including paddings. So final output length always blocks*4 regardless of paddings! Wait check example: "f" -> "Zg==" length 4 ; original n=1 ; ceil(1/3)=1 ; blocks*4=4 ; yes includes paddings . So final output length always blocks*4 . So no slicing needed after replacement because out already size blocks*4 . Good! So just replace last pad_count elements with '=' and return decoded string from out.tobytes().decode('ascii') .
+
+Edge case empty input returns '' directly before any processing.
+
+Thus _vectorized_b64encode returns str accordingly.
+
+Now complexity wise uses only numpy operations except small constant-time logic for replacement etc., no python loops over elements except possibly small overhead inside stack etc., but that's fine since stack creates new arrays quickly.
+
+Now about performance vs baseline: baseline likely used Python loops over each block performing bit ops individually causing overhead O(n). Our method uses vectorized operations on entire array thus O(n) but less overhead per element due to C-level loops inside numpy operations like shift/mask etc., so speedup expected especially for large inputs (~MBs).
+
+Also using hmac new may be slower than built-in base64.b64encode on digest directly but that's fine because digest small size constant time anyway negligible relative overall cost when many messages processed perhaps bigger cost in encoding many digests? But each digest size fixed small so overhead negligible relative encoding cost maybe similar either way.
+
+But requirement imports include hmac though not used if no key provided; okay acceptable though unused import may raise lint warnings but fine for runtime tasks.
+
+Now ensure function signature matches run_solver returning Base64Encoding().solve(problem). We'll define class Base64Encoding with solve method as above plus helper _vectorized_b64encode staticmethod perhaps internal function outside class too acceptable as long as same name accessible inside solve call path referenced by run_solver?
+
+Actually run_solver calls Base64Encoding().solve(problem); so Base64Encoding must exist globally defined class with solve method that returns result string or whatever expected format by tests. Implementation details inside solve can call helper functions defined outside class too but must be accessible within scope either defined earlier or nested within class staticmethod etc.; simpler define helper function outside class named _vectorized_b64encode and call it inside solve; that's fine since global functions accessible inside class method body via name resolution unless local variable overrides it; okay fine.
+
+Now confirm imports required:
+
+import base64   # maybe unused if we don't use built-in encode but keep anyway.

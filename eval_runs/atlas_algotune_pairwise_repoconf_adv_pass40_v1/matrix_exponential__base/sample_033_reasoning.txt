@@ -1,0 +1,37 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm. But we must not rely on heavy external? We can import scipy.linalg.expm. But that would be fastest. But we must match the result. But the problem may want algorithmic speed. But simplest is to call scipy.linalg.expm. That is allowed. But we need to ensure dtype float64. The input is float64. So just return scipy.linalg.expm(A). That would be fast and accurate. But we must avoid import overhead? But we can import. The reference expects same function signature. So implement as:
+
+from scipy.linalg import expm
+def expm_fast(A): return expm(A)
+
+But we must import numpy? Not necessary. But the file must be runnable. So we import numpy and scipy. Provide function. That should pass tests.
+
+But perhaps the test expects not to use scipy? But they allowed. The problem statement says "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So using scipy.linalg.expm is fine.
+
+But maybe they want algorithmic improvement: use Pade approximation with scaling and squaring. But we can rely on SciPy's implementation, which uses that. So it's fine.
+
+But we must ensure that the output type is float64. SciPy returns float64 if input is float64. So fine.
+
+Edge cases: If A is not square? But problem says square. But we can check shape: if A.ndim != 2 or A.shape[0] != A.shape[1]: raise ValueError.
+
+Also we may want to cast to float64: A = np.asarray(A, dtype=np.float64). But SciPy will cast anyway. But we can keep.
+
+Implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("Input must be a square matrix")
+    return expm(A)
+
+Return.
+
+We must produce a complete runnable file with the function. Add if __name__ == "__main__" optional tests? Not required.
+
+Ok.
+
+But the instruction: "Return a COMPLETE, runnable Python file. No prose, no instructions to the reader; just valid Python." So we produce file with imports and function.
+
+Let's produce final.

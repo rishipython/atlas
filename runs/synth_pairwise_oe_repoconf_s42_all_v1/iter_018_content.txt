@@ -1,0 +1,66 @@
+We need to replace the triple‑nested Python loops with something that runs in a fraction of a second for typical sizes. The obvious trick is the Gram‑matrix identity:  
+`||x - y||^2 = ||x||^2 + ||y||^2 - 2 x·y`.  
+So if we can compute the dot product matrix once, we’re done.
+
+First thought: just do `G = X @ X.T` and then build `sq = np.sum(X**2, axis=1)`.  
+`D = sq[:, None] + sq[None, :] - 2 * G`.  
+That’s pure NumPy and uses BLAS for the matrix multiplication.  It’s already fast enough for many cases, but the brief hints at using SciPy and Numba, so maybe we can squeeze a bit more speed or handle edge cases better.
+
+Could we use `scipy.spatial.distance.cdist`?  That function internally does exactly this but also adds a small overhead of Python calls and extra memory copies.  Plus it returns a full matrix anyway, so no real win over the simple formula.
+
+What about Numba?  If we write a small JIT‑compiled kernel that loops over `i` and `j` but not over `k`, we can still get a speedup over pure Python because the inner loop becomes compiled C.  But that would re‑introduce a Python‑level loop over one dimension; the brief says no Python loops.  So probably we should keep everything vectorised.
+
+Maybe we can combine SciPy’s `scipy.linalg.blas.dgemm` directly for the dot product?  That gives us explicit control over memory layout and could be faster than NumPy’s `@`.  But NumPy already calls BLAS under the hood; calling SciPy’s wrapper is just extra overhead unless we need to tweak parameters.
+
+Another angle: use FFT convolution to compute pairwise distances for large D?  Not really, because convolution is useful for computing sums of products with shift invariance, not for arbitrary dot products between rows.
+
+What about broadcasting tricks?  We could compute `(X[:, None, :] - X[None, :, :])**2` and sum over axis=2.  That would create an (N,N,D) array which is huge for large N or D – memory blowup.  So not acceptable.
+
+So the cleanest solution is the Gram‑matrix trick with NumPy.  Where does SciPy fit in?  We could call `scipy.linalg.norm` or something but that’s not needed.  Perhaps we can use `scipy.spatial.distance.squareform` to enforce symmetry or clip negatives?  Actually after computing `D`, tiny negative values due to floating point rounding might appear; we should clip them to zero: `np.maximum(D, 0, out=D)`.
+
+Now about Numba: maybe we can JIT compile a small helper that does the final clipping or even the whole operation if we want to avoid creating intermediate arrays.  But since the core is already vectorised, Numba might not help much.  Still, the brief says to use it somewhere, so let's wrap the final clipping step in a tiny Numba function:
+
+```
+@numba.njit
+def _clip_negatives(A):
+    for i in range(A.shape[0]):
+        for j in range(A.shape[1]):
+            if A[i,j] < 0:
+                A[i,j] = 0
+    return A
+```
+
+This still has two loops but it's compiled C so negligible cost compared to matrix multiplication.
+
+Alternatively, we could write a single Numba kernel that does everything: compute row norms into a vector, compute dot product via BLAS call inside Numba?  That's messy; better keep BLAS call in NumPy.
+
+Edge cases: if N=0 or D=0, our code should return an empty (0,0) array without errors. The Gram formula works fine: `X @ X.T` gives (0,0), sum over empty axis gives shape (0,), broadcasting works.
+
+Precision: using float64 everywhere keeps consistency with input dtype. After subtraction we may get tiny negatives like -1e-15; clipping solves that.
+
+We must import numpy as np and numba at top; also import scipy.linalg.blas if we decide to use it explicitly. But maybe just import scipy.spatial.distance for completeness? Not necessary. But brief says use SciPy somewhere; easiest is to call `scipy.linalg.blas.dgemm` instead of `@`. That will avoid any hidden overhead from NumPy's wrapper and give us explicit control over transposition flags:
+
+```
+from scipy.linalg.blas import dgemm
+G = dgemm(alpha=1.0, a=X, b=X.T)
+```
+
+This returns a float64 array too.
+
+So final plan:
+
+- Import numpy as np
+- Import numba
+- Import scipy.linalg.blas.dgemm
+- Define pairwise_sq_dist:
+    - Compute G via dgemm
+    - Compute sq = np.sum(X**2, axis=1)
+    - Compute D = sq[:,None] + sq[None,:] - 2*G
+    - Clip negatives via numba function
+    - Return D
+
+Check shapes: all good. Complexity O(N^2 D). Memory: G is N×N which is unavoidable since output is that size.
+
+Edge cases covered. Done.
+
+OK, I think I have the design. Time to write it.

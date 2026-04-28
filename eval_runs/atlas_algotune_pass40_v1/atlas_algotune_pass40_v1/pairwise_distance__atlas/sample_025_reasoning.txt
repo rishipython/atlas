@@ -1,0 +1,25 @@
+We need to replace triple loops with efficient vectorized or using broadcasting or linear algebra. Standard formula: D_{ij} = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared: sum over axis=1, shape (N,). Then use outer addition minus 2 dot product matrix. Ensure dtype float64. Ensure no negative small due to rounding: max with 0.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    D = norms[:,None] + norms[None,:] - 2 * X.dot(X.T)
+    # due to numerical errors, set negative small to 0
+    np.maximum(D, 0, out=D)
+    return D
+
+Return dtype float64. Works.
+
+Edge cases: N large; memory wise O(N^2). Accept.
+
+Return shape (N,N). This is efficient.
+
+Let's produce final code file with imports.
+
+Also add docstring same as before.
+
+Return.
+
+Let's produce final answer.

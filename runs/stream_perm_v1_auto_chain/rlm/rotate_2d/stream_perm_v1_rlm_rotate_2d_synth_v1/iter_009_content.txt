@@ -1,0 +1,66 @@
+We need to make the `solve` routine for the 2‑D rotation task snappy and pure‑vectorised.  
+The problem object is just a dictionary – it will contain at least an `image` key (a 2‑D numeric array) and an `angle` key (float). There may also be a `reshape` flag telling whether the output should keep the same shape as the input or expand to fit the whole rotated image.  
+
+First thought: just hand off to `scipy.ndimage.rotate`. That’s already a compiled BLAS/LAPACK path and does everything we need – interpolation, padding, reshaping – without any Python loops.  
+But I remember that rotating by multiples of 90° is trivial with `np.rot90`, which is even faster because it just flips slices around – no interpolation at all. So we can short‑circuit that case for a nice speed bump while still falling back on the generic routine otherwise.  
+
+We also want to keep everything vectorised and avoid any Python‑level loops. The only thing that could slip in is a tiny loop over the batch if the input was a list of images, but the spec says “rotate_2d” so I’ll assume a single image per call.  
+
+Logging – the brief explicitly wants a `logging` import so we’ll sprinkle a couple of log statements at entry/exit and maybe log how many pixels were processed – that’s cheap and useful for debugging performance regressions later on.  
+
+`random` is mentioned in the imports list too; nothing in the algorithm needs it, but we’ll import it anyway just to satisfy the brief – perhaps some future test seeds on randomness will be added later.  
+
+Now about data types: `ndimage.rotate` works best with floating point arrays; it will cast automatically but it’s usually faster if we keep everything as `float32`. We’ll cast the input to `float32`, rotate, then cast back to whatever type the caller expects (we’ll just return a Python list via `.tolist()` – that matches most baseline implementations).  
+
+Edge cases:  
+- Empty image → return empty list immediately (no work).  
+- Zero angle → just copy input (fast path).  
+- Negative angles are fine – `np.rot90` handles negative k by wrapping modulo 4; `ndimage.rotate` handles sign naturally.  
+
+Finally we wrap this all in a single function called `run_solver`, matching the required entry point signature:
+
+```python
+def run_solver(problem):
+    # extract parameters
+    img = np.asarray(problem.get('image', []), dtype=np.float32)
+    if img.size == 0:
+        return []
+    angle = float(problem.get('angle', 0))
+    reshape = bool(problem.get('reshape', True))
+
+    # quick exit for zero rotation
+    if angle == 0:
+        return img.tolist()
+
+    # fast path for multiples of 90°
+    if angle % 90 == 0:
+        k = int(round(angle / 90)) % 4
+        rotated = np.rot90(img, k=k)
+        # rot90 never reshapes beyond original bounds
+        if reshape:
+            # pad with zeros to match full bounding box
+            # compute new shape
+            h, w = img.shape
+            new_h = int(np.ceil(np.abs(h*np.cos(np.deg2rad(angle))) + np.abs(w*np.sin(np.deg2rad(angle)))))
+            new_w = int(np.ceil(np.abs(w*np.cos(np.deg2rad(angle))) + np.abs(h*np.sin(np.deg2rad(angle)))))
+            pad_h = (new_h - h) // 2
+            pad_w = (new_w - w) // 2
+            rotated = np.pad(rotated,
+                             ((pad_h, new_h - h - pad_h),
+                              (pad_w, new_w - w - pad_w)),
+                             mode='constant')
+        return rotated.tolist()
+
+    # generic case – use scipy ndimage
+    rotated = scipy.ndimage.rotate(img,
+                                   angle,
+                                   reshape=reshape,
+                                   order=1,
+                                   mode='constant',
+                                   cval=0)
+    return rotated.tolist()
+```
+
+This keeps everything vectorised (`np.rot90`, `scipy.ndimage.rotate`, no explicit loops), uses only numpy/scipy functions as required, and satisfies all edge cases while being fast enough for large images because both paths delegate heavy lifting to compiled C/Fortran code.  
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,23 @@
+We need to implement a fast matrix exponential. We can use scipy.linalg.expm directly, but maybe they want a custom implementation. But simplest: import scipy.linalg.expm and just call it. But to meet "return numerically-close results" we can just call scipy.linalg.expm. That is fastest. But maybe they don't want to rely on SciPy? The problem says we may import scipy. So we can do:
+
+def expm_fast(A):
+    from scipy.linalg import expm
+    return expm(A)
+
+But we need to keep same signature. That is fine. But maybe they want a custom algorithm: scaling and squaring + Pade approximant. We can implement using scipy.linalg.expm, but that uses same. But we can implement our own scaling and squaring with Pade, but simpler to call SciPy. The requirement: "Your solution must define the same top-level function name and signature." So we can just delegate to scipy.linalg.expm. That should be fast and accurate.
+
+But maybe the reference implementation is naive, and the evaluator expects we replace with something faster but still produce same output within tolerance. Using scipy.expm ensures that. But is there any risk that SciPy may not be available? The problem says we may import scipy. So it's fine.
+
+Thus final code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But also we can optionally ensure dtype float64. But expm returns float64. Good.
+
+Return as a single file.
+
+Let's produce code block.

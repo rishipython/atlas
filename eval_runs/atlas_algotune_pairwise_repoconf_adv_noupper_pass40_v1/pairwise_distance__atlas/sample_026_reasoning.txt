@@ -1,0 +1,13 @@
+We need to implement faster pairwise squared Euclidean distances. Standard formula: D = A + B - 2C where A is row-wise sum of squares, B same, C = X @ X.T. Use numpy broadcasting: compute sum of squares per row: sums = np.sum(X**2, axis=1). Then D = sums[:,None] + sums[None,:] - 2*X @ X.T. Ensure dtype float64. Also maybe clip negative zeros to zero due to floating errors. Return result.
+
+Also ensure shape (N,N). Input dtype float64. Use np.dot.
+
+Return np.maximum(D, 0.0) to avoid small negative due to numeric errors.
+
+Let's produce file. Provide imports. Provide function.
+
+Make sure to keep the same signature. Use numpy.
+
+Edge cases: N=0? but shape (0,D). Then sums empty, X @ X.T returns (0,0). D = sums[:,None] + sums[None,:] - 2*X@X.T => shape (0,0). Works.
+
+Ok. Provide final answer.

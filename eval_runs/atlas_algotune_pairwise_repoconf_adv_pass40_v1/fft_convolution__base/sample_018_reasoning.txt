@@ -1,0 +1,33 @@
+We need to replace slow implementation with FFT-based convolution. Use numpy. Ensure same output shape, dtype float64. Use numpy.fft.fft. For real inputs, we can use np.fft.rfft? But easiest: use np.fft.fft with length L = next power of 2? But can use np.fft.fft directly; size is N+M-1. Use np.fft.fft(x, n=L), np.fft.fft(h, n=L). Then inverse. Use np.real? Since inputs real, result should be real. But due to rounding errors, we can round small imaginary parts. Use np.fft.ifft. Ensure dtype float64. Use np.fft.fftshift? No. We'll use np.fft.fft. Should handle large arrays.
+
+We can also use np.fft.fft with length L = N+M-1. That may not be power of two but fine. Complexity O(N log N). We'll produce output as real part.
+
+Edge cases: empty arrays? If N or M is zero? conv of empty? np.convolve returns empty array? Let's check: np.convolve([], [1,2]) returns array([], dtype=float64). Our code should handle that. If either array empty, return empty array. So handle if N==0 or M==0: return np.array([], dtype=np.float64). Also shape 1-D.
+
+Also if arrays have dtype not float64? Use float64 conversion? Use np.asarray(x, dtype=np.float64). Should be fine.
+
+Return result length N+M-1. Use np.fft.fft. For real arrays, we can use np.fft.rfft, but easier to use fft and ifft.
+
+Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = N + M - 1
+    # choose next power of 2? Not necessary.
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    Y = np.fft.ifft(X * H).real
+    return Y
+
+But we need to be careful with rounding errors; np.allclose will accept. Use np.real. Should be fine.
+
+We also might want to cast to float64. Already.
+
+Return Y.
+
+Ok. Provide file. Include imports at top. Provide function. No main. That's all.

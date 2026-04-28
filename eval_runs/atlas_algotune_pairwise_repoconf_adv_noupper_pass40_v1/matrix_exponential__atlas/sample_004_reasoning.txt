@@ -1,0 +1,46 @@
+We need to implement a fast matrix exponential. We can use scipy.linalg.expm directly, but maybe they want us to use scaling and squaring with Pade approximant. But we can simply call scipy.linalg.expm(A) which is fast and accurate. But the problem says "Your solution must define the same top-level function name and signature as the reference." We can import scipy.linalg.expm. But we need to ensure it returns np.ndarray of dtype float64. That's fine. The function signature: expm_fast(A: np.ndarray) -> np.ndarray. We can just return scipy.linalg.expm(A). That will be fast and accurate. But maybe the evaluation environment might not have scipy? But they said we can import scipy. So that's simplest.
+
+But we must keep the same function name. So we can implement:
+
+import numpy as np
+from scipy.linalg import expm as _scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return _scipy_expm(A)
+
+That will be fast and accurate.
+
+But the reference code had a loop up to 40. But we can just call the library.
+
+However, maybe they want to avoid external library? But they allowed scipy. So easiest.
+
+But maybe we should handle the case where A is not float64? But spec says float64. So fine.
+
+Return as float64.
+
+Potential issues: If A is not square, scipy will raise error.
+
+Also need to import numpy.
+
+Let's produce code:
+
+import numpy as np
+from scipy.linalg import expm as scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    return scipy_expm(A)
+
+That's it.
+
+But maybe they want to implement scaling and squaring with Pade approximant ourselves. But using scipy is fine. But the evaluation might compare to scipy.linalg.expm, but if we call that, it's identical. So passes.
+
+Potential risk: The evaluation environment might not have scipy installed. But they said we can import scipy. So it's fine.
+
+But maybe they want to avoid external dependency? But the problem statement: "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So it's allowed.
+
+Hence final code.
+
+But we might add some docstring and type hints. Provide entire file.
+
+Let's produce final answer.

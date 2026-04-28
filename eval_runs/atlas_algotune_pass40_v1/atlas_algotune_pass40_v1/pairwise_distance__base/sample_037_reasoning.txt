@@ -1,0 +1,16 @@
+We need to replace the triple loop with efficient vectorized implementation. Use broadcasting or matrix multiplication: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms^2 vector, then use outer addition minus 2 dot product. Use np.dot. Ensure dtype float64. We'll implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    # compute pairwise squared distances: norms[:,None] + norms[None,:] - 2*X @ X.T
+    out = norms[:, None] + norms[None, :] - 2.0 * X @ X.T
+    # numeric errors may produce small negative values; clip to zero
+    out[out < 0] = 0
+    return out
+
+This should be fast. Use np.dot or @. That is good.
+
+Need to produce full file. Import numpy. Provide function.
+
+Ok.

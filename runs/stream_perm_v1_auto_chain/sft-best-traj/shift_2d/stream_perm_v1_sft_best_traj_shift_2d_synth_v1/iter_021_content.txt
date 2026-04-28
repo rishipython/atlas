@@ -1,0 +1,102 @@
+We need to take a 2‑D shift problem and turn it into a fast vectorised routine.  The reference uses a pure‑Python class with nested loops, so the first instinct is to replace those loops with NumPy broadcasting or SciPy helpers.
+
+Let’s start by sketching what the input looks like.  The problem dictionary probably contains an image or a matrix, a target shift, maybe some mask or weighting.  I’ll assume we have something like:
+
+```python
+{
+    'image': np.ndarray shape (H, W),
+    'shift': tuple(float, float),   # (dy, dx)
+    'mask': np.ndarray shape (H, W) optional
+}
+```
+
+The goal is to compute a shifted version of the image that aligns with the target shift as accurately as possible.  The reference implementation likely does something like:
+
+```python
+for i in range(H):
+    for j in range(W):
+        # compute new coordinates based on shift
+        # interpolate from original image
+```
+
+So we need to replace that with a vectorised interpolation.  SciPy’s `ndimage.shift` is a perfect candidate: it handles sub‑pixel shifts and interpolation modes.  That gives us a one‑liner for the core operation.
+
+However, we must be careful about the mask.  If a mask is supplied, we probably want to apply it after shifting or before shifting?  The reference might zero out masked pixels before shifting.  To stay compatible, we could multiply the image by the mask before calling `shift`.  That keeps everything vectorised.
+
+Now, what about edge handling?  `ndimage.shift` has `mode` and `cval`.  If the reference used zero padding, we can set `mode='constant', cval=0`.  If it used wrap or reflect, we’d need to match that; but zero is safest.
+
+Potential numerical pitfalls: if the shift is large relative to image size, interpolation will produce NaNs or zeros; but `shift` handles that fine.
+
+We also need to consider the output format: probably just return the shifted image.  But maybe the solver returns more than that—like a cost or residual?  The reference might return a dictionary with `'result'` key.  We can mimic that.
+
+So far we have:
+
+```python
+def solve(problem):
+    img = problem['image']
+    dy, dx = problem['shift']
+    mask = problem.get('mask', None)
+    if mask is not None:
+        img = img * mask
+    shifted = scipy.ndimage.shift(img, shift=(dy, dx), order=1,
+                                  mode='constant', cval=0)
+    return {'result': shifted}
+```
+
+That’s already vectorised and uses SciPy.
+
+But wait—do we need to support different interpolation orders? The reference might use bilinear (`order=1`). We could expose that as an optional parameter but keep default bilinear.
+
+Also think about dtype: if input is float32 or float64, SciPy will preserve dtype; but sometimes `shift` converts to float64 internally then casts back. That might be acceptable.
+
+Edge case: if mask contains zeros and ones only (binary), multiplying works fine. If mask is boolean, NumPy will cast it to int automatically; that's okay.
+
+Now consider performance: calling `scipy.ndimage.shift` is already C‑level; no Python loops inside. That should be fast enough for most sizes. But what about very large images? Could use FFT‑based shift for periodic boundary conditions? That would be overkill unless required by spec.
+
+Another alternative: implement our own bilinear interpolation using broadcasting and `np.take`. That would avoid SciPy overhead but would be more complex and maybe slower due to Python overhead in constructing indices arrays. So I’ll stick with SciPy.
+
+But wait—maybe the solver expects not just the shifted image but also some error metric computed against a ground truth? The reference might compute difference between shifted image and some target field. We don’t know exactly; but given the brief says “return optimal solution”, maybe it returns just the shifted image.
+
+We should look at typical usage of Shift2D in AlgoTune tasks: often they ask to find an integer shift that aligns two images by maximizing correlation or minimizing error. But here they provide a target shift directly; so solve just applies it.
+
+If there were multiple shifts to try (e.g., integer grid search), we'd need loops over candidates; but no loops allowed. So likely it's just one shift.
+
+We also need to ensure imports are minimal: only numpy and scipy.ndimage plus typing for type hints.
+
+The final file will have:
+
+```python
+import numpy as np
+import scipy.ndimage
+from typing import Any, Dict
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    ...
+```
+
+We must keep function name `run_solver`. Inside we instantiate `Shift2D().solve(problem)`? The reference uses a class; but we can bypass that by directly implementing solve logic inside run_solver or define an internal helper class with solve method that calls our vectorised code. Since brief says keep same function name and signature but body replaced by faster implementation – likely they expect us to keep class structure? But they said "replace its body" – so we can modify Shift2D.solve method directly inside run_solver file; no need for external class file.
+
+Thus:
+
+```python
+class Shift2D:
+    def solve(self, problem):
+        ...
+```
+
+Then run_solver simply does `return Shift2D().solve(problem)` as before.
+
+Make sure no Python-level loops appear in solve method.
+
+Also consider small images: if H or W is zero? Unlikely; but guard against empty arrays by returning empty array early.
+
+Potential numerical edge case: if shift has fractional part exactly .5 leading to aliasing? No issue.
+
+Test sanity: For identity shift (0,0), output should equal input (or masked). Our code will produce same due to shift(0). Good.
+
+For large negative shift beyond bounds: output will be zeros due to constant mode cval=0; acceptable unless reference expects wrap – but spec unknown; choose constant zero as safe default.
+
+If mask present and contains NaNs? Multiplying yields NaNs propagating; maybe reference handled differently; but unlikely masks contain NaNs.
+
+Ok final design ready. Time to write code accordingly.
+OK, I think I have the design. Time to write it.

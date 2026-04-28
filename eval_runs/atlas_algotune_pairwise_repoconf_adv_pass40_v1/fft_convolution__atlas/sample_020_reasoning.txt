@@ -1,0 +1,50 @@
+We need to implement fast conv1d using FFT. We can use numpy. We can use np.fft.fft, but need to consider real data and avoid complex rounding errors. Use np.fft.rfft? For real input, rfft is efficient. For full convolution, we need length L = N + M - 1. The FFT length should be next power of 2 >= L. Use np.fft.fft with length K. Then compute X = np.fft.fft(x, K); H = np.fft.fft(h, K); Y = X * H; y = np.fft.ifft(Y).real[:L]. That works. Might need to use np.fft.irfft if we used rfft. But rfft and irfft only for real. But if we use fft, we get complex but then take real part.
+
+We need to handle input types: arrays of shape (N,) float64. We can convert to float64. Use np.asarray(x, dtype=np.float64). Use same for h.
+
+Edge cases: N or M zero? Usually length >=1. But we should handle gracefully: if either empty, return empty? But conv of empty arrays? We'll assume non-empty.
+
+Also we can use scipy.signal.fftconvolve, but we can just implement ourselves.
+
+We should also consider small sizes: for small N+M-1, maybe direct method is faster, but not necessary.
+
+We should ensure that output length is N+M-1.
+
+Potential numeric differences: use np.fft.ifft to get complex result, then real part. Should be fine.
+
+We also may want to use np.fft.fft with dtype np.float64, but np.fft.fft will produce complex64 or complex128 depending. We'll use np.fft.fft(x, K, dtype=np.complex128). But specifying dtype not necessary.
+
+Implementation:
+
+```
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+    # next power of two
+    K = 1 << (L - 1).bit_length()
+    # FFT
+    X = np.fft.fft(x, K)
+    H = np.fft.fft(h, K)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y[:L]
+```
+
+That is fine. Ensure dtype float64. The output type is float64.
+
+Return full convolution.
+
+Test: use np.allclose with np.convolve.
+
+Edge: if N+M-1 is 0? Not possible if both zero? But we can handle.
+
+We might want to use np.fft.irfft? For real input, we could use rfft: X = np.fft.rfft(x, K); H = np.fft.rfft(h, K); Y = X*H; y = np.fft.irfft(Y, K).real? Actually irfft returns real array of length K. That may be slightly faster. But we can keep with fft.
+
+We need to ensure the file is complete: import numpy, define conv1d. That's all.
+
+Let's write that.

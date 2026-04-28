@@ -1,0 +1,51 @@
+We need to produce a faster implementation. The reference uses naive Taylor series up to 40 terms. We need to produce a fast, numerically stable implementation that matches scipy.linalg.expm(A) within tolerance.
+
+We can use scipy.linalg.expm directly, but maybe we want to implement scaling and squaring with Pade approximants. But we could just call scipy.linalg.expm for simplicity, but that might be slower? But it's acceptable since it's fast in compiled code. The requirement: "Your solution must define the same top-level function name and signature as the reference. Do not rename it, do not add required arguments." So we can import scipy.linalg.expm. But we must ensure that the output matches within tolerance. Using scipy.linalg.expm is perfect.
+
+But maybe the evaluation expects a custom implementation? The problem says "speed up the matrix exponential." It doesn't forbid using scipy.linalg.expm. The function expm_fast should be fast and numerically close. So we can simply return scipy.linalg.expm(A). That will be fast and correct. But maybe they want to test that we used a faster algorithm. But the instructions: "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So using scipy is fine.
+
+Edge: Input A is float64 array. So we can cast to float64. Use scipy.linalg.expm. Let's implement.
+
+Make sure to import scipy.linalg. The function should accept any shape (n,n). Should we check shape? Not necessary.
+
+Return the result.
+
+But the problem might want a scaling and squaring approach. But using scipy is easiest.
+
+However, we should be careful: The evaluation might compare to scipy.linalg.expm for tolerance. If we call scipy.linalg.expm, we get exactly that result, so it's fine.
+
+Let's implement:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A):
+    return scipy.linalg.expm(A)
+
+But we need to ensure dtype: return float64. scipy returns float64 if input is float64. So fine.
+
+But maybe they want a drop-in replacement for reference. So we can keep same function name.
+
+Return result.
+
+Also, we might add a fallback if scipy is not available. But the environment likely has scipy.
+
+But to be safe, we can implement fallback using scaling and squaring with Pade approximant using numpy. But that's more complex. But we can implement a simple version: use scipy's expm, which uses scaling and squaring and Pade approximant.
+
+Thus final code:
+
+```
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    return scipy.linalg.expm(A)
+```
+
+Make sure to keep the docstring.
+
+Also, we might want to enforce dtype float64: A = np.asarray(A, dtype=np.float64). But not necessary.
+
+Let's produce final file.
+

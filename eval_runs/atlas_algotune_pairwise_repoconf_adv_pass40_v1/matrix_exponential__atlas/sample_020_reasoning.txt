@@ -1,0 +1,27 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm. But we can directly call it. But requirement: "Your solution must define the same top-level function name and signature as the reference." So we can implement expm_fast using scipy.linalg.expm. But we must import scipy. Should be fast and numerically stable. But maybe they want not to rely on SciPy? But we can use it. The instructions allow importing scipy. So simplest: def expm_fast(A): return scipy.linalg.expm(A). But ensure dtype. Use np.asarray. Should handle float64. Also we must avoid extra overhead. But that's fine.
+
+However some test harness might compare with scipy.linalg.expm and might require same shape. So we just return that.
+
+Edge: If SciPy is not installed? But allowed.
+
+Alternatively implement using Pade approximants or scaling and squaring algorithm from scipy. But easiest to call SciPy.
+
+Let's produce file:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    A = np.asarray(A, dtype=np.float64)
+    return scipy.linalg.expm(A)
+
+We need to ensure shape is square. But not necessary.
+
+Return type: np.ndarray.
+
+Ok.
+
+But maybe they want to test for large n, so SciPy's expm uses scaling and squaring with Pade approximant, which is fast.
+
+Let's produce final code.

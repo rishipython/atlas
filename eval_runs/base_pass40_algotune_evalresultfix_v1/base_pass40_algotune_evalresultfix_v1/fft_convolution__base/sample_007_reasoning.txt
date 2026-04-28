@@ -1,0 +1,70 @@
+We need to produce a faster implementation of FFT convolution. The current uses scipy.signal.fftconvolve. We can implement our own using numpy.fft.fft. Use real FFT (rfft) if inputs real. For performance, we can use numpy.fft.rfft. Zero pad to next power of two maybe. We need to handle mode: full, same, valid. Compute convolution result via FFT multiplication and IFFT.
+
+Also consider small signals: if len(x)*len(y) < threshold, use direct convolution via np.convolve. But np.convolve uses direct method; but we can use np.correlate? But we can just use np.convolve which may be faster for small.
+
+But we need to be careful with mode.
+
+Simplest: use np.fft.fft for full, then handle slicing for modes.
+
+Implementation steps:
+
+- Convert to np.array dtype float64.
+- If either empty, return empty array.
+- Determine lengths len_x, len_y.
+- Determine full length = len_x + len_y - 1.
+- Determine next power of 2 >= full length for efficient FFT. Or use np.fft.next_fast_len (available in numpy 1.20+). We'll use that.
+
+- Use np.fft.rfft: compute rfft of padded signals.
+
+- Multiply elementwise.
+
+- Compute inverse rfft: np.fft.irfft product, length padded_len.
+
+- Truncate to full length: result[:full_len].
+
+- Then based on mode: 
+  - full: return full_len
+  - same: center part: start = (full_len - max(len_x,len_y)) // 2? Wait for same: output length equal to max(len_x, len_y). For same mode, convolution of two signals of lengths M,N. For same, output length equal to max(M,N). The output is same size as the largest input. Usually defined as the central part of full convolution: starting index floor((len_y-1)/2). But for general signals, the same mode for convolution is defined as: For input lengths M,N, same length is M if M>=N else N. The output is computed as if the shorter signal is centered. In numpy.convolve, mode='same' returns length max(M,N) with the output centered. For example, np.convolve([1,2,3],[4,5]) returns [4,13,22,13] length 4. Here M=3,N=2 => max=3? Wait result length 4 > max=3. Actually numpy's same mode returns length M if M>=N else N. But for 3 and 2, it returns length 3? Let's test: In Python: np.convolve([1,2,3],[4,5], mode='same') returns array([4,13,22]) length 3. Wait check. Let's quickly recall: np.convolve([1,2,3],[4,5],mode='same') -> [4,13,22] (length 3). So same mode returns length M (first input). Actually if M>=N. So same mode basically truncates full convolution to the length of the first input, centered. So we need to replicate that.
+
+Hence we need to compute full convolution, then slice accordingly.
+
+For mode same: output length len_x. For mode valid: output length max(len_x - len_y +1,0) if len_x>=len_y else max(len_y - len_x +1,0). Actually valid returns only where signals fully overlap. For convolution, valid length = max(len_x, len_y) - min(len_x, len_y) + 1 = abs(len_x - len_y) + 1? Wait if len_x>=len_y, valid length = len_x - len_y + 1. If len_y>=len_x, valid length = len_y - len_x + 1. So formula: max(len_x, len_y) - min(len_x, len_y) + 1 = abs(len_x - len_y) + 1. But if one is zero, valid length = 0. So we handle that.
+
+Thus after computing full result, we slice:
+
+- full: result
+
+- same: start = (full_len - len_x) // 2 (since len_x >= len_y? Wait if len_x < len_y, full_len > len_x; start = floor((full_len - len_x)/2). For consistency with numpy, we can compute start = (len_y -1)//2? Let's test: For x length 3, y length 2: full_len=4. start=(4-3)//2=0.5 floor=0. So slice 0:3 -> [4,13,22] correct. For x length 2, y length 3: full_len=4, start=(4-2)//2=1. So slice 1:3 -> [13,22]? Wait full conv [4,13,22,13], slice 1:3 -> [13,22] length 2. But numpy same mode would produce length 2? For inputs [1,2], [4,5,6], same mode returns [13,22]? Let's check: np.convolve([1,2],[4,5,6],mode='same') -> [13,22] length 2. Yes. So formula works: start = (full_len - len_x)//2. But if len_x > len_y, start = (full_len - len_x)//2? For x length 5, y length 2: full_len=6, start=(6-5)//2=0. So slice 0:5 -> first 5 of full conv [4,13,22,13,4]? Actually full conv length 6: [4,13,22,13,4,?]. Wait compute: x=[1,2,3,4,5], y=[6,7] => full conv: [6,19,32,45,58,35] length 6. start=0 => slice 0:5 -> [6,19,32,45,58] length 5. But numpy same mode returns length 5: [6,19,32,45,58] correct.
+
+So use start = (full_len - len_x)//2.
+
+- valid: start = max(len_y, len_x) - 1? Actually valid start index for full conv: For x length M, y length N. The valid convolution is from index N-1 to M-1 inclusive if M>=N, else from M-1 to N-1 inclusive? Let's derive. Full conv index range 0..M+N-2. The valid part where y fully overlapped with x is when y fully inside x: For M>=N, valid indices start at N-1, end at M-1. So length M-N+1. For M<N, valid indices start at M-1, end at N-1. So length N-M+1. So we can compute start = max(len_y, len_x) - 1? Wait if M>=N, max=len_x, start=max-1 = len_x-1 which is wrong. Should be len_y-1. So need to handle both cases.
+
+So compute: if len_x >= len_y: start = len_y - 1; length = len_x - len_y + 1. else: start = len_x - 1; length = len_y - len_x + 1.
+
+Thus slice = result[start:start+length].
+
+Edge cases: if any length zero, return empty array.
+
+Also for small signals threshold: we can use np.convolve directly. But np.convolve might be slower for large. We can decide threshold maybe 512? We'll set threshold 512. If len_x * len_y < 512*512? But simpler: if len_x * len_y < 1e5? We'll just use np.convolve for any length less than 1024 maybe.
+
+Implement solve: compute result as numpy array. Return {"convolution": result.tolist()}. But the original code uses key "convolution". The problem statement says output key "result". But the is_solution expects key "convolution". So keep "convolution".
+
+Ok.
+
+Also use np.fft.rfft for real input. For complex? Problem likely real. Use rfft.
+
+Compute padded length: next_fast_len(full_len). Use numpy.fft.next_fast_len. If not available, use np.fft.next_fast_len. It exists.
+
+Edge: if full_len is 0 (empty signals), return empty.
+
+Let's implement.
+
+Also we can speed by using np.fft.rfft and irfft. Use dtype float64.
+
+Also we might use numba? But rfft is vectorized.
+
+Ok.
+
+Let's produce code.
+

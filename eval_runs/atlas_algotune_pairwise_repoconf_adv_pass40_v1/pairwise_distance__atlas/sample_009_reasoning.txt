@@ -1,0 +1,30 @@
+We need to write efficient implementation. Standard formula: squared distances matrix = A + A.T - 2*X @ X.T, where A is diagonal of squared norms. Use broadcasting. Implementation:
+
+norms = np.sum(X**2, axis=1)
+dist = norms[:,None] + norms[None,:] - 2*np.dot(X, X.T)
+
+Make sure dtype float64. Also ensure non-negative values due to numeric errors. Use np.maximum(dist, 0). That is typical.
+
+Return np.float64.
+
+Edge cases: N=0? X shape (0,D). Norms shape (0,). dist shape (0,0). Works.
+
+Also ensure that for large N, memory usage okay.
+
+We can also use np.dot. Use X @ X.T.
+
+Let's implement.
+
+Also we might need to enforce dtype float64.
+
+Define function pairwise_sq_dist(X: np.ndarray) -> np.ndarray.
+
+Add docstring. Provide imports.
+
+Also we may want to convert to float64 explicitly: X = np.asarray(X, dtype=np.float64). But the input is float64.
+
+Return dist.
+
+Also maybe use np.maximum to clip negative values due to floating errors.
+
+Let's produce code.

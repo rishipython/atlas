@@ -1,0 +1,47 @@
+We need to implement conv1d using FFT or scipy.signal. Need to ensure same dtype and output shape. Use np.fft.rfft maybe. For real signals, but we can just use np.fft.fft.
+
+We need to compute full convolution: result length L = N+M-1. We'll compute next power of two >= L for efficiency. Then compute FFT of both padded arrays, multiply, inverse FFT, real part, take first L.
+
+Need to ensure dtype float64. Use np.fft.fft with dtype np.complex128. Then result real.
+
+Edge cases: if either array is empty? Not likely. But handle zero-length? If N=0 or M=0, output length 0? np.convolve returns empty array. Our algorithm: if N==0 or M==0: return np.array([], dtype=np.float64). Should handle.
+
+Also we could use scipy.signal.fftconvolve but not necessary.
+
+Let's produce code:
+
+import numpy as np
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    if N == 0 or M == 0:
+        return np.empty(0, dtype=np.float64)
+    L = N + M - 1
+    n_fft = 1 << (L - 1).bit_length()  # next power of two
+    X = np.fft.rfft(x, n=n_fft)
+    H = np.fft.rfft(h, n=n_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=n_fft)
+    return y[:L]
+
+But using rfft reduces size by half but we need to be careful: rfft returns length n_fft//2+1. Multiplication is fine. irfft returns real array length n_fft. So final slice.
+
+Alternatively use full fft: but rfft is fine.
+
+Edge case: when n_fft=0? Not possible because L>=1 unless both zero. If one zero, return empty.
+
+We must ensure that result dtype matches np.float64.
+
+Also, we may want to cast result to float64.
+
+Let's produce final code. Ensure __all__ maybe.
+
+Return np.asarray(y[:L], dtype=np.float64). But y already float64.
+
+Testing with small arrays: e.g., x=np.array([1,2,3],dtype=np.float64), h=[4,5]. conv1d gives [4,13,22,15]. Check.
+
+Let's write code.
+

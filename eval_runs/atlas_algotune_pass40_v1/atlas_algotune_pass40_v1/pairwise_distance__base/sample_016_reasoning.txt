@@ -1,0 +1,30 @@
+We need to replace body with efficient implementation. Use numpy broadcasting or matrix operations. Compute squared Euclidean distance matrix: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+
+So we can compute norms squared: sum over D dims. Then compute dot product matrix: X @ X.T. Then compute out = norms[:,None] + norms[None,:] - 2 * dot. Ensure dtype float64. Might need to guard against small negative due to rounding, set negative to zero? Not necessary but could use np.maximum.
+
+Return out.
+
+Edge cases: N=0? Not likely. But we can handle.
+
+Also ensure dtype is float64. Input dtype float64. We'll compute with float64. Use np.asarray. Use np.dot.
+
+Return out.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dot = X @ X.T
+    out = sq_norms[:, None] + sq_norms[None, :] - 2 * dot
+    # Numerical errors might cause small negative values
+    out = np.maximum(out, 0.0)
+    return out
+
+That's all.
+
+We need to include imports at top: import numpy as np.
+
+Return as full file.
+
+Let's produce final code.

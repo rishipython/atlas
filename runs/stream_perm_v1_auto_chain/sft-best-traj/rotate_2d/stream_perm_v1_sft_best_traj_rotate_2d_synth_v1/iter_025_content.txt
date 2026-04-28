@@ -1,0 +1,232 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D image or array. The baseline uses some slow algorithm; we want to speed up with scipy.ndimage or similar. No loops, vectorized. Let's think.
+
+We might use scipy.ndimage.rotate which is fast. But need to handle input format: problem dict likely contains 'image', 'angle', maybe 'reshape', 'mode'. We need to parse.
+
+We should consider that baseline uses custom interpolation maybe slower.
+
+We want to use numpy and scipy only, no loops. Use ndimage.rotate with reshape=False? We need to preserve shape? Might be requirement.
+
+Also maybe we need to handle multiple images? Problem might be list of images? Let's think typical rotate_2d tasks: given a 2D array, rotate by angle around center.
+
+Could also be 3D array of shape (N, H, W). Then we rotate each slice.
+
+We can vectorize using np.stack and apply rotate per slice using scipy.ndimage.rotate with axis order? But ndimage.rotate does not accept batch; but we can use vmap? No loops. But we could use np.apply_along_axis but that's loop in C but still fine? But requirement: no Python-level loops. np.apply_along_axis is okay as it's C loop but still okay.
+
+But maybe better: Use scipy.ndimage.affine_transform with matrix for each slice, but again cannot batch.
+
+Maybe the problem expects us to compute rotation matrix and use scipy.ndimage.affine_transform for entire array using order=1 interpolation etc. That works for 2D arrays only, not batch.
+
+But if problem includes multiple images, we could reshape into (N, H, W) and use vmap via jax? But we don't want JAX.
+
+Alternatively we can flatten N slices into 3D and use ndimage.rotate with axes param? It rotates each 2D plane separately? Not sure.
+
+Let's examine baseline code? Not provided. We guess baseline uses manual rotation via mapping coordinates and interpolation loops.
+
+We will design solve that uses scipy.ndimage.rotate for each image in batch using np.vectorize? Actually np.vectorize is Python-level loop disguised; not good.
+
+Maybe the input problem contains a single image only. Let's assume that.
+
+So solve(problem): get image = problem['image'] (numpy array). angle = problem.get('angle', 0). mode maybe 'constant' or 'nearest'. We then call ndimage.rotate(image, angle, reshape=False, order=1, mode='constant', cval=0). That returns rotated image same shape.
+
+Need to ensure dtype preserved; cast back to original dtype if needed.
+
+Edge cases: angle zero -> return copy or original. Negative angles handled automatically.
+
+Also maybe they want rotation around center; ndimage.rotate does that by default.
+
+Now performance: using ndimage.rotate is efficient in C, no loops in Python.
+
+We also need to import from __future__ annotations; typing Any, Dict; import numpy as np; import scipy.ndimage as ndimage
+
+Define class Rotate2D with solve method returning rotated image(s).
+
+No loops in solve except maybe comprehension over list of images if needed but that's fine?
+
+But requirement "No Python-level loops" - so if we had list of images we'd need vectorized approach. But maybe not needed.
+
+Let's think about possible test harness: They call run_solver(problem) where problem may contain 'data' key with list of arrays or single array. We'll design robustly: if problem['data'] is list or tuple or ndarray with ndim>2 treat as batch else single.
+
+For batch case: we can stack into shape (N,H,W) and then use np.moveaxis? But ndimage.rotate can't handle batch; but we can use scipy.ndimage.affine_transform on each slice using vectorized transform via map_coordinates across all slices simultaneously by expanding dims? Actually map_coordinates can take array of coordinates for all slices at once by broadcasting. That might be complex.
+
+Simpler: if batch >1, we can use numpy apply_along_axis but that's Python-level loop inside C though still fine but might violate rule. But requirement might be strict; but they said no Python-level loops—apply_along_axis uses C loop so acceptable? It's still a Python function call per slice though? It calls function for each slice; that's still Python-level call overhead. Might be considered loop though.
+
+Better approach: For batch case, we could use scipy.ndimage.affine_transform on 3D array with rotation matrix applied along last two axes while keeping first axis unchanged. affine_transform accepts transformation matrix of shape (ndim, ndim) where ndim=3 here. We can build a block diagonal matrix that applies same 2x2 rotation to last two dims and identity on first dim. That will rotate each slice simultaneously! Yes! Good idea.
+
+So for N slices (shape (N,H,W)), we create matrix:
+
+[[1,0,0],
+ [0,c,-s],
+ [0,s,c]]
+
+Wait rotation around center requires translation too; affine_transform uses coordinates mapping from output to input via matrix and offset. For center rotation without shifting boundaries, we need offset such that center maps correctly: offset = center - M @ center where center = [0,N-1]/2 etc for each dimension? For 3D case: first dim unchanged so offset[0]=0; For last two dims compute offset accordingly based on shape[1], shape[2].
+
+Compute center_y = (H-1)/2 ; center_x = (W-1)/2 ; offset_y = center_y - c*center_y + s*center_x ; offset_x = center_x - s*center_y - c*center_x ; So offset array [0, offset_y, offset_x].
+
+Then call ndimage.affine_transform(data, matrix=M, offset=offset,...)
+
+This will rotate all slices simultaneously without loop!
+
+Thus our solve will check if data.ndim==3 -> use affine_transform else if ndim==2 -> same but simpler M and offset computed accordingly.
+
+Need to preserve dtype: output dtype same as input maybe float64 by default; set output dtype same as input's dtype via output parameter or cast after.
+
+Also consider order parameter: bilinear interpolation order=1 default good speed vs higher order slower.
+
+Mode parameter: choose 'constant' with cval=0 or 'nearest'? We'll pick 'constant'.
+
+Edge cases: angle zero -> return copy of data (np.copy).
+
+Also need to handle negative angles etc automatically via cos/sin signs correct since cos(-θ)=cosθ sin(-θ)=-sinθ so rotation matrix works automatically if angle negative passed as radian? Wait math expects radians? In baseline they might use degrees; ndimage.rotate expects degrees I think? Actually ndimage.rotate takes angle in degrees. But affine_transform expects radian or linear transformation matrix directly; we compute cos/sin from radian conversion: rad = np.deg2rad(angle). So good.
+
+Thus algorithm:
+
+def solve(problem):
+    data = problem['data']
+    angle = float(problem.get('angle', 0))
+    if angle == 0:
+        return np.copy(data)
+    rad = np.deg2rad(angle)
+    c,s = np.cos(rad), np.sin(rad)
+    if data.ndim == 2:
+        M = [[c,-s],[s,c]]
+        # compute offsets
+        h,w=data.shape
+        cy=(h-1)/2
+        cx=(w-1)/2
+        off_y=cy - c*cy + s*cx
+        off_x=cx - s*cy - c*cx
+        out = ndimage.affine_transform(data,M,(off_y,off_x),order=1,cval=0.,mode='constant')
+    else:
+        # assume shape (N,h,w)
+        n,h,w=data.shape
+        M=np.array([[1.,0.,0.],
+                    [0.,c,-s],
+                    [0.,s,c]])
+        cy=(h-1)/2
+        cx=(w-1)/2
+        off_y=cy - c*cy + s*cx
+        off_x=cx - s*cy - c*cx
+        out=ndimage.affine_transform(data,M,(0.,off_y,off_x),order=1,cval=0.,mode='constant')
+    return out.astype(data.dtype)
+
+This uses no loops except possibly inside C library functions which is fine.
+
+Now check imports: from __future__ import annotations ; from typing import Any,Dic t ; import numpy as np ; import scipy.ndimage as ndimage
+
+Define class Rotate2D:
+
+class Rotate2D:
+    def solve(self,p):
+         ...
+
+Then run_solver(problem): return Rotate2D().solve(problem)
+
+Edge cases: If data has more than 3 dims e.g., color image (H,W,C) => treat as HWC but our affine transform expects last two dims rotated leaving channel unchanged; we can treat as (C,H,W) by moving channel first then apply above logic then move back. So implement generic:
+
+arr=data
+if arr.ndim==4 and arr.shape[-1] in {3,4}: # color image
+   arr=np.moveaxis(arr,-1,0) # channels first
+   # apply rotation on each channel separately via above logic expecting shape (C,H,W)
+   ...
+   out=np.moveaxis(out,0,-1)
+else ... 
+
+Thus handle color images too without loops because affine_transform handles channel dimension as first axis unaffected by rotation matrix identity row/col ensures channel unaffected.
+
+Need to ensure M shape matches arr.ndim; for 4d arr after moveaxis it's still 3d (C,H,W). Good.
+
+For general >3 dims like time series of images shape (T,H,W,C)? Might not be required.
+
+Thus design done.
+
+Now sanity checks:
+
+- If angle is multiple of 90°, rotation may produce slight differences due to interpolation order 1 vs nearest neighbor; acceptable within tolerance maybe rtol small?
+
+- Offsets computed correctly ensures rotation around center even when reshaping false because affine transform maps output coordinates back to input coordinates considering shift; should preserve size exactly equal input shape because M has determinant 1 so scaling not changed; offsets ensure center mapping correct so output same size no cropping beyond boundaries since mode constant ensures outside values zero padded causing corners lost but fine?
+
+- For color images channel dimension unaffected due to identity row/col in M ensures no mixing between channels – correct because matrix only operates on spatial dims leaving channel dimension unchanged due to identity row/col added at front?
+
+Wait our M has shape (3x3) with first row [1.,0.,0.] meaning mapping from output x,y,z coords to input coords includes identity on first axis (channel). For channel dimension mapping from output channel index stays same because transformation only mixes y,z coordinates independent of channel index -> correct because channel axis not rotated.
+
+But note that affine_transform expects matrix mapping output coords to input coords in coordinate system where last axis corresponds last dimension of array. With our data arranged as (C,H,W), the axes are [channel,height,width]. The transformation should leave channel axis unchanged so first row identity good. Offsets also include zero for channel axis -> correct.
+
+Thus works for color images too without loops!
+
+Now performance wise: single C function call per dataset regardless of number of channels/time steps etc – efficient!
+
+Edge case: If data has single channel but still 3d e.g., shape( H,W) vs (H,W,C)? Our logic covers both via checking dims <=3 else treat accordingly?
+
+Simplify: After moving axis for color detection only if last dim size <=4 and not equal height width maybe ambiguous but ok.
+
+Alternatively just handle generic by always moving last dim first if it's small (<5). That may mis-handle grayscale images where last dim size large like height width >5 – won't move because condition fails => treat as spatial dims only – fine.
+
+Thus final design ready.
+
+Now produce handoff sentence after reasoning done.
+We need a fast `solve` that rotates a 2‑D field without looping in Python at all – everything must go through compiled BLAS/BLAS‑like kernels inside SciPy/Numpy.  
+The reference implementation probably builds a coordinate grid and interpolates pixel values one by one – that’s O(N²) work plus a Python loop over every pixel – far too slow when the test harness feeds us large arrays or batches of them.  
+
+Let’s think about the minimal set of operations required:
+
+```
+input : ndarray `data`   # could be H×W or N×H×W or even C×H×W after a small shuffle
+angle : float            # degrees – the usual convention used by SciPy’s helpers
+output : ndarray          # same shape & dtype as `data`
+```
+
+The SciPy API that does exactly what we want is `scipy.ndimage.affine_transform`.  
+It takes an arbitrary linear transform matrix **M** that maps *output* coordinates back into *input* coordinates,
+an optional `offset` vector that compensates for the fact that rotations are usually defined about the origin,
+and it works on any number of dimensions – the transform is applied independently along each axis unless you explicitly mix them in **M**.
+The heavy lifting happens in C/Fortran so there are no Python loops involved once you hand it the right arguments.
+
+
+
+### Building the transform
+
+For a pure spatial rotation by an angle θ around the centre of an H×W image:
+
+```
+M₂ₓ₂ = [[cosθ , -sinθ],
+        [sinθ ,  cosθ]]
+```
+
+The centre in pixel coordinates is  
+`(cy , cx) = ((H‑1)/2 , (W‑1)/2)` .  
+If you simply apply `M₂ₓ₂` you’ll end up rotating around the origin `(0,0)` which moves the centre away.
+To keep the centre fixed you add an `offset` computed from
+
+```
+offset = centre – M₂ₓ₂ @ centre
+```
+
+When `data` has more than two spatial dimensions – e.g., a stack `N×H×W` or a colour image `C×H×W` –  
+we just prepend an identity row/column so that the extra dimension is untouched:
+
+```
+M₃ₓ₃ = [[1 , 0 ,   0],
+         [0 , cosθ , -sinθ],
+         [0 , sinθ ,  cosθ]]
+offset₃ₓ₁ = [0 , offset_y , offset_x]
+```
+
+This way every “slice” along the leading axis gets rotated identically without any explicit looping.
+
+
+
+### Handling colour / batch inputs
+
+A common pitfall is colour images stored as `(H,W,C)` while our transform expects the spatial axes last.
+A quick `np.moveaxis(data,-1,0)` turns it into `(C,H,W)` – now **C** behaves like an extra leading dimension,
+exactly what `affine_transform` already knows how to ignore thanks to the identity part of **M**.
+After rotation we move it back with another `moveaxis`.
+
+If somebody hands us something already shaped `(N,H,W)` there’s nothing special needed –
+the same logic applies.
+
+
+
+### Edge cases & numerical quirks
+
+* **Zero angle** – skip all work and

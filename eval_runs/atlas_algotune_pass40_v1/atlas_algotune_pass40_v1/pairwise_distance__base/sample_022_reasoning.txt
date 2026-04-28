@@ -1,0 +1,27 @@
+We need to write efficient pairwise squared Euclidean distance matrix. Use broadcasting or efficient numpy operations: compute sum of squares per row, outer sum minus 2 dot product. Use np.dot. Implementation: out = np.add.outer(row_sums, row_sums) - 2 * X @ X.T. Ensure dtype float64. Also ensure no negative due to floating errors: clip to zero. Provide function.
+
+We should import numpy.
+
+Return shape (N,N). Use np.maximum with 0 to avoid tiny negative.
+
+Edge cases: N=0? maybe. We'll handle. Use np.empty.
+
+Let's produce code.
+
+Also ensure we use np.float64. Use X.astype(np.float64) if not.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq = np.sum(X**2, axis=1)
+    dist = sq[:,None] + sq[None,:] - 2 * X @ X.T
+    np.maximum(dist, 0, out=dist)
+    return dist
+
+Edge: if X empty shape (0,D). Then sq is (0,), dist shape (0,0). Works.
+
+Return dist.
+
+We'll produce file.
+

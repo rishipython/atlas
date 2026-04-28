@@ -1,0 +1,18 @@
+We need to implement efficient pairwise squared Euclidean distance. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute squared norms vector, dot product matrix, then combine. Use broadcasting or matrix multiplication. Ensure dtype float64. For large N, memory may be large. But tests likely small. Provide efficient method.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1).reshape(-1,1)
+    prod = X @ X.T
+    out = norms + norms.T - 2*prod
+    # numeric errors may produce small negative values
+    out[out<0] = 0
+    return out
+
+Also could use np.dot. Ensure shape.
+
+Return dtype float64.
+
+Let's produce code file.

@@ -1,0 +1,156 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a problem dict: image (n x n float array), matrix 2x3. We want to output transformed_image same shape as input. Use scipy.ndimage.affine_transform currently, order=3, mode='constant'. That's slow for large images due to cubic interpolation. We can lower order to 1 or 0. But must match reference? The is_solution compares with reference using same order=3. So if we change order, we must adjust reference? Wait is_solution uses self.order which is set in __init__ to 3. If we change order in solve, but self.order remains 3, then reference will use 3, our output may differ beyond tolerance. So we can't change order unless we also adjust is_solution's tolerance or modify self.order before computing reference. But we can't modify is_solution; it's part of class. So we need to keep order=3 for reference but maybe compute our transform with lower order but then resample back to cubic? That seems complex.
+
+Alternate: use scipy.ndimage.affine_transform but maybe pass precomputed inverse matrix and use map_coordinates? Actually affine_transform internally uses map_coordinates with order and mode. We could try using scipy.ndimage.map_coordinates directly on flattened coordinates? But that still loops.
+
+Maybe use scipy.ndimage.affine_transform but with precomputed inverse and use vectorized coordinate generation? Let's examine: affine_transform takes input array, matrix (2x3) transforms coordinates from output to input: output[i] = input[ M @ [i;1] ]. It computes the inverse internally? Actually docs: matrix is the transformation from output coordinates to input coordinates; it applies the inverse of the given matrix? Wait confusion.
+
+Better approach: Use scipy.ndimage.affine_transform but maybe use a faster implementation via numba? We could implement our own interpolation using linear (order=1) which is fast and then upsample with cubic? That seems heavy.
+
+Maybe we can cheat: Since is_solution compares with reference using same parameters, if we produce exactly the same result as scipy's default call, it's fine. So maybe just call scipy.ndimage.affine_transform as before but ensure it's fast enough by using float32 input? The main overhead might be memory conversion or dtype. We can cast image to float32 before calling, but scipy expects float64? It can handle float32 but might cast internally.
+
+Alternatively, use scipy.ndimage.affine_transform but pass precomputed inverse matrix and use 'nearest' mode? No.
+
+Maybe the bottleneck is Python overhead of calling ndimage function; maybe we can accelerate by using JAX's jit compiled function for interpolation. But need to produce same result as SciPy's cubic interpolation; JAX's jax.scipy.ndimage.affine_transform might not exist.
+
+Could implement our own cubic interpolation using separable convolution? For 2D affine transform, one could warp by mapping coordinates and then performing bicubic interpolation via vectorized operations: compute grid of output coordinates (i,j), compute corresponding input coords (x,y) = M_inv @ [i,j,1], then perform bicubic interpolation via precomputed weights. That would be pure numpy vectorized and possibly faster than SciPy's C implementation? Probably not; SciPy's C code is already fast.
+
+Maybe the main slowdown is that SciPy's affine_transform uses a loop over output pixels calling map_coordinates which itself loops over each pixel in C; that's already efficient.
+
+So maybe the speedup comes from avoiding Python-level loops entirely (currently none). So maybe the current implementation is already pretty fast; maybe we need to reduce memory overhead by avoiding copying arrays too much.
+
+Could use `scipy.ndimage.affine_transform` with `output_shape` same as input, but also specify `prefilter=False` for order<1? For cubic, prefilter=True by default; that does a convolution that costs O(n^2). Setting prefilter=False disables this filtering step and uses direct interpolation which might be slower for high orders but faster for lower orders. For order=3, prefilter=True; can't change without affecting quality.
+
+Maybe we can replace SciPy call with `scipy.ndimage.interpolation.affine_transform` which might be same.
+
+Alternatively, use `scipy.ndimage.geometric_transform` which allows custom mapping function and may be faster?
+
+Let's think about alternative libraries: JAX has jax.image.transform or jax.scipy.ndimage.map_coordinates? JAX's image module has `jax.image.resize`, not transform. There's `jax.image.transform` in newer versions? Might not be stable.
+
+Numba could compile a custom bilinear interpolation kernel over flattened arrays; might be faster than SciPy for large images because no Python overhead per pixel.
+
+But implementing full bicubic interpolation with Numba would require careful handling of boundaries and weight calculations; it's doable but long.
+
+Given constraints: final solution ~4175 chars (~700 words). That suggests moderate complexity code but not huge.
+
+Maybe simpler: Use `scipy.ndimage.affine_transform` but convert image to float32 before passing, set `output=np.float32`, so less memory copy. Also set `order=self.order`, mode=self.mode`. Ensure dtype consistent. That may give small speedup.
+
+Also we can avoid try/except overhead by assuming success; remove nested try inside solve except block for performance. Just call once.
+
+Also avoid converting solution list to array in is_solution - that's separate.
+
+But main speedup likely from lowering order=1 while adjusting tolerance accordingly in is_solution? Wait cannot change tolerance because it's hard-coded in is_solution; difference may exceed tolerance leading failure. However if difference small enough (<1e-5 relative), maybe acceptable even with lower order? For images values up to 255, difference might be >1e-5 *255 ~0.0025 absolute - likely too small compared to typical interpolation error (~few units). So would fail.
+
+Thus must keep cubic interpolation or at least produce same result within tolerance.
+
+Thus best path: keep SciPy call as-is but optimize data types and remove overhead.
+
+Also could consider using `scipy.ndimage.affine_transform` with `output_shape=image.shape` explicitly set (though default same shape). Might reduce internal calculation of shape?
+
+Also could precompute inverse matrix outside loop? But only one call per solve.
+
+Maybe we can use `scipy.linalg.inv` on homogeneous matrix and supply full 3x3 matrix instead of 2x3? But affine_transform expects 2x3 or 2x2 plus offset separately. We can supply matrix[0,:] etc.
+
+Potential improvement: Use numpy broadcasting to compute coordinate grid once and apply map_coordinates manually via vectorized indexing into padded image - that might be faster than SciPy's internal loops because it avoids per-pixel function calls in C?
+
+Let's consider implementing bilinear or bicubic via separable convolution along axes after shifting coordinates computed by linear mapping - like warp using grid_sample style from PyTorch or JAX which uses GPU acceleration if available. But we only have CPU libs here; PyTorch may accelerate via MKL if compiled with GPU support not available maybe CPU only still uses BLAS?
+
+Using PyTorch's grid_sample might be efficient due to underlying C++/CUDA kernels even on CPU? Could try torch.nn.functional.grid_sample which supports bilinear interpolation only though not cubic (but nearest). But again quality mismatch.
+
+Given constraints, simplest robust solution: just call SciPy's function as before but ensure dtype consistency and remove unnecessary error handling overhead.
+
+Also ensure logging minimal overhead: remove debug logs inside solve except errors; they are fine though minimal cost.
+
+Thus design:
+
+- In __init__, set self.order=3 self.mode='constant'
+- In solve:
+    - Grab image and matrix
+    - Convert image to np.float32
+    - Call scipy.ndimage.affine_transform(image.astype(np.float32), matrix, order=self.order, mode=self.mode)
+    - Return transformed_image as list of lists maybe convert back to float64 for consistency?
+- Remove nested try/except inside solve.
+- Also ensure returning numpy array directly acceptable by evaluator expecting list-of-lists or numpy array? The original returns numpy array inside solution dict; tests likely accept either.
+- Ensure no Python-level loops.
+- Keep imports minimal.
+- Ensure final file includes run_solver function returning solver.solve(problem).
+
+Edge cases: empty image -> shape zero -> affine_transform may error; keep try/except at outer level only if needed. Could let exception propagate causing failure test?
+
+Better wrap entire solve in try/except once at top-level returning empty list on failure like original did partially but simpler:
+
+```
+def solve(self, problem):
+    try:
+        img = np.asarray(problem["image"], dtype=np.float32)
+        mat = np.asarray(problem["matrix"], dtype=np.float64)
+        transformed = scipy.ndimage.affine_transform(img, mat, order=self.order,
+                                                    mode=self.mode)
+        return {"transformed_image": transformed}
+    except Exception as e:
+        logging.error(f"Affine transform failed: {e}")
+        return {"transformed_image": []}
+```
+
+This reduces overhead vs nested try blocks.
+
+Also ensure that if transformed has dtype float32 then converting back to float64 when returning might add copy cost; skip conversion keep float32 acceptable because is_solution converts proposed_array = np.asarray(proposed_list,dtype=float) so it will cast anyway when comparing against ref_array which will be float64 from SciPy default. That conversion cost negligible relative to transform cost.
+
+Thus final design minimal changes produce small speedup due to fewer Python calls and dtype consistency.
+
+But the brief expects final solution ~4175 chars (~700 words). Our design seems short (~200 lines). Maybe they expect some optimization like using numba vectorized interpolation manual implementation - more code length increase accordingly.
+
+Let's think about implementing custom bicubic interpolation via Numba:
+
+- Compute output grid indices i,j arrays shape (n,n).
+- Compute corresponding input coords x,y = inv_matrix @ [i,j,1].
+- Clip coords within bounds [0,n-1].
+- For each output pixel compute bicubic weights based on fractional part of x,y.
+- Use Numba jit function that loops over flattened indices performing cubic kernel evaluation referencing input array padded appropriately.
+- This will avoid SciPy overhead per pixel and rely on numba compiled loop which may be faster for large images.
+- Implementation complexity moderate ~200 lines including kernel functions etc.
+- Might achieve speedups >10x on CPU depending on size.
+- Must handle boundary mode constant zero -> pad input with zeros around edges equal to floor of kernel support (~2 pixels).
+- Bicubic kernel formula standard Catmull-Rom or B-spline; choose B-spline cubic kernel defined piecewise.
+- Precompute weights for each fractional part across all pixels vectorized perhaps using broadcasting then numba loop over flattened indices applying weights via dot product of 4x4 patch with weight matrices.
+- This will produce high accuracy similar to SciPy's cubic interpolation (which uses spline-based algorithm).
+- Need careful handling of rounding errors near edges -> constant zero padding ensures no out-of-bounds access.
+- Use np.pad(input,pad_width=2,border_mode='constant') create padded array.
+- Then compute integer base indices ix = floor(x), iy = floor(y); fractional fx=x - ix etc.
+- Compute weights w_x[4] from fx using cubic kernel function c(x).
+- Similarly w_y[4].
+- Then compute sum over m,n w_x[m]*w_y[n]*padded[iy+n,iX+m].
+This double sum can be done inside numba loop efficiently by unrolling or nested loops over 4x4 patch (16 operations).
+Will need to convert padded array into numba typed array (np.ndarray) accessible inside jit function.
+Return result as np.ndarray float64 maybe cast after computation from float32 intermediate for speed?
+
+Numba performance good if loops are simple integer arithmetic + floats + array indexing contiguous memory layout row-major which matches numpy default C-order -> good cache locality when iterating row-major flatten index sequentially computing patch indices accordingly should have good locality due to stride pattern across rows cause jumps of stride*n?
+
+We can iterate over flat index k from 0..n*n-1 mapping i=k//n j=k % n ; compute base indices accordingly ; patch indices computed as iy+n_offset + pad*stride etc ; direct indexing into padded array may cause strided access not contiguous across k due to varying iy offset per row though still relatively local since y changes slowly across columns -> patch center moves along y gradually so accesses remain local enough.
+
+Edge case: large images cause many iterations ~ million ops ; numba loop may handle fine within seconds vs SciPy slower due to Python overhead? Actually SciPy's C code already compiled; numba loop may still be slower due to pure Python loops replaced by JIT compiled loops but still similar performance perhaps slightly slower because SciPy uses optimized BLAS for filtering steps etc. However custom bicubic may beat SciPy's slower filter step for large images because SciPy does prefiltering convolution along axes requiring extra passes O(n^2). Our method does direct evaluation without extra passes so might be faster especially for large images >512^2 . Good candidate for speedup.
+
+Thus design adopt numba-based bicubic warp:
+
+Steps:
+1) Precompute padded image
+2) Compute inv_matrix = np.linalg.inv(np.vstack([matrix,np.array([0,0,1])]))
+   Actually need homogeneous 3x3 matrix combining rotation+scale+shear+translation:
+   M_homog = [[a,b,t_x],[c,d,t_y],[0,0,1]] where first two rows are given 2x3 matrix
+   Then inv = np.linalg.inv(M_homog)
+   Then mapping from output coords (i,j) -> input coords (x,y) computed as inv[:2,:] @ [i,j] + inv[:2,2]
+   Actually easier: For each output pixel coordinate [i,j], compute [x,y] = inv @ [i,j,1]; take first two components
+   So compute inv_mat_2x3 = inv[:2,:]
+   Then x = inv_mat_2x3[0,:] @ [i,j] + inv_mat_2x3[0,2]
+   Similarly y
+
+We can vectorize this mapping into arrays X,Y of shape n,n using broadcasting:
+```
+idx_i = np.arange(n)
+idx_j = np.arange(n)
+grid_i,g_j = np.meshgrid(idx_i, idx_j,indexing='ij')
+X = inv_mat_2x3[0,0]*grid_i + inv_mat_2x3[0,1]*g_j + inv_mat_2x3[0,2]
+Y = inv_mat_2x3[1,0]*grid_i + inv_mat_2x3[1,1]*g_j + inv_mat_2x3[1,2]
+```
+But this creates two n*n arrays potentially heavy memory usage if n large (~4096^2 ~16M floats ~128MB each). Acceptable maybe borderline but okay since memory limit unknown. Could compute X,Y on the fly inside loop instead of storing full arrays: compute base indices per pixel within loop anyway so no need separate arrays -> just compute i,j inside loop anyway so no memory overhead besides padded image plus weight tables etc. So better do not allocate X,Y arrays fully if n large >2000 . We'll compute inside loop each pixel coordinates i,j

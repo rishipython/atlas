@@ -1,0 +1,41 @@
+We need to implement faster convolution. We can use numpy. Use np.fft.fftconvolve from scipy.signal. But we can also implement via numpy.fft.fft. The input arrays are 1-D float64. We need to return full convolution. Implementation must be numerically close. Use np.fft.fft with real inputs. Use np.fft.rfft? But for full convolution, we need length N+M-1. We can do:
+
+n = N+M-1
+size = 1<< (n-1).bit_length()  # next power of two >= n
+X = np.fft.rfft(x, size)
+H = np.fft.rfft(h, size)
+Y = X*H
+y = np.fft.irfft(Y, size)[:n]
+Return y.
+
+This should be fine. Use np.fft.fft? rfft faster. Use real. Ensure dtype float64. We need to cast to float64. Use np.fft.irfft. That's fine.
+
+Alternatively, use scipy.signal.fftconvolve. But we may not rely on SciPy. But we can import scipy. But the environment may have SciPy. But to be safe, implement ourselves.
+
+Edge cases: zero-length arrays? Problem may not have empty arrays. But we can handle.
+
+Let's produce function conv1d that uses FFT. Implementation.
+
+Also ensure that for small lengths, maybe overhead not huge but fine.
+
+Let's write.
+
+Also maybe use np.fft.fft if rfft not available? rfft is available.
+
+Return result as float64.
+
+Let's produce final code.
+
+We need to import numpy as np.
+
+Ok.
+
+Check that algorithm returns same as np.convolve.
+
+Test with random arrays.
+
+Edge: negative values fine.
+
+Ok.
+
+Let's produce final answer.

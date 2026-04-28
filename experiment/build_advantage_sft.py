@@ -45,6 +45,7 @@ from experiment.build_synth_sft import (  # noqa: E402
     _strip_oe_scaffold,
     clean_synth_trace,
 )
+from experiment.algotune_prompts import build_algotune_prompts  # noqa: E402
 
 
 CORRECT = "correct"
@@ -104,6 +105,23 @@ def main() -> None:
         help=(
             "Upper clip bound for advantage. Pass 'none' to disable upper clipping "
             "(one-sided lower-only clip)."
+        ),
+    )
+    parser.add_argument(
+        "--prompt-source",
+        choices=["auto", "canonical", "synth_context"],
+        default="auto",
+        help=(
+            "Prompt source for training records. "
+            "'auto' prefers canonical current prompts when available."
+        ),
+    )
+    parser.add_argument(
+        "--strict-prompt-match",
+        action="store_true",
+        help=(
+            "When canonical prompts are used and synth context exists, fail if "
+            "stored synth prompts differ from canonical prompts."
         ),
     )
     args = parser.parse_args()
@@ -176,14 +194,60 @@ def main() -> None:
     )
 
     # --- Pass 2: build records -------------------------------------------
-    # Resolve base_system / base_user from the first synth context (every
-    # synth context stores these and they're identical across tasks).
+    # Resolve base_system / base_user from canonical prompts by default when
+    # possible; fall back to synth context only when requested/needed.
     ctx_files = sorted(synth_dir.glob("iter_*_context.json"))
-    if not ctx_files:
-        raise FileNotFoundError(f"No iter_*_context.json found in {synth_dir}")
-    first_ctx = json.loads(ctx_files[0].read_text())
-    base_system = first_ctx["base_system"]
-    base_user = first_ctx["base_user"]
+    first_ctx = json.loads(ctx_files[0].read_text()) if ctx_files else None
+    base_system = None
+    base_user = None
+
+    canonical_ok = False
+    canonical_system = ""
+    canonical_user = ""
+    try:
+        canonical_system, canonical_user, _ = build_algotune_prompts(args.problem_id)
+        canonical_ok = True
+    except Exception:
+        canonical_ok = False
+
+    if args.prompt_source == "canonical":
+        if not canonical_ok:
+            raise ValueError(
+                f"prompt_source=canonical but no canonical prompt resolver for "
+                f"problem_id={args.problem_id!r}"
+            )
+        base_system, base_user = canonical_system, canonical_user
+    elif args.prompt_source == "synth_context":
+        if first_ctx is None:
+            raise FileNotFoundError(
+                f"prompt_source=synth_context but no iter_*_context.json in {synth_dir}"
+            )
+        base_system = first_ctx["base_system"]
+        base_user = first_ctx["base_user"]
+    else:  # auto
+        if canonical_ok:
+            base_system, base_user = canonical_system, canonical_user
+        elif first_ctx is not None:
+            base_system = first_ctx["base_system"]
+            base_user = first_ctx["base_user"]
+        else:
+            raise FileNotFoundError(
+                "No canonical prompt available and no iter_*_context.json found."
+            )
+
+    if first_ctx is not None and canonical_ok and base_system == canonical_system:
+        mismatch = (
+            (first_ctx.get("base_system", "") != canonical_system)
+            or (first_ctx.get("base_user", "") != canonical_user)
+        )
+        if mismatch:
+            msg = (
+                "Synth context prompts differ from current canonical prompts; "
+                "using canonical prompts."
+            )
+            if args.strict_prompt_match:
+                raise ValueError(msg)
+            print(f"[build_adv] WARNING: {msg}")
 
     out_records: list[dict] = []
     missing_synth: list[int] = []

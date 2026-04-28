@@ -1,0 +1,48 @@
+We need to write faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to ensure same results. Use np.fft.fft for convolution. Use np.fft.rfft? For float64. Implementation: compute next power of 2 length L = N+M-1. Use np.fft.fft(x, L) * np.fft.fft(h, L) -> ifft to get result length L. Then slice to N+M-1. This will produce complex numbers but should be real. Use .real. But due to numeric error, may have small imaginary. Use np.real. Use dtype float64. Should produce same. For small arrays, overhead may be bigger but that's fine.
+
+Potential requirement: input arrays may be 1D float64. Use np.asarray. Ensure shape. Use np.fft.fft.
+
+Edge cases: N or M zero? Not possible? But we can handle.
+
+Implementation:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    L = N + M - 1
+    # next power of 2 for efficient FFT
+    L_fft = 1 << (L - 1).bit_length()
+    X = np.fft.rfft(x, n=L_fft)
+    H = np.fft.rfft(h, n=L_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L_fft)
+    return y[:L]
+
+But we need to ensure dtype float64. rfft returns complex128. Multiply. irfft returns float64.
+
+Return y[:L].
+
+Edge: If N+M-1 <= L_fft, but we slice.
+
+Also we might use np.fft.fft for general, but rfft is faster for real input. Use rfft.
+
+Potential difference: rfft uses real FFT, but we need full convolution, not circular. Using zero padding to L_fft ensures no wrap-around. Works.
+
+Return.
+
+Make sure import numpy.
+
+We must keep function signature conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray.
+
+Let's implement.
+
+Also ensure that if arrays not 1-D, we flatten? Problem states 1-D. We'll just assume.
+
+Ok. Provide full file with imports.
+
+Add docstring.
+
+Ok.

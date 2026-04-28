@@ -1,0 +1,27 @@
+We need to write a fast `run_solver` that takes a problem dictionary and returns a rotated 2‑D array. The reference implementation probably uses a slow Python loop or a custom rotation routine; we want to replace it with a vectorised call from SciPy that will be orders of magnitude faster on large images or many samples.
+
+First thought: just call `scipy.ndimage.rotate`. It’s already highly optimised (uses C code under the hood) and handles arbitrary angles, interpolation orders, and can keep the original shape if we set `reshape=False`. That satisfies the “no Python‑level loops” requirement automatically because the whole operation is done in compiled code.
+
+But we also have to make sure the input format is handled correctly. The problem dict could contain keys like `'image'` (a NumPy array or list of lists) and `'angle'` (a scalar). We should be defensive: cast the image to a NumPy array with `np.asarray`, ensure it’s numeric (`dtype=float` maybe), and pull the angle out with a default of 0 if missing. If the angle is given as degrees or radians? SciPy expects degrees by default; we’ll assume degrees because that’s common in image processing tasks. If someone passes radians we could detect by range but that would add logic; better to document assumption in comments.
+
+Also the brief mentions importing `logging`, `random`, and typing imports – so we’ll set up a logger and maybe seed the RNG for reproducibility (though it’s not used in rotation). The RNG might be useful if later extensions add randomness (e.g., data augmentation). Including `random.seed(0)` at module import satisfies that requirement without affecting performance.
+
+Edge cases: 
+- Empty image: return empty array.
+- Non‑2‑D arrays: `ndimage.rotate` will rotate over the last two axes; that works for grayscale (H,W) and color images (H,W,C). 
+- Negative angles: handled fine.
+- Very large angles: SciPy normalises internally.
+- Interpolation order: use bilinear (`order=1`) which is fast and gives decent quality; higher orders would be slower.
+
+We also need to keep everything vectorised – no explicit loops anywhere. That means no `for` over pixels or channels; just one call to `rotate`.
+
+Potential pitfalls:
+- If the input image is integer type, rotating with bilinear interpolation will produce floats; that’s fine because we return floats. We could cast back to original dtype if desired but not necessary.
+- If the input has a single channel but is 3‑D with shape (1,H,W), `ndimage.rotate` will treat it as 3‑D and rotate over last two axes – still fine.
+- Memory usage: `rotate` returns a new array; that's expected.
+
+We should also wrap the core logic in a try/except block so that any unexpected errors are logged with context – helpful for debugging but not required for speed.
+
+Finally we’ll expose only the function `run_solver`; everything else stays at module level so imports happen once.
+
+That gives us a clean, fast solution using SciPy’s built‑in rotation routine, fully vectorised and compliant with the brief. OK, I think I have the design. Time to write it.

@@ -1,0 +1,36 @@
+We need to replace the triple loop with efficient vectorized computation. Classic formula: pairwise squared distance matrix = (X^2 sum over columns) + (X^2 sum over columns). Specifically, let X be N x D. Compute G = X @ X.T (dot product). Let row_sums = np.sum(X**2, axis=1) (N,). Then D = row_sums[:,None] + row_sums[None,:] - 2*G. Ensure dtype float64.
+
+We need to return dtype float64. Input dtype is float64. Might need to cast to float64.
+
+Edge cases: N can be 0? maybe. But shape (0, D). Then output shape (0,0). Works.
+
+We need to produce a file with imports and function definition.
+
+Also, might use np.einsum for memory efficiency, but dot product is fine.
+
+Let's implement:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    cross = X @ X.T
+    D = sq_norms[:, None] + sq_norms[None, :] - 2 * cross
+    # due to floating errors, clamp small negatives to 0
+    np.maximum(D, 0, out=D)
+    return D
+
+This returns float64. That should be numerically close.
+
+We might also consider using np.add.outer for row sums.
+
+But fine.
+
+Return D.
+
+Edge: large N may cause overflow? But using float64.
+
+Ok.
+
+Return file.
+
+Let's produce the python file.

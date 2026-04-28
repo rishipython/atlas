@@ -1,0 +1,15 @@
+We need to implement fast convolution. Use numpy. Use FFT-based convolution. For real input, we can use np.fft.fft and ifft. Need to handle arbitrary lengths. Use next power of two maybe. But we can simply use np.fft.fft with length L = N+M-1. Use np.fft.fft(x, L) * np.fft.fft(h, L) and ifft. Real part. Should return float64 array. Use np.fft.rfft? But easier: use np.fft.fft.
+
+Implement conv1d that does:
+
+N = len(x); M = len(h); L = N + M - 1; X = np.fft.rfft(x, L); H = np.fft.rfft(h, L); Y = X * H; y = np.fft.irfft(Y, L); return y.
+
+But note that rfft returns real FFT for real input, and irfft returns real output. Should be fine. Use dtype float64. Ensure rounding errors small. Use np.allclose.
+
+Edge cases: if arrays empty? Probably not. But we can handle. If N==0 or M==0, return empty array? Convolution of empty arrays? But not needed.
+
+Let's implement.
+
+Also, we can optionally use scipy.signal.fftconvolve but we want to avoid dependency. Use numpy only.
+
+Let's produce final code.

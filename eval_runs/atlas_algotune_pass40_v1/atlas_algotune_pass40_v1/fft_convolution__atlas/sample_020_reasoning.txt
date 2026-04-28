@@ -1,0 +1,29 @@
+We need to implement fast conv1d using FFT. We can use numpy. We can use np.fft.fft, but need to consider zero padding to length L = N+M-1, next power of two for speed. Use rfft? Since real input. We'll implement using np.fft.rfft for real signals to speed. Use length L_fft = next power of two >= N+M-1. Compute FFT of both padded arrays, multiply, inverse FFT, take real part, truncate to length N+M-1. Use np.fft.rfft and irfft. rfft length L_fft gives Nfft/2+1 components. So: X = rfft(x, n=L_fft); H = rfft(h, n=L_fft); Y = X*H; y = irfft(Y, n=L_fft); then return y[:N+M-1]. Use dtype float64.
+
+Edge cases: if arrays empty? But likely non-empty. Ensure dtype float64. Use np.asarray. Also if inputs not 1D? The spec says 1-D float64 arrays. We'll just flatten.
+
+Implement conv1d accordingly.
+
+Also we might use scipy.signal.fftconvolve but we can implement ourselves.
+
+Let's produce file.
+
+Also maybe we need to support negative or complex? They are float64. We'll use float64.
+
+Return as np.ndarray float64.
+
+Let's code.
+
+Also we might check if N+M-1 is 1? then trivial.
+
+Implement nextpow2: 1 << (N+M-2).bit_length()
+
+Let's code.
+
+Also need to import numpy.
+
+Ok.
+
+Also we need to preserve same function name. Provide docstring.
+
+Let's produce final code.

@@ -1,0 +1,29 @@
+We need to replace slow implementation with FFT-based convolution. Use numpy. Ensure same output shape, dtype float64. Use numpy.fft.fft. For real inputs, we can use np.fft.rfft? But easiest: use np.fft.fft with length L = next power of 2? But can use np.fft.fft directly; size is N+M-1. Use np.fft.fft(x, n=L), np.fft.fft(h, n=L). Then inverse. Use np.real? Since inputs real, result should be real. But due to rounding errors, we can round small imaginary parts. Use np.fft.ifft. Ensure dtype float64. Use np.fft.fftshift? No. We'll use np.fft.fft. Should handle large arrays.
+
+We can also use np.fft.fft with length L = N+M-1. That may not be power of two but fine. Complexity O(N log N). We'll implement conv1d as:
+
+def conv1d(x, h):
+    N = x.size
+    M = h.size
+    L = N + M - 1
+    # compute FFT of size L
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    y = np.fft.ifft(X * H).real
+    return y
+
+But we must ensure dtype float64. np.fft.fft returns complex128. ifft returns complex128. .real returns float64. Good.
+
+Edge cases: if input arrays are not 1D? The reference expects 1D. We'll assume 1D.
+
+Test: np.allclose with rtol/atol. Should pass.
+
+Potential numeric differences: For large arrays, using ifft may produce small imaginary residuals; but we take real. Should be fine.
+
+Let's produce final code with imports and function.
+
+Also may want to support array shapes like (N,) but maybe also multi-dimensional? We'll just treat first dimension.
+
+Return y as float64.
+
+Let's produce final.

@@ -1,0 +1,188 @@
+We need to replace the triple loop with something fast. Let's think: pairwise squared distances can be computed as X @ X.T gives Gram matrix. Then D[i,j] = ||xi||^2 + ||xj||^2 - 2 xi·xj. So we can compute row norms squared: sq_norms = np.sum(X**2, axis=1). Then use broadcasting: D = sq_norms[:,None] + sq_norms[None,:] - 2 * (X @ X.T). That's vectorised, uses BLAS for matmul.
+
+But requirement says use scipy somewhere. Maybe use scipy.linalg.blas.dgemm or something? Or scipy.spatial.distance.cdist? But we want to use numba too. Perhaps we can use numba to JIT a small loop that does the matrix multiplication? But that's unnecessary; numpy's matmul is fine.
+
+We also need no Python loops, so everything vectorised.
+
+Maybe we need to use scipy's cdist? That would be simpler but might not be as fast? cdist uses BLAS too. But requirement: uses scipy functions somewhere. So we could call scipy.spatial.distance.cdist(X, X, 'sqeuclidean') which returns exactly what we want. That would satisfy using scipy. But we also need numba JIT somewhere. We could wrap cdist call in a numba function? But numba can't compile calls to cdist directly; but we could write a small numba function that calls np.dot or something.
+
+Alternatively, we could use numba to JIT the matrix multiplication manually: compute X @ X.T via a loop inside numba? That would be slower than numpy's BLAS though. But maybe the design expects using both scipy and numba.
+
+Wait, the brief says final solution ~1146 characters. That suggests a fairly compact file.
+
+We could do:
+
+import numpy as np
+import scipy.spatial.distance as spd
+from numba import njit
+
+@njit
+def _matmul(A):
+    return A @ A.T
+
+def pairwise_sq_dist(X):
+    G = _matmul(X)
+    sq = np.sum(X**2, axis=1)
+    return sq[:,None] + sq[None,:] - 2*G
+
+But _matmul just calls @ inside numba, which may not be compiled; but numba supports dot for 2D arrays? I think it does support np.dot or @ but may not optimize fully.
+
+Alternatively, use scipy.linalg.blas.dgemm for matmul: G = scipy.linalg.blas.dgemm(alpha=1.0, a=X, b=X.T). That returns (N,N). Then proceed.
+
+So we can incorporate scipy.linalg.blas.
+
+We still need numba somewhere: maybe we can jit the entire function but using numpy inside? But if we jit the whole function with njit, it may not allow dynamic shape? But okay.
+
+Alternatively, create a small numba function that loops over rows computing distances with broadcasting? But that would reintroduce loops.
+
+Maybe simplest: Use scipy.spatial.distance.cdist and then clip small negatives due to numerical errors. And also wrap with numba's njit for overhead?
+
+But cdist returns float64; no loops needed. We can then do:
+
+@njit
+def pairwise_sq_dist(X):
+    return spd.cdist(X,X,'sqeuclidean')
+
+But numba cannot compile calls to spd.cdist because it's not supported in nopython mode. So can't.
+
+Better: Use scipy.spatial.distance.pdist and squareform? That returns condensed distance matrix; but then need to convert back to square form; that's more work.
+
+Maybe we can use scipy.linalg.norm with axis and broadcasting? Not sure.
+
+Let's think of design: We will import numpy as np; import scipy.linalg.blas as blas; from numba import njit
+
+Define a helper @njit function that does the computation using numpy operations (which are allowed in nopython mode?). Actually in nopython mode, only a subset of numpy is supported: array creation, arithmetic, sum, etc., but not all advanced indexing or broadcasting maybe? According to Numba docs, broadcasting is supported; sum over axis is supported; dot is supported via np.dot or @? I think dot is supported for 1-D and 2-D arrays.
+
+So we could write:
+
+@njit
+def _pairwise_sq_dist_numba(X):
+    G = X @ X.T
+    sq = np.sum(X*X, axis=1)
+    return sq[:,None] + sq[None,:] - 2*G
+
+But will Numba compile X @ X.T? I think yes if X is 2D array of float64.
+
+Thus our pairwise_sq_dist can just call this numba function. Where does scipy come in? We haven't used it yet. We could use scipy.linalg.blas.dgemm for G instead of X @ X.T inside the numba function? But dgemm is not available inside nopython mode because it's a Python function call; Numba won't compile it.
+
+So maybe we should compute G via blas outside and pass into numba?
+
+Alternate plan: Use scipy.spatial.distance.cdist outside and then use numba to clip negative zeros or something trivial; but that's silly.
+
+Maybe design expects using both: use scipy.linalg.blas.dgemm for matrix multiplication (fast), then do rest vectorised in numpy (no loops). The mention of numba might be optional; maybe they want us to jit the entire function for speed or maybe not needed but included anyway.
+
+Could write:
+
+import numpy as np
+import scipy.linalg.blas as blas
+from numba import njit
+
+@njit
+def _compute_sq_dist(X):
+    # compute Gram matrix via blas
+    G = blas.dgemm(alpha=1.0, a=X, b=X.T)
+    # compute squared norms
+    sq = np.sum(X*X, axis=1)
+    return sq[:,None] + sq[None,:] - 2*G
+
+def pairwise_sq_dist(X):
+    return _compute_sq_dist(X)
+
+But inside _compute_sq_dist, calling blas.dgemm might not be allowed in nopython mode because it's a Python function call to C library via SciPy wrapper; Numba may not support that call unless it's annotated with jitclass or something. I think Numba cannot compile calls to arbitrary Python functions like that unless they are built-in or compiled functions like np.dot etc. So maybe better not to put dgemm inside njit.
+
+Thus maybe skip numba entirely and just rely on numpy and scipy for speed. But brief says must use numba JIT compilation somewhere.
+
+Maybe we can write a small helper that loops over blocks of rows using SciPy's dgemm externally and accumulate results into output array inside Numba loop over blocks? That seems complicated.
+
+Alternate idea: Use SciPy's cdist which internally uses BLAS; then wrap entire call in a dummy Numba function that just forwards result? That wouldn't add performance but satisfies requirement of using numba somewhere. It would be trivial though but meets spec?
+
+Better: Write:
+
+@njit
+def pairwise_sq_dist_numba(X):
+    return spd.cdist(X,X,'sqeuclidean')
+
+But again Numba cannot compile spd.cdist call.
+
+Thus perhaps the intended solution uses SciPy's cdist directly without Numba at all; but brief says uses numba JIT compilation somewhere else maybe just import it but not used? Might be acceptable if imported but unused? The brief didn't say must use it actively; just "Uses **numba** JIT compilation." Could mean you define a function decorated with @njit even if you don't call it?
+
+Better safe: define a simple helper decorated with njit that does nothing heavy but ensures usage of Numba. Eg:
+
+@njit
+def _noop(x):
+    return x
+
+Then in main function call _noop(0) or something trivial before returning result from SciPy cdist. That uses Numba JIT compilation albeit trivial.
+
+But requirement likely expects actual speedup from Numba usage on core loop rather than trivial wrapper.
+
+Let's consider using Numba's prange for parallel loop over rows computing distances using vectorized operations inside each iteration; still loops at Python level replaced by parallel C loops inside Numba.
+
+Design: Use Numba to loop over i from 0..N-1 in parallel (prange). For each i compute differences between row i and all rows via broadcasting and sum squares along axis 1 -> row distances vector length N. Store into out[i,:]. That's efficient due to vectorization inside each iteration but still O(N^2) operations executed by CPU cores in parallel via prange. No Python loops at runtime because prange is compiled by Numba into parallel loops in C++/C code.
+
+This uses numpy operations inside Numba which are supported (sum over axis). Should work if we set parallel=True on njit decorator and use prange from numba import prange.
+
+So code:
+
+from numba import njit, prange
+
+@njit(parallel=True)
+def _pairwise_sq_dist_numba(X):
+    N = X.shape[0]
+    out = np.empty((N,N), dtype=np.float64)
+    for i in prange(N):
+        diff = X[i] - X  # broadcast subtract row i from all rows -> shape (N,D)
+        out[i] = np.sum(diff*diff, axis=1)
+    return out
+
+This is pure NumPy inside Numba loop; should compile fine because broadcasting subtraction works inside njit? I think yes if shapes known at runtime; it's dynamic but allowed. The sum over axis works too.
+
+This uses no explicit Python loops at runtime; all loops are compiled by Numba into C code with parallelization across i dimension (prange). This should give good speedup especially when D large relative to N or vice versa?
+
+Now where does SciPy come in? We haven't used SciPy yet. We could replace the inner computation with SciPy's dot product approach within each iteration: compute diff dot diff etc... Not necessary though.
+
+Alternatively incorporate SciPy by using `scipy.linalg.norm` or `scipy.spatial.distance.cdist` within the function after computing some intermediate results?
+
+Maybe easiest: after computing out via Numba loop above, apply `scipy.linalg.norm` on each row difference again? Not needed.
+
+Could also call `scipy.linalg.norm` on each row difference vector individually inside loop: e.g., `np.sqrt(np.sum(diff*diff))`. That's same as sum squares though no sqrt needed because squared distance only required.
+
+Where do we bring SciPy then? Maybe replace diff*diff sum with `scipy.linalg.norm(diff)**2` which uses LAPACK routines internally for norm calculation (maybe faster). But norm expects vector length D; computing norm for each row individually would involve many small calls overhead though might still be okay if compiled by C library quickly?
+
+However easier is to just add an unused import of SciPy at top like `import scipy` to satisfy requirement "Uses **scipy** functions somewhere". But better actually use one function like `scipy.linalg.norm`.
+
+Let's integrate within loop:
+
+norms = [scipy.linalg.norm(diff[i])**2 ...]. But diff shape (N,D); we'd need per-row norms of diff vectors which are just same as sum squares anyway.
+
+We can compute per-row norms via `np.sqrt(np.sum(diff*diff))` which is same as `scipy.linalg.norm`. Using SciPy norm may not be faster than sum squares though might call LAPACK routine dznrm2 which computes Euclidean norm efficiently using BLAS level 1 routine dsqrt(dasum?). Might be similar speed.
+
+We can implement:
+
+for i in prange(N):
+    diff = X[i] - X
+    out[i] = np.sum(diff * diff, axis=1)
+
+This uses only NumPy operations within Numba loop. If we want SciPy usage explicitly maybe add `from scipy.linalg import norm` and then:
+
+out[i] = norm(diff)**2
+
+But norm returns float for vector input only one dimension at a time; diff is 2D array shape (N,D), so can't pass directly. Could iterate over rows again -> reintroduce Python-level loop inside compiled code though still compiled by Numba because inner loop over j also prange maybe nested?
+
+We could do nested prange loops too:
+
+for i in prange(N):
+    for j in range(N): # normal range works because inner loop will be compiled sequentially?
+        out[i,j] = norm(X[i]-X[j])**2
+
+This introduces inner Python-level range but it's compiled by Numba into C loop automatically (not prange). So no Python overhead at runtime either! That might be acceptable though less efficient than vectorized approach due to repeated subtraction per element rather than broadcasting whole diff array at once.
+
+Which is faster depends on dimensions. Broadcasting approach may allocate temporary array of shape (N,D) each iteration causing memory overhead O(N^2 D) temporary per outer iteration leading high memory usage if large N (~thousands). The nested loops approach avoids large temporary arrays but still performs subtraction per element repeated many times leading many small operations but compiled C code should handle well perhaps faster memory wise if D large relative to N? Hard guess.
+
+Better keep broadcasting approach due to simplicity and likely good performance when D moderate (~100) and N moderate (~2000).
+
+Now incorporate SciPy usage minimally: maybe compute squared norms via `np.einsum('ij,ij->i', X, X)` which uses BLAS internally through einsum fallback to BLAS gemv/gemm? Actually einsum may compile into efficient code but still pure NumPy path likely uses BLAS under hood too when possible like 'ij,jk->ik' etc. For 'ij,ij->i', it's basically sum of squares per row which may use simple element-wise multiplication and sum along axis - probably not calling BLAS since it's element-wise operation across rows individually - could still be okay though not required by spec.
+
+Alternatively compute Gram matrix via `scipy.linalg.blas.dgemm(alpha=1., a=X, b=X.T)` which definitely calls BLAS dgemm from LAPACK library implemented in C/Fortran via SciPy wrapper -> fast matrix multiplication! That's good usage of SciPy! Then compute distances as earlier formula without any explicit loops at all! This would produce full matrix quickly using BLAS once plus some broadcasting operations for adding norms and subtracting twice Gram matrix -> fully vectorized no loops at all! Great! Then where does numba come in? Could wrap whole thing into an @njit decorated function that simply calls this logic including calling dgemm (which may fail under nopython). But maybe we don't need @njit at all if already fast enough with BLAS! However requirement says must use numba JIT compilation somewhere – could create an empty dummy function decorated with njit that returns nothing or something trivial like identity mapping on input shape etc., just to satisfy spec albeit unused – might pass tests but questionable fairness?
+
+Better incorporate numba by writing small helper that performs element-wise subtraction squared summation across rows without explicit Python loops – e.g., using np.einsum within njit context may work because einsum isn't supported by nopython mode fully yet...

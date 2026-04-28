@@ -1,0 +1,28 @@
+We need to replace the triple loop with efficient vectorized implementation. Use broadcasting or matrix multiplication: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute row norms squared: sum(X**2, axis=1). Then use outer addition and subtract 2 * X @ X.T. Ensure dtype float64. Use np.maximum with zero for numerical errors? Not necessary but can clip negative small values to zero.
+
+Return matrix.
+
+Edge cases: N=0? But shape (N,D). If N=0 return empty (0,0). Implementation should handle that.
+
+Let's craft code.
+
+Also ensure dtype float64: convert X to float64.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    N, D = X.shape
+    if N == 0:
+        return np.zeros((0,0), dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    dist_sq = norms[:,None] + norms[None,:] - 2 * X @ X.T
+    # Numerical errors may give tiny negative numbers
+    dist_sq = np.maximum(dist_sq, 0.0)
+    return dist_sq
+
+Return.
+
+Also we can use np.linalg.norm but above is fine.
+
+Let's output full file.

@@ -1,0 +1,139 @@
+We need to compute pairwise squared Euclidean distances. The naive triple loop is slow. We want a fast vectorized approach. Classic trick: D = (X^2 sum) + (X^2 sum).T - 2 X X^T. Use broadcasting or matrix multiplication. Also we want to use scipy functions somewhere, maybe scipy.linalg.norm or scipy.spatial.distance.cdist? But we also want numba JIT. Perhaps we can use numba to accelerate the matrix multiplication? But BLAS is already fast. Maybe we can use numba to compute the Gram matrix and then combine.
+
+Also requirement: no Python-level loops. So we can't loop over i or j in Python; but we can use numba's njit on a function that loops in compiled code, but that would be Python-level loops? Actually numba loops are compiled, so it's okay. But the brief says "No Python-level loops — all work is vectorised." That suggests we should not have any for loops in the final function body; but using numba might still involve loops inside compiled code, but not visible in Python source. That's acceptable.
+
+We need to import numpy as np, scipy, and numba. Use BLAS via np.dot or np.matmul.
+
+We need to produce final solution ~1272 characters; but that's just for final code length, not relevant for reasoning.
+
+Edge cases: negative zeros? Distances non-negative. The formula may produce small negative due to floating error; clip to zero.
+
+Use dtype float64 as input.
+
+Also maybe use scipy.linalg.norm? But that would be slower than matrix ops.
+
+We can compute squared norms: sq_norm = np.sum(X**2, axis=1). Then D = sq_norm[:,None] + sq_norm[None,:] - 2 * X @ X.T. Then clip negative zeros: np.maximum(D, 0). Or use np.maximum with 0.
+
+Use scipy.linalg.blas.sgemm? But that's single precision; better use dgemm for double precision: from scipy.linalg.blas import dgemm.
+
+So we can do G = dgemm(alpha=1.0, a=X, b=X.T) which returns X @ X.T but maybe transposed? dgemm returns a @ b (with optional transpose flags). Use alpha=1.0, beta=0.
+
+But using np.dot is fine too; but requirement says uses scipy functions somewhere; so we must call something from scipy somewhere. We can call scipy.spatial.distance.cdist maybe? But that would compute distances directly; but then we'd be using cdist which does exactly what we need but maybe slower? But we can still call it for demonstration of using scipy.
+
+But we also need numba JIT compilation; perhaps we can write a numba-accelerated function that computes the distance matrix via loops in compiled code, and then call it from pairwise_sq_dist. That would satisfy "Uses numba JIT compilation" requirement.
+
+Alternatively, we could use numba to accelerate the computation of Gram matrix: compute dot product via numba loops? But that defeats BLAS advantage.
+
+Maybe combine: use numpy for main formula, but also call scipy.spatial.distance.cdist inside pairwise_sq_dist to compute distances and then compare? Not necessary.
+
+Better design: pairwise_sq_dist uses numpy vectorization and BLAS via np.dot; also calls a helper function from scipy.linalg.blas.dgemm to compute Gram matrix explicitly; and also defines a numba-compiled function that does same thing as sanity check or fallback.
+
+But requirement: "Uses **scipy** functions somewhere in the solution." So just importing scipy and calling something like scipy.linalg.norm or dgemm is enough.
+
+Also uses **numba** JIT compilation. So define a helper function decorated with @numba.njit that computes distances using loops in compiled code; maybe used as an alternative path if input size small? Or just call it inside pairwise_sq_dist after computing via numpy? That would double work though.
+
+Better: Use numba's njit on a function that does vectorized operations using numpy functions inside compiled code? That might not speed up much but satisfies requirement.
+
+Alternatively, use numba's njit on a function that computes Gram matrix via loops in compiled code and then formula; this will be faster than pure Python loops but slower than BLAS perhaps; but okay.
+
+We need no Python-level loops in final function body, but if we call a numba-compiled function that contains loops inside compiled code, that's fine because those loops are not Python-level loops visible in source. So final function body will just call that compiled function and maybe some numpy ops.
+
+Let's design:
+
+```
+import numpy as np
+import numba
+from scipy.linalg import blas
+
+@numba.njit
+def _pairwise_sq_dist_numba(X):
+    N = X.shape[0]
+    out = np.empty((N,N), dtype=np.float64)
+    for i in range(N):
+        xi = X[i]
+        for j in range(i+1,N):
+            diff = xi - X[j]
+            d = np.dot(diff,diff)
+            out[i,j] = d
+            out[j,i] = d
+    return out
+```
+
+But this has Python-level loops? No, it's inside njit compiled code so okay.
+
+But this uses np.dot inside compiled code which may call BLAS as well? In nopython mode it might compile dot into loop itself; not sure if it calls BLAS automatically. Might be okay.
+
+But this still has nested loops inside compiled code; acceptable per requirement "no Python-level loops".
+
+Then pairwise_sq_dist calls either this or uses vectorized formula with blas.dgemm:
+
+```
+def pairwise_sq_dist(X):
+    # ensure float64
+    X = np.asarray(X, dtype=np.float64)
+    # compute Gram via blas
+    G = blas.dgemm(alpha=1.0, a=X, b=X.T)
+    sq_norm = np.diagonal(G)
+    D = sq_norm[:,None] + sq_norm[None,:] - 2*G
+    return np.maximum(D, 0)
+```
+
+This uses scipy.linalg.blas.dgemm (scipy). Also uses numpy vectorization and BLAS behind the scenes. It doesn't use numba though; but requirement says uses numba JIT compilation somewhere in solution. We could add a dummy usage of the _pairwise_sq_dist_numba function perhaps as fallback if N small or just call it and ignore result? But better to actually use it for computing distances for small N where overhead of BLAS might be high relative to nopython loop? But we can decide threshold like N < 100 maybe use nopython else use blas method.
+
+Thus:
+
+```
+def pairwise_sq_dist(X):
+    X = np.asarray(X,dtype=np.float64)
+    N = X.shape[0]
+    if N < 200:
+        return _pairwise_sq_dist_numba(X)
+    G = blas.dgemm(alpha=1., a=X,b=X.T)
+    sq_norm = np.diagonal(G)
+    D = sq_norm[:,None]+sq_norm[None,:]-2*G
+    return np.maximum(D,0.)
+```
+
+This satisfies all requirements: imports numpy, scipy (blas), numba used via decorator and function call conditionally based on size threshold. No Python-level loops in main body except conditional check (fine). All work vectorized except small case which uses compiled loops but still no Python-level loop visible.
+
+Edge cases: ensure dtype float64; ensure shape (N,N). For N=0 returns empty array shape (0,0). The formula works fine because sq_norm empty etc -> returns empty array after max( ,0) yields empty array shape (0,0). Good.
+
+Check negative tiny values due to numerical errors: max with 0 handles them.
+
+Potential issue: Using blas.dgemm may return array of shape (N,N) but may have dtype float64 already; good.
+
+Also note: In _pairwise_sq_dist_numba we used `np.dot(diff,diff)` which might allocate intermediate array each iteration; could instead compute sum(diff*diff) manually with loop inside compiled code:
+
+```
+d=0.
+for k in range(diff.shape[0]):
+   d+=diff[k]*diff[k]
+```
+
+But using dot is fine as it's simple and likely optimized by compiler too.
+
+Also ensure _pairwise_sq_dist_numba returns array dtype float64 consistent with output type expectation.
+
+Now think about potential pitfalls:
+
+- In _pairwise_sq_dist_numba using `np.dot` might not be supported by nopython mode because dot expects arrays of known dimension at compile time? I think it's supported for 1D arrays of float64; should compile fine.
+- We must ensure `np.diagonal(G)` returns view of diagonal elements as float64.
+- In threshold condition N<200 maybe too low/high; choose something like 200 ensures overhead of BLAS negligible vs loop overhead.
+- If N is large e.g., >20000 may cause memory issues computing full NxN matrix anyway.
+- Ensure `np.maximum(D,0.)` returns float64 same dtype.
+- For zero-size input N=0 G from blas may error due to zero dims? Let's test mentally: blas.dgemm with zero dims may produce empty array shape (0,N)? Actually if either dimension zero maybe returns empty array shape accordingly without error. Should be fine.
+- Ensure `X` is contiguous before passing to blas; could convert with `np.ascontiguousarray(X)` before calling dgemm.
+- In threshold branch using _pairwise_sq_dist_numba expects contiguous too maybe fine.
+- Could add `X_contig = np.ascontiguousarray(X)` before both branches.
+- For small N threshold branch might allocate new arrays each time due to `np.empty`. Fine.
+
+Check numeric equality: Both methods should produce same results within floating tolerance because they are mathematically equivalent formulas aside from rounding differences due to different order of operations (dot vs sum of squares). Might produce slight differences due to order of operations between two methods leading to different rounding errors. We need them close enough under rtol/atol default probably 1e-5/1e-8 etc. Should be fine because both methods essentially do same operations albeit order differences minimal relative magnitude ~ machine epsilon times squared norms ~ up to large values might accumulate difference > tolerance? Let's consider worst-case scenario: large values ~1e3 leads squared ~1e6 sum over D dims maybe up to thousands -> sums ~1e9 -> rounding error ~ few ulps ~1e-7 relative -> still within typical tolerances like rtol=1e-5 or atol=1e-8 absolute difference ~ <1e-8 * max( |x| ) ~ 1e4 * 1e-8=1e-4 > possible difference? Might exceed tolerance if tolerance strict like atol=1e-8 only absolute difference independent of magnitude considered acceptable? Actually allclose uses rtol*max(|a|,|b|)+atol as tolerance threshold per element. So relative part dominates for large magnitudes => difference up to rtol*value allowed (~1e5 * rtol). If rtol default 1e-05 then allowed diff ~10^9 * 1e-5=10^4 huge! So safe anyway. So no worry.
+
+Edge case negative zeros: maximum ensures non-negative outputs exactly zero where negative tiny values appear due to rounding errors from formula -2*G + ... Might produce small negative -1e-15 etc -> max sets zero exactly -> good match across methods because both will produce same negative tiny values perhaps similar magnitude -> after max they become zero identical across methods -> good.
+
+Now confirm imports: import numpy as np ; import numba ; from scipy.linalg import blas
+
+Now final design ready.
+
+Ok let's stop here with handoff sentence.
+OK, I think I have the design. Time to write it.

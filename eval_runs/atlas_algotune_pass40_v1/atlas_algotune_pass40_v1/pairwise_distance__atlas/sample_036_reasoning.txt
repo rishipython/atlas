@@ -1,0 +1,20 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. We can use broadcasting or matrix multiplication: D[i,j] = ||X[i] - X[j]||^2 = ||X[i]||^2 + ||X[j]||^2 - 2 X[i]·X[j]. So compute row norms squared and cross-term. Implementation using np.dot and broadcasting. Ensure dtype float64.
+
+Edge cases: Input dtype float64, but we can cast. Use np.dot(X, X.T). Norms squared: np.sum(X**2, axis=1). Then distances = norms[:,None] + norms[None,:] - 2*cross. Use np.maximum with zero to avoid negative small due to round-off? But np.allclose might allow negative small values. Should we clip to zero? Might be good but not necessary. We'll keep as is.
+
+Return array.
+
+Also can use scipy.spatial.distance.cdist? But direct formula is fine.
+
+Let's implement.
+
+Also ensure memory usage: For large N, cross product is N x N. That's required anyway.
+
+Let's produce code with imports. No extra functions.
+
+Edge: dtype of X may not be float64; cast to float64.
+
+Return dtype float64.
+
+Let's produce.
+

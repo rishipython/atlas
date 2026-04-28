@@ -1,0 +1,32 @@
+We need to provide a faster implementation. Use numpy FFT convolution. But must be careful: full convolution, same as np.convolve. Use np.fft.fft and ifft. For real input, we can use np.fft.rfft. But easiest: use np.fft.fft to length L = next power of 2 >= N+M-1. Compute X = fft(x, L), H = fft(h, L). Multiply pointwise, y = ifft(X*H). Real part. Ensure dtype float64. Use np.real. Return y[:N+M-1].
+
+But potential numerical differences? Should be close. Use np.fft.fft which is complex, but inputs are real, so fine.
+
+Alternatively, use scipy.signal.fftconvolve. But we can implement ourselves.
+
+Also consider small arrays: maybe fallback to direct if small? But not necessary.
+
+We'll implement conv1d. Use np.fft.fft. Determine L = 1 << (N+M-1-1).bit_length() maybe. Or np.fft.next_fast_len. Use np.fft.next_fast_len.
+
+Also we must import numpy. We'll implement:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    conv_len = N + M - 1
+    L = np.fft.next_fast_len(conv_len)
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    y = np.fft.ifft(X * H).real
+    return y[:conv_len]
+
+Edge cases: maybe empty arrays? But not likely. But we can handle: if N==0 or M==0: return np.array([]). But not needed.
+
+Also note that np.fft.ifft returns complex, but real part is fine. But due to floating errors, small imaginary part might appear; we take real.
+
+Make sure dtype float64. np.fft.fft returns complex128. The result real part is float64.
+
+Let's produce file.
+
+Also include __all__ maybe. But just function.
+
+Let's produce code.

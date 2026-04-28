@@ -1,0 +1,117 @@
+We need to speed up affine_transform_2d. Let's think: The reference uses scipy.ndimage.affine_transform, which is already optimized but maybe overhead due to Python call, dtype conversions, etc. Could we replace with a custom implementation that uses lower-order interpolation? But the task expects cubic spline (order=3). However we might still use order=1 for speed but need to match reference output? The is_solution compares to reference, so must produce same result. So we can't change order.
+
+Could we use scipy's map_coordinates or affine_transform but precompute inverse matrix and use vectorized coordinate mapping? That might be faster if we avoid per-pixel loops. But scipy's affine_transform is already vectorized and uses C code. Maybe overhead is minimal.
+
+But maybe we can reduce memory copies: input image may be list of lists; converting to numpy array each time costs. We can convert once and reuse.
+
+Also we can use np.asarray with dtype=np.float32 to reduce memory and speed up.
+
+We could also use numba for custom interpolation, but that would require implementing cubic spline ourselves; too complex.
+
+Alternatively, we could use scipy.ndimage.affine_transform but with precomputed matrix and shape, maybe pass output_shape same as input. That is what reference does.
+
+But maybe we can use SciPy's ndimage.affine_transform with precomputed inverse matrix to avoid computing inside? The function expects matrix that maps output coords to input coords? Actually ndimage.affine_transform expects matrix that transforms coordinates from output space to input space. It also accepts offset. We could compute offset separately.
+
+We could try using scipy.ndimage.affine_transform with `matrix` argument as the full 2x3 matrix? But SciPy expects only the linear part; offset separate. But passing 2x3 will be interpreted incorrectly? Actually ndimage.affine_transform signature: affine_transform(input, matrix, offset=0.0, output_shape=None, order=3,...). The matrix should be a 2x2 array for 2D transform; offset is translation vector. So passing 2x3 will cause error.
+
+Thus we need to split matrix: linear part A = [[a,b],[c,d]]; offset = [e,f]. Then call affine_transform(image, A, offset=offset). That might be faster than passing full 2x3? But the original code passes full 2x3 directly; maybe SciPy handles it by slicing? Actually it may treat first two columns as matrix and third as offset automatically? Not sure.
+
+Let's test mentally: In SciPy's ndimage.affine_transform docs: "matrix" can be a tuple of arrays or a single array of shape (ndim, ndim). So passing a 2x3 will raise error: shape mismatch. So reference code might actually fail? But it's in original code; maybe they rely on numpy broadcasting? But likely fails. But is_solution uses same call, so both solve and is_solution will fail if not correct. But maybe the problem expects using that call anyway.
+
+We could implement our own wrapper that splits matrix accordingly.
+
+Also we need to ensure output shape same as input shape: image.shape.
+
+Potential optimization: Use np.asarray(image, dtype=np.float32) before calling; this reduces memory and speeds up interpolation because float32 vs float64.
+
+Also set order=3 (default). mode='constant', cval=0.0 default for constant mode.
+
+We can also set prefilter=False to skip Gaussian filter used for interpolation when order>1; but default prefilter=True which applies Gaussian filter before interpolation for higher orders. For order=3, prefiltering adds cost. We could set prefilter=False if we are okay with less accurate results? But must match reference exactly; reference likely uses default prefilter=True because they didn't specify. So we must keep prefilter=True.
+
+Thus main improvement is converting image list-of-lists to numpy array once, using float32 dtype, and splitting matrix into A and offset.
+
+Also avoid try/except overhead: just call directly.
+
+Edge cases: If image empty or not square? Problem says n x n array; but could be any size.
+
+Also need to ensure returned transformed_image is list-of-lists (or numpy array?) In solution dictionary they expect "transformed_image" value as array; is_solution accepts numpy array or list; it converts accordingly. So returning numpy array fine.
+
+Thus design:
+
+- In solve:
+   - Get image = problem["image"]
+   - Convert to np.array(image, dtype=np.float32)
+   - Get matrix = problem["matrix"]; convert to np.asarray(matrix)
+   - Extract A = matrix[:, :2], offset = matrix[:, 2]
+   - Call scipy.ndimage.affine_transform(image_np, A, offset=offset, order=self.order, mode=self.mode)
+   - Return {"transformed_image": transformed_image}
+
+- Might want to set output_shape=image_np.shape
+
+- Might want to set cval=0.0 explicitly though constant mode default cval=0
+
+- Avoid exception handling overhead
+
+- Logging minimal
+
+Potential alternative design: Use numba JIT on custom interpolation but heavy.
+
+Another idea: Use SciPy's map_coordinates with linear combination of coordinates computed via broadcasting; but that's more work than needed.
+
+Thus final design likely simple wrapper with dtype conversion and split matrix.
+
+Edge cases: If problem dict missing keys -> raise KeyError; but is_solution will catch errors earlier? It's fine.
+
+We should also consider performance of converting list-of-lists each time; if many calls then overhead large. But solve called once per problem in run_solver; fine.
+
+But perhaps we can store image_np in self during init? Not needed.
+
+Ok final design decided.
+
+Now sanity check:
+
+- Input image shape (n,n) float values [0..255], possibly ints or floats.
+- Convert to float32 ensures values within range.
+- affine_transform returns float64 by default because input dtype float32 leads output float32? Actually SciPy preserves dtype of input unless specified differently? I think it preserves dtype.
+- Should match reference output within tolerance rtol=1e-5 atol=1e-7; float32 may produce slightly different rounding errors than float64 reference computed by SciPy on float64 input. That could cause verification failure! Because original reference used float64 image by default (np.array from list -> float64). Our conversion to float32 may lead small differences beyond atol tolerance when comparing arrays of size maybe >1000 elements?
+
+Let's evaluate: rtol=1e-5 relative tolerance means difference relative to magnitude ~255 => 0.00255 absolute tolerance effectively bigger than atol 1e-7 which is negligible compared to difference from rounding error (~1e-7?). Actually difference between float32 and float64 results might be up to ~1e-7 relative difference times magnitude ~255 => ~2e-5 absolute difference which may exceed atol 1e-7 but within rtol 1e-5 (~0.00255). So should pass because rtol covers it.
+
+Thus fine.
+
+Alternatively we could keep dtype=float64 for consistency but conversion cost small relative overhead of conversion anyway minimal vs interpolation cost?
+
+Conversion from list-of-lists to np.array(float64) vs float32 similar cost; choose float64 for safety matching reference exactly.
+
+But using float64 may slower slightly but not huge compared to interpolation cost dominated by C code anyway. So choose float64 for exactness.
+
+Thus final design: no dtype conversion needed except ensure array type consistent with input (float64). Could just do np.asarray(image) which yields float64 if numbers are ints/floats in list-of-lists -> default dtype float64. Good.
+
+So final design simpler:
+
+```
+def solve(self, problem):
+    image = np.asarray(problem["image"])
+    mat = np.asarray(problem["matrix"])
+    A = mat[:, :2]
+    offset = mat[:, 2]
+    transformed_image = scipy.ndimage.affine_transform(
+        image,
+        A,
+        offset=offset,
+        order=self.order,
+        mode=self.mode
+    )
+    return {"transformed_image": transformed_image}
+```
+
+No try/except overhead except minimal logging at top-level if needed.
+
+Also remove self.order/mode initialization if not needed but keep as class attributes for clarity.
+
+Potential optimization: Precompute A and offset outside loop if multiple calls but not needed.
+
+Edge cases: If problem contains non-numeric types -> ValueError from np.asarray or affine_transform will propagate; acceptable since solver fails then verification fails too? Might be okay.
+
+Ok finalize design accordingly.
+OK, I think I have the design. Time to write it.

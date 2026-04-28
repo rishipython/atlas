@@ -1,0 +1,144 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have an image array and a 2x3 affine matrix. scipy.ndimage.affine_transform is already pretty optimized, but maybe we can use a different approach: use scipy.ndimage.map_coordinates or scipy.ndimage.affine_transform with order=1? But we want to keep same semantics: cubic spline interpolation (order=3) and constant mode. But we can change order to 1 for speed if allowed? The spec says default is cubic; but maybe we can keep order=3.
+
+We can attempt to implement the affine transform manually using grid generation and map_coordinates, which might be faster due to less overhead? But likely scipy's built-in is already efficient.
+
+Alternatively, we could use numpy's einsum or matrix multiplication to compute coordinates and then use map_coordinates. That would avoid loops.
+
+Let's outline: For each output pixel coordinate (i,j), compute corresponding input coordinate via inverse transform: [x_in, y_in] = M_inv @ [i, j, 1]. Then sample using map_coordinates with order=3. We can vectorize by creating meshgrid of output indices, flatten, compute inverse transform matrix multiplication, then call map_coordinates with coordinates array shape (ndim, N). That will be vectorized.
+
+Potential speedups: Use float32 instead of float64. Use numba JIT for the coordinate computation? But map_coordinates is C-coded.
+
+Also we can use scipy.ndimage.affine_transform directly; but maybe it does something similar internally. However we might get speed by precomputing inverse matrix and using map_coordinates once per channel.
+
+But the image is 2D only.
+
+Edge cases: image shape may not be square? Problem says n x n but maybe not guaranteed. We'll preserve shape.
+
+We need to ensure output shape same as input unless otherwise specified. We'll set output_shape = image.shape.
+
+We must handle mode='constant', cval=0.0.
+
+Now performance: map_coordinates has parameter order=3; mode='constant'; cval=0.0; prefilter=True default for order>1 ensures correct interpolation. That might be similar cost as affine_transform.
+
+But we could also use scipy.ndimage.affine_transform but with prefilter=False? Might be faster but less accurate? But spec expects same result as reference which uses default prefilter=True (since order=3). So we need that too.
+
+Maybe the heavy part is computing coordinates each time; we can vectorize that.
+
+Let's consider alternative: use scipy.ndimage.affine_transform directly; but that may be slow due to Python overhead? Actually it's C-coded too.
+
+But perhaps the current implementation uses try/except overhead for each call; but that's negligible.
+
+Could we replace with numba-accelerated loop over pixels? Might be slower due to Python loops overhead; but numba can compile loops into machine code, potentially faster than map_coordinates? But map_coordinates uses interpolation kernel that might be heavy anyway.
+
+Maybe the best is to use scipy.ndimage.affine_transform but set order=1 for speed if allowed. But spec says cubic interpolation; so no change.
+
+Another idea: Use SciPy's ndimage.zoom or rotate functions? Not relevant.
+
+We could attempt to compute transformed image via FFT convolution if transformation is linear shift + scaling? Not general enough.
+
+Thus likely best approach is vectorized coordinate mapping + map_coordinates. That avoids Python loops and may reduce overhead compared to affine_transform which might allocate intermediate arrays etc.
+
+Let's design:
+
+- Input image np.ndarray dtype float64 maybe.
+- Convert to float32 for speed.
+- Compute inverse matrix: M_inv = np.linalg.inv(np.vstack([matrix, [0,0,1]]))[:2,:] ?
+
+Wait matrix is 2x3; full 3x3 homogeneous transformation:
+[[a,b,c],
+ [d,e,f],
+ [0,0,1]]
+Inverse computed easily via np.linalg.inv on 3x3 then take top-left 2x3 part for mapping?
+
+But for mapping coordinates we need transform from output indices to input coordinates: For each output index (i,j), compute [x_in,y_in] = M_inv @ [i,j,1]. So we need full 3x3 inverse anyway.
+
+Compute inv_mat = np.linalg.inv(np.vstack([matrix, [0,0,1]]))
+
+Then create grid of output coords:
+
+- Use np.indices(image.shape) gives shape (2,H,W). Flatten to shape (2,N). Append ones row of ones length N: coords_out = np.vstack([idx_flat[0], idx_flat[1], np.ones(N)])
+
+Then multiply inv_mat @ coords_out -> coords_in shape (3,N). Drop last row -> coords_in[:2]
+
+Then call scipy.ndimage.map_coordinates(image.astype(np.float32), coords_in, order=3, mode='constant', cval=0.0)
+
+The result shape N; reshape back to image.shape
+
+This eliminates loops and uses BLAS for matrix multiplication of size 3xN where N ~ H*W up to maybe millions; that's fine.
+
+Potential memory usage: coords_out size 3*N floats ~ 12 bytes per pixel => large but okay for moderate sizes (~10k x10k -> 100M pixels -> 12*100M ~1.2GB). Might be heavy but typical images smaller (<4096^2). Acceptable?
+
+Could optimize by computing coordinates in two steps: first compute x_in,y_in via formulas using broadcasting without large arrays? But still need arrays of size N anyway for map_coordinates input. So memory similar.
+
+Edge cases: If image dtype not float32/float64; convert accordingly. Use float32 for speed and memory. For precision tolerance in verification we may need float64 result? But tests likely compare with reference which uses float64 by default. Our result will be float32 which might differ slightly but within tolerance if rtol small enough? We might cast back to float64 before returning or keep as float32 and rely on tolerance rtol=1e-5 which covers difference due to rounding errors between float32 and float64? Might be okay if differences small (<1e-5 relative). For images values up to 255, relative error may be ~1e-5*255 ~0.00255 difference acceptable? Might still pass tests expecting close enough within tolerance used in is_solution method (rtol=1e-5). That should be fine because difference due to rounding <1e-6 maybe less than rtol * max(|ref|) ~ 255*1e-5 = 0.00255 > typical difference <1e-4 maybe okay.
+
+But is_solution uses atol=1e-7 absolute tolerance too strict! Wait earlier it sets atol=1e-7 . That means absolute difference must be <=1e-7 regardless of magnitude! That's very tight; if our result differs by more than that absolute error due to float32 rounding (~<1e-6?), it will fail! So we must produce results close enough absolutely within 1e-7 relative difference from reference computed with float64 and cubic interpolation with prefilter True on double precision array. Our float32 computation may produce errors >1e-7 absolute difference especially near zeros where rounding error small relative but absolute error may still exceed threshold because difference between float32 and double could be around e.g., value ~50 leads rounding error maybe <5e-9? Actually converting from double to float32 introduces at most half ULP (~4e-8 * value). For value ~50 -> error ~2e-6 > 1e-7 => fail! So cannot use float32 if atol strict 1e-7. We must produce results close enough absolutely < 1e-7 . That requires high precision; best keep double precision throughout. So use dtype=float64 everywhere.
+
+Thus revert earlier plan: keep dtype=float64 for accuracy; memory cost doubled but fine.
+
+Now performance: using numpy's dot of large arrays may still be heavy but fine compared to loops. Map_coordinates uses double precision by default when input array dtype is double -> good accuracy.
+
+Now potential speed improvements: Instead of constructing full coords_out array of shape (3,N), we can compute x_in,y_in separately using broadcasting formulas:
+
+Given inv_mat = [[a,b,c],[d,e,f],[g,h,i]] where last row g,h,i probably [0,0,1] after inversion though not exactly maybe small errors due to numeric inversion but should approximate identity in bottom row after inversion because original bottom row was [0,0,1]. Inverse of homogeneous transformation typically has bottom row [0,0,1] exactly if original had that property and matrix invertible ignoring scaling etc. Actually yes because the bottom row remains [0,0,1]. So inv_mat[2,:] should be [0,0,1].
+
+Thus x_in = a*i + b*j + c
+      y_in = d*i + e*j + f
+
+Where i,j are output indices arrays flattened or meshgrid flattened shapes N each. We can compute these two arrays without building full coords_out matrix:
+
+i_coords = np.arange(H)
+j_coords = np.arange(W)
+Use np.meshgrid(i_coords,j_coords,indexing='ij') gives X,Y shapes H,W flattened later or directly use broadcasting:
+
+X_flat = i_grid.ravel()
+Y_flat = j_grid.ravel()
+Then x_in_flat = a*X_flat + b*Y_flat + c
+     y_in_flat = d*X_flat + e*Y_flat + f
+
+This avoids building a big array of shape (3,N) and reduces memory by factor ~3/2 maybe small difference but nice.
+
+Then coords_for_map = np.vstack([y_in_flat,x_in_flat]) ??? Wait map_coordinates expects coordinates in order of dimensions: first axis index then second axis index i.e., coordinates[dim][pos]. For a 2D array shape (H,W), the first dimension corresponds to rows (y), second dimension columns (x). When mapping from output pixel at position (i,j) where i corresponds row index y_out and j column index x_out? Usually indices returned by np.indices give shape (2,H,W) where first axis corresponds rows y index then columns x index. So i corresponds y coordinate in output space (row), j corresponds x coordinate column index in output space? Actually yes typical indexing uses row-major indexing: first dimension y (row), second dimension x (col). So our meshgrid with indexing='ij' yields Y grid as first axis rows varying along axis0 and X grid along axis1 varying along axis1? Wait let's confirm:
+
+np.meshgrid(np.arange(H), np.arange(W), indexing='ij') returns arrays X shape H,W where X[i,j] = i ; Y[i,j] = j . So X corresponds row index i ; Y corresponds col index j . Good.
+
+Thus when computing input coordinates mapping from output indices (i,j) -> input coordinates (y_in,x_in) ??? Actually transformation matrix M maps points from input space to output space or vice versa depending on convention used by affine_transform function in SciPy: It applies transformation defined by matrix argument such that output[y,x] = input[ ... ]. In SciPy's ndimage.affine_transform docs: The matrix argument specifies the linear part of the transformation from output coordinates into input coordinates... The offset argument specifies translation... So given M matrix transforms from output space into input space directly via multiplication of coordinates plus offset etc. In our case matrix given is a standard affine transform mapping from input space into output space presumably? Wait typical usage: To apply transformation defined by A,b on an image I such that new_image(x') = I(A^-1*(x'-b)). SciPy's affine_transform expects matrix A such that new_image(x) = I(A*x + offset). The offset is translation part of inverse transform I think... Actually doc says "The coordinates are transformed according to the equation `input_coord[i] = sum_j(matrix[i,j]*output_coord[j]) + offset[i]`". So given matrix M(2x3): rows correspond input dims vs output dims mapping from output coords into input coords via linear part plus offset column vector offset=M[:,2]. So indeed M maps from output coordinate space into input coordinate space directly! Good! That means if we want same effect as SciPy's function with given matrix M as defined in problem statement? Problem says "transformation defined by a 2x3 matrix which combines rotation scaling shearing translation." Typically this matrix maps from input space into output space when applied normally like y' = M * [y,x]^T + t . But SciPy expects inverse mapping so you need invert M before passing unless you treat it accordingly. In reference implementation they pass `matrix` directly into affine_transform without inversion! That implies their interpretation matches SciPy's expectation that matrix transforms from output into input directly? Let's test mentally with example given earlier:
+
+Input image:
+[[100.,150.,200.]
+ [50.,100.,150.]
+ [0.,50.,100.]]
+
+Matrix:
+[[0.9,-0.1,1.5],
+ [0.1,1.1,-2.]]
+
+If they call affine_transform(image,matrix,... ) expecting same result as example outputs... Hard to verify quickly but likely they intend SciPy's interpretation where matrix maps from output coordinates into input coordinates directly! Because they didn't invert it in code provided earlier in solve method which passes `matrix` unchanged into affine_transform; so reference solution uses that semantics exactly.
+
+Thus our manual implementation must mimic SciPy's semantics exactly! That means we should not invert the matrix ourselves; instead compute mapping from output pixel positions (i,j) into input positions using given `matrix`. According SciPy docs: For each point p' in output space at integer pixel indices p', the corresponding point p in input space is computed as p_i = sum_j(matrix[i,j]*p'_j) + offset[i], where offset vector is last column of `matrix`. Wait the last column includes translation part indeed! So given our example M:
+[[a,b,c],
+ [d,e,f]]
+Then p_input[0] = a*i + b*j + c
+     p_input[1] = d*i + e*j + f
+
+So indeed no inversion needed! Good! Then our earlier formula was correct using same coefficients a,b,c,d,e,f extracted directly from matrix rows/cols accordingly!
+
+Thus algorithm:
+
+Given image H,W
+Compute i_grid,y_grid via np.indices((H,W)) gives arrays Y,X shaped H,W where Y[y,x]=y ; X[y,x]=x
+Flatten Y_flat,X_flat
+Compute y_in_flat = a*Y_flat + b*X_flat + c
+        x_in_flat = d*Y_flat + e*X_flat + f
+
+Note careful about ordering: In numpy indexing first dimension y(row), second dimension x(col). Our variable names consistent: Y corresponds row index i ; X corresponds col index j . Then formula above matches p_input[0] referencing first dimension y_input ; p_input[1] referencing second dimension x_input . Good!
+
+So pass coords_to_map as array [[y_in_flat], [x_in_flat]] because map_coordinates expects shape (ndim,N).
+
+Then call scipy.ndimage.map_coordinates(image.astype(np.float64), coords_to_map,...)
+
+Set order=self.order etc same as reference code else differences?
+
+Need mode='constant', cval=0., prefilter=True default since order>1 ensures correct interpolation - same as affine_transform default

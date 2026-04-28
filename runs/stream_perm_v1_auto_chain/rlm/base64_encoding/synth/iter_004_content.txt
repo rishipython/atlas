@@ -1,0 +1,92 @@
+We need to figure out what base64_encoding problem is. Probably encode a list of bytes? Let's think. The reference implementation probably uses Python's base64 library but slow due to loops. We want vectorised approach with numpy.
+
+We need to write solve method that takes problem dict? Let's assume problem contains 'data' key with bytes or array? Might be an integer array representing bytes. We need to output base64 string.
+
+We can use numpy to chunk array into 3-byte groups, convert to 24-bit int, map to 6-bit indices, then use base64 alphabet.
+
+We can predefine alphabet string: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/". Then we can compute indices via bit operations on uint32 array.
+
+Edge cases: padding for remainder 1 or 2 bytes. We can handle by padding zeros and then replace last chars with '=' accordingly.
+
+Vectorization: Use np.frombuffer to get uint8 array, reshape into (-1,3), pad if needed. Then compute 24-bit int: (a << 16) | (b << 8) | c. Then extract four 6-bit values: (x >> 18) & 63, etc.
+
+Then map using numpy.take(alphabet_array, indices). alphabet_array can be np.frombuffer of bytes of alphabet.
+
+Then join into string: ''.join(map(...)) but we can use np.char.join? Actually we can do ''.join(result) where result is list of chars. But that's loop again. Instead we can convert to bytes and decode? If we have array of ascii codes, we can do result.tobytes().decode('ascii'). That should be fast.
+
+Padding: If original length %3 ==1 => last group has one byte; we padded two zeros; after mapping we need to replace last two chars with '='. If %3==2 => replace last char with '='.
+
+Implementation steps:
+
+- data = problem['data'] maybe bytes or bytearray or list of ints.
+- Convert to np.frombuffer(data, dtype=np.uint8)
+- Compute n = len(arr)
+- Pad with zeros to multiple of 3: pad_len = (-n)%3
+- arr_padded = np.pad(arr, (0,pad_len), 'constant')
+- Reshape into (-1,3)
+- Compute 24-bit ints using vectorized ops: arr_padded[:,0].astype(np.uint32)<<16 | arr_padded[:,1].astype(np.uint32)<<8 | arr_padded[:,2].astype(np.uint32)
+- Extract indices: idx0 = (x >>18)&63 etc.
+- Stack indices into shape (-1,4)
+- Map using np.take(alphabet_bytes, idx). alphabet_bytes = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+- Result_bytes = mapped.reshape(-1).tobytes()
+- Decode to str
+- Apply padding: if pad_len==1 => result_str = result_str[:-2] + '=='; if pad_len==2 => result_str = result_str[:-1] + '='
+
+Edge cases: empty input returns empty string.
+
+Also need solve method signature: def solve(self, problem): return encoded string.
+
+We should avoid loops entirely except maybe small ones for padding replacement? That's fine.
+
+Also need imports: base64 not used? But brief says import base64; maybe for reference but not used. We'll import anyway.
+
+Now think about performance: using numpy operations only; no loops over data. Should be fast.
+
+Potential numeric edge: shift on uint8 cast to uint32 ensures no overflow. Use .astype(np.uint32).
+
+Padding replacement using slicing is fine.
+
+Return type expected maybe string; test will compare against base64.b64encode(original).decode().
+
+Check if problem dict contains 'data' as bytes; ensure frombuffer works on bytes-like object; if it's list of ints convert to np.array dtype=uint8.
+
+Better handle both types: if isinstance(data,(bytes,bytearray)): arr=np.frombuffer(data,dtype=np.uint8); else arr=np.array(data,dtype=np.uint8).
+
+Now final design ready.
+
+Edge case when data length <3 but >0: works fine.
+
+Now produce chain-of-thought.
+We need to replace the slow reference solver with a vectorised routine that still satisfies the same interface and output format. The task is essentially a pure‑Python implementation of Base64 encoding – the reference uses the standard library but loops over each byte group, which becomes a bottleneck for large inputs. The design brief hints that we should stick to NumPy and avoid Python loops entirely, so the natural idea is to chunk the input into 3‑byte blocks and perform all arithmetic in vector form.
+
+Let’s sketch the algorithm first:
+
+1. Accept a `problem` dictionary that contains the raw data in some form – likely a `bytes` or `bytearray`, but it could also be a list of integers.  
+2. Convert whatever representation we get into a one‑dimensional NumPy array of type `uint8`.  
+3. Pad the array with zeroes so its length is a multiple of three – this simplifies the vectorised arithmetic because every chunk will be exactly three bytes long.  
+4. Reshape into an `(N, 3)` array where each row represents one 24‑bit group (`a,b,c`).  
+5. Build a single `uint32` value per row: `x = (a << 16) | (b << 8) | c`.  
+6. Extract four six‑bit indices from each `x`:  
+   ```
+   i0 = (x >> 18) & 63
+   i1 = (x >> 12) & 63
+   i2 = (x >> 6) & 63
+   i3 = x & 63
+   ```  
+7. Map those indices into ASCII characters using the standard Base64 alphabet `"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`. We can store that alphabet as a NumPy array of byte values so that `np.take` gives us an array of ASCII codes directly.  
+8. Flatten the resulting character codes back into a single byte sequence and decode it as ASCII – this gives us the encoded string without any Python‑level concatenation loops.  
+9. Finally adjust padding based on how many zeroes we added at step 3:
+   * If one zero was added (`pad_len == 1`) → replace the last two characters with `'=='`.
+   * If two zeros were added (`pad_len == 2`) → replace the last character with `'='`.
+   * If no padding was needed → leave as is.
+10. Return the resulting string from `solve`.
+
+A few subtle points:
+
+* Converting from a Python list of integers must be done carefully – `np.array(data, dtype=np.uint8)` will work fine even if `data` is already a NumPy array or a buffer object.
+* The shift operations must happen on at least `uint32` to avoid overflow; hence each component is cast before shifting.
+* Using `np.take` on a flat index array keeps everything vectorised; no explicit loops are needed.
+* Padding replacement is just slicing and concatenation on strings – this is trivial compared to the bulk work done in NumPy.
+* Edge cases like empty input are handled naturally: an empty byte sequence results in an empty encoded string without any further processing.
+
+With this plan in mind I’ll proceed to write the code following exactly these steps, making sure all imports are minimal (`base64` for compatibility only, `typing`, and `numpy`). The final file will expose a single function `run_solver(problem)` that delegates to a lightweight class with a `solve` method implementing the logic above. This should give us a clean, fully vectorised Base64 encoder that respects the required signature and runs orders of magnitude faster than the reference loop‑based version while producing identical output for all test cases. OK, I think I have the design. Time to write it.

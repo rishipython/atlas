@@ -1,0 +1,167 @@
+We need to figure out how to solve base64 encoding quickly. Let's think.
+
+We have a problem: base64_encoding. The reference implementation presumably does something like reading input, maybe a list of integers or bytes, and then encoding them into base64 string. We need to write a fast solver.
+
+We don't know the exact input format. But typical AlgoTune tasks: problem is a dictionary with some fields, maybe 'data': list of ints or bytes. Let's assume the problem dict contains 'data' key with a bytes-like object or list of ints 0-255. The goal: produce base64 encoded string.
+
+We want to avoid Python loops, use vectorization. But base64 encoding is not trivial vectorizable; we can use built-in base64 module which is efficient in C. So just convert input to bytes and call b64encode.
+
+But maybe the input is a list of ints; we can convert via np.array and view as uint8, then .tobytes().
+
+We need to import base64 and b64encode.
+
+Potential edge cases: empty input, non-ASCII, large data. Use memory efficient.
+
+Let's think about design:
+
+- run_solver(problem): returns Base64Encoding().solve(problem). So we need Base64Encoding class with solve method.
+
+- Inside solve: get data from problem dict: maybe problem['data'] or problem['bytes']? We need to check typical format. Could be 'data' containing list of ints. We'll assume 'data'.
+
+- Convert list of ints to bytes: bytes(problem['data']). That's fine if ints are 0-255. That uses Python loop internally but okay? It's not vectorized but minimal overhead.
+
+But maybe we want vectorized conversion: np.array(problem['data'], dtype=np.uint8).tobytes() which uses numpy and might be faster for large arrays.
+
+But we can also use memoryview over array to avoid copy? But tobytes copies anyway.
+
+Maybe just use bytes directly; it's fine because conversion from list to bytes uses C loop but okay.
+
+But the requirement: no Python-level loops; but converting list to bytes is built-in C loop; acceptable? It's not explicit loop in Python code, so okay.
+
+Alternatively, if data is already bytes, just use it directly.
+
+So solve method:
+
+```
+def solve(self, problem):
+    data = problem.get('data')
+    if isinstance(data, (bytes, bytearray)):
+        b = data
+    else:
+        # assume iterable of ints
+        b = bytes(data)
+    encoded = base64.b64encode(b)
+    return encoded.decode('ascii')
+```
+
+Return string.
+
+But we might want to use b64encode imported directly for speed? It's same as base64.b64encode.
+
+Also we may want to strip padding? But standard base64 includes padding '='. Keep it.
+
+Edge cases: empty data -> returns ''? Actually base64.b64encode(b'') returns b''. decode -> ''.
+
+Large data: memory overhead fine.
+
+We must ensure no loops inside our code. We used built-in functions only.
+
+Now think about performance: calling b64encode on large bytes may be heavy but it's C-coded efficient. Could we use numpy's vectorized operations? Not needed; built-in is best.
+
+Maybe we can precompute mapping table and vectorize manually but unnecessary complexity and slower than C library for large data due to Python overhead for each 3-byte block if we do loops in Python.
+
+Thus best approach: use built-in base64 module.
+
+Now consider potential alternative designs:
+
+1) Use numpy's view and apply vectorized mapping via lookup table; but that would involve converting each 3-byte group into 4 characters via bitwise ops and mapping via array indexing; could be done in pure NumPy without loops; might be faster for very large arrays because it avoids Python overhead entirely. But the mapping table would be size 256 mapping each byte to 6-bit value? Actually mapping from 6-bit value (0-63) to ASCII char. We could compute 4x6 bits per block using bitwise operations across entire array at once with reshape and bit shifts; but still would need intermediate arrays of shape (n/3,4). That might be heavy but maybe faster than C library? Unlikely because C library is highly optimized and uses SIMD etc.
+
+2) Use numba JIT compiled function that processes raw memory in chunks; could be faster for small arrays but overhead of compilation may offset benefit unless reused many times. Not necessary here.
+
+3) Use JAX's jitted function with numpy operations; similar issues.
+
+Thus simplest approach likely fastest enough: call built-in base64.b64encode on the byte string constructed from input ints or directly if already bytes.
+
+Now think about input format more carefully: In AlgoTune tasks, they often provide 'problem' dict containing 'x': [list], 'y': etc. But here it's specifically base64_encoding so likely only one key 'data'.
+
+Maybe they give 'problem' as {'values': [int,...]}? We need robust handling: try retrieving first key that contains iterable of ints or bytes-like object. Use next((v for v in problem.values() if isinstance(v,(bytes,bytearray,list))), None). But simpler: assume key 'data'.
+
+Ok implement accordingly.
+
+Also need imports: import base64; from typing import Any, Dict; from base64 import b64encode
+
+Define Base64Encoding class with solve method as above.
+
+Define run_solver(problem): return Base64Encoding().solve(problem)
+
+Add guard __name__ == '__main__': test? Not required but okay optional.
+
+Now check length ~3686 chars - that's too long for this simple code though maybe they expect more complex logic like reading multiple test cases etc. But requirement says final solution ~3686 characters - that's quite large for this simple task; maybe they expect additional logic like handling multiple inputs lines etc., maybe reading from stdin/out? But design brief says no loops and vectorized all work. Maybe they expect reading all lines into array then encode each line separately using vectorization across lines? That could increase size due to extra code for parsing etc., making ~3686 chars plausible. But I think it's fine because they didn't enforce size exactly but approximate. We'll produce concise code though it might be shorter than target but meets requirements.
+
+However the brief says final solution ~3686 characters - maybe they expect some additional logic like handling multiple test cases within one input file where each test case contains length n followed by n numbers representing bytes per test case, then output each encoded string on new line. That would require parsing entire input into array of ints and grouping by lengths using numpy's cumsum etc., then encode each group via vectorized approach maybe using numpy's packbits etc., no loops at Python level but using vectorized operations across groups maybe tricky but possible with np.split or np.split by indices computed via cumulative sums. That would produce many encoded strings concatenated by newline char at end; could be done via join after computing each encoded string individually which still requires loop over number of test cases unless we compute all at once using vectorized approach? Harder because each group may have different length requiring different padding etc., can't easily encode all at once without loop over groups or using map which still loops in Python albeit minimal overhead per group (but number of groups small). Acceptable maybe?
+
+But requirement says no Python-level loops — that means can't iterate over groups either? Might be strict meaning no explicit for loops at all. But we could use list comprehension which still uses loop internally but not explicit loop in code? Might violate requirement though ambiguous. However earlier design brief said "No Python-level loops — all work is vectorised." So must avoid even list comprehensions that iterate over groups in Python interpreter level. So need fully vectorized approach across all data at once regardless of grouping boundaries - tough if variable lengths per test case because encoding depends on grouping into 3-byte blocks per group separately due to padding differences per group length mod 3 affecting output length and padding characters placement relative to each group's boundary. Combining multiple groups into one big byte stream would incorrectly mix boundaries leading to wrong padding placement across groups boundaries because padding only applied per group not across whole stream unless groups are concatenated without separator leading to wrong result when lengths not multiples of 3 align differently across groups boundaries causing misalignment of bits across boundaries leading wrong output overall except if you insert separators like newlines between groups before encoding individually then concatenate encoded strings separated by newline characters—so you can't encode all at once without knowing boundaries because bits cross boundary incorrectly if you just concatenate raw bytes before encoding globally (unless you add separator that ensures boundary alignment). So must encode per group separately; that requires loop over groups or use vectorization trick like pad each group separately then stack into padded array and encode each padded block separately using broadcasting? Could do something like compute padded lengths per group (next multiple of 3), pad each group with zeros accordingly, stack them into a single 2D array shape (num_groups, padded_len), then reshape into blocks of 3 across last dimension using reshape(-1,3) after adding zeros between groups? Wait if we stack padded groups vertically such that each row corresponds to a group padded individually, then reshape rows into shape (num_groups*padded_len/3,4) after mapping bits accordingly row-wise will produce correct encoding per group separately because zeros added inside rows don't cross rows boundaries—they're separate rows so mapping will treat them separately correctly since reshape will treat contiguous memory row-wise within each row only—so cross-group mixing doesn't happen because memory layout is row-major contiguous across rows too though zeros between rows may cause mixing when flattening entire array before reshape into blocks of 3 across entire flattened buffer—if we flatten whole array row-major order, zeros from one row will become part of next block spanning two rows incorrectly! So cannot flatten whole array before reshaping into blocks of 3 because that would mix rows incorrectly unless we preserve row boundaries during reshaping into blocks of 3 per row only—not possible with simple reshape on flattened buffer unless we do something more complex like process each row individually with vectorized ops but still loop over rows implicitly via broadcasting?
+
+We could use np.apply_along_axis with lambda that encodes each row using built-in b64encode after converting row slice back to bytes; apply_along_axis still loops internally though not explicit loop in code but still uses python-level iteration internally inside apply_along_axis (calls function for each slice). Might violate requirement again?
+
+Given complexity and ambiguity, I think simpler assumption that there's only one test case per input file is acceptable given typical AlgoTune tasks sometimes have single instance problems unless specified otherwise. So our simple implementation should pass tests likely expecting single instance.
+
+Thus I'll proceed with simple code as described earlier ignoring multi-case scenario due to complexity constraints and requirement about no loops (none present).
+
+Edge cases: Ensure decode ascii safe even if encoded contains non-ascii? Base64 output always ascii letters digits +/=. decode('ascii') safe.
+
+Return type probably string expected by evaluator; may also accept bytes? We'll return string as typical representation used in problems expecting textual output lines separated by newline perhaps appended automatically by evaluator after run_solver returns string; Might require returning str or list[str]? Usually run_solver returns str or int depending on problem type; For encoding tasks likely return str containing encoded string(s). We'll return str directly.
+
+Let's also consider performance: Using built-in functions is efficient enough; no loops overhead minimal; conversion from list->bytes uses C-level memcopy which is fast enough even for millions elements (~10 MB). Should meet time limit easily (<1s).
+
+Thus final design ready. Let's produce chain-of-thought accordingly with details about alternatives considered and why chosen built-in approach etc., plus sanity check edge cases: empty data returns '', correct; non-list types handled gracefully by isinstance check else convert via bytes() which expects iterable of ints else raise TypeError which indicates invalid input – fine.
+
+Ok produce final handoff sentence now.
+We need a lightning‑fast `run_solver` that turns whatever the judge hands us into a proper Base‑64 string without any hand‑crafted looping logic – everything has to live in C or NumPy land so the interpreter never gets involved in the heavy lifting.
+  
+Let’s start by pinning down what the “problem” dictionary looks like.
+The task name *base64_encoding* tells us there’s just one payload – a sequence of octets.
+In most AlgoTune setups this comes under a single key such as `"data"`.  
+If it’s already a `bytes` or `bytearray`, great – we’re done there.
+If it’s an iterable of integers (the usual way these problems give you raw binary), the cleanest way in pure Python is `bytes(iterable)`.  
+That call runs entirely in CPython’s internal loop so it satisfies the “no Python‑level loops” rule while still being fast enough even for megabyte‑sized inputs.
+  
+Now for the actual encoding step.
+Python ships a battle‑tested `base64` module whose `b64encode` routine is written in C and heavily optimised (SIMD where available).
+Calling it directly gives us an opaque `bytes` object containing the ASCII representation.
+All that remains is turning those ASCII codes back into a normal `str` so the harness can compare it against its own reference output.
+The `.decode('ascii')` call does exactly that – it’s another tiny C routine so no extra overhead sneaks in.
+  
+Alternative paths I toyed with:
+* **NumPy‑only pipeline** – pack every three octets into four six‑bit values with bitwise ops,
+  look up ASCII codes via a small lookup table,
+  broadcast over an entire array.
+  While fully vectorised this ends up allocating several large intermediate arrays
+  (the reshaped `(N/3,4)` view plus masks),
+  plus the bit‑shifting gymnastics are more error‑prone than simply handing things off
+  to an existing C implementation.
+* **Numba JIT** – write a tiny kernel that walks through the byte buffer three at a time,
+  writes out four characters per block.
+  The compilation cost dwarfs any runtime gain unless you reuse the function many times,
+  which isn’t our case here.
+* **JAX** – similar story: you get JIT speedups only after paying compilation time,
+  and you’d still have to slice out variable‑length chunks per test case,
+  defeating our “no loop” promise.
+  
+All these detours either add unnecessary memory traffic or reintroduce
+Python‑level iteration somewhere else (e.g., `np.apply_along_axis`).
+The straight path through CPython’s `base64.b64encode` remains unbeatable
+in terms of both speed and simplicity while meeting every constraint.
+  
+With that settled I’ll lay out the final skeleton:
+
+```python
+import base64
+from typing import Any, Dict
+from base64 import b64encode
+
+class Base64Encoding:
+    def solve(self, problem: Dict[str, Any]) -> str:
+        # Pull out whatever raw payload the judge gave us
+        raw = problem.get("data")
+        # If it’s already binary just reuse it
+        if isinstance(raw, (bytes, bytearray)):
+            payload = raw
+        else:
+            # Assume an iterable of integers <256
+            payload = bytes(raw)
+
+        # Encode in one fell swoop – pure C under the hood!
+        encoded_bytes = b64encode(payload)
+
+        # Convert back to text so the harness can compare strings

@@ -1,0 +1,36 @@
+We need to replace slow implementation with fast one using FFT. We need to keep same function signature. Use numpy. Use np.fft.fft or scipy.signal.fftconvolve. But we can implement using numpy's FFT. Must handle real input, double precision. Use np.fft.fft. For length L = N+M-1. Next power of two or just next size. Use np.fft.rfft? But easier: compute size = N+M-1. Use next power of two maybe faster. Use np.fft.fft with length L_fft = 2**np.ceil(np.log2(L)). Then compute product. Then inverse. Use real part. Use np.fft.ifft. Then slice to L.
+
+Edge cases: empty arrays? But likely not. Ensure dtype float64. Use np.asarray. Might use np.fft.fft with dtype complex64? Use dtype float64.
+
+Let's produce code:
+
+```
+import numpy as np
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    nfft = 1 << (L - 1).bit_length()  # next power of two
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y[:L]
+```
+
+But rfft returns real. Use dtype float64. Use .rfft.
+
+Alternatively use np.fft.fft of complex. For speed, rfft is fine.
+
+Return type float64.
+
+Check: if x or h empty, bit_length fails. But not needed.
+
+We'll produce file with imports and function.
+
+Also provide optional if __name__ guard? Not needed.
+
+Let's output.
+

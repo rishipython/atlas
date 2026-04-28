@@ -1,0 +1,23 @@
+We need to implement a fast matrix exponential. We can use scipy.linalg.expm directly? The problem says "replace with fast, numerically-stable implementation that matches scipy.linalg.expm(A) within tight tolerance." We can simply import scipy.linalg.expm and call it. That would be fast and accurate. But maybe the evaluator expects not to rely on SciPy? But allowed. The reference uses numpy only. But the problem states "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So we can just use scipy.linalg.expm. That would be simplest.
+
+But maybe they want us to implement using scaling and squaring with Pade approximant. But easiest: from scipy.linalg import expm; return expm(A). That is trivial.
+
+We must ensure the signature same. So:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+Make sure to cast to float64. expm returns float64 if input float64.
+
+Edge cases: A maybe not float64? But doc says float64. So fine.
+
+Let's produce code.
+
+But maybe they want a pure numpy implementation for performance? But SciPy's expm uses LAPACK, fast.
+
+Return np.array of same shape.
+
+Ok produce final code.

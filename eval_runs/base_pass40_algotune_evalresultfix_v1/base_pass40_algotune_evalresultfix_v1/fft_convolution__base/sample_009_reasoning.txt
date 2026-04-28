@@ -1,0 +1,33 @@
+We need to optimize the FFT convolution solve. The baseline uses scipy.signal.fftconvolve which is okay but maybe slower for large signals. We can implement faster using numpy.fft.rfft for real signals. Use np.fft.rfft and irfft. Determine FFT length: next power of two >= len_x+len_y-1. Use rfft for speed. Also handle modes: full, same, valid. Need to slice result accordingly. Also handle empty inputs. Implementation should be efficient. Also we should avoid converting to list if not needed? The output expects list? The solver returns dictionary with "convolution" key as list. In is_solution they expect list. So convert to list.
+
+Edge cases: empty signals produce empty list.
+
+We also need to handle dtype float.
+
+We can also use np.fft.fft if not real? But signals are list of numbers, likely real. We can use rfft. But for safety, if any complex? But we can assume real.
+
+Implementation: In solve, extract arrays. Determine length. If any length zero, return empty list. Compute n = len_x + len_y -1. Pad to next power of two maybe for speed. Use np.fft.rfft(n). Use rfft of length pad_n. Multiply. Use irfft to get linear convolution length n. Then slice according to mode.
+
+For same: output length = max(len_x, len_y). For valid: output length = max(0, len_x - len_y + 1) if len_x >= len_y else max(0, len_y - len_x + 1)?? Actually same as convolution length - len_y +1? For valid: output length = max(0, len_x - len_y + 1) if len_x>=len_y else max(0, len_y - len_x +1). But typical definition: output length = max(len_x, len_y) - min(len_x, len_y) +1? Wait formula: For valid, only overlaps fully: length = max(len_x, len_y) - min(len_x, len_y) +1. That equals abs(len_x - len_y) +1. But given earlier they used max(len_x, len_y) - min(len_x, len_y) +1. We'll compute that.
+
+Implementation: For valid, start index = len_y -1 if len_x >= len_y? Actually full convolution result indices 0..n-1. For valid, we take from max(len_y-1, len_x-1)? Let's derive: For same length signals? Actually typical convolution of x (len M) and y (len N). Full length = M+N-1. Valid length = max(M,N)-min(M,N)+1. The valid output starts at index max(N-1, M-1)? Let's test: If M=5,N=3. Full: 0..7. Valid length = 5-3+1=3. Valid indices should be indices 2..4? Let's compute: Convolution result indices correspond to sum over k. For valid, we need n such that both signals fully overlap: n from N-1 to M-1 inclusive. So start = N-1, end = M-1. So slice from N-1 to M. So if M>=N. If N>=M, slice from M-1 to N. So general start = max(N-1, M-1)? Wait if N>=M, start = M-1, end = N-1. So start = min(M,N)-1, end = max(M,N)-1. So slice from start to end+1.
+
+So implement accordingly.
+
+Same: output length = max(M,N). For same mode, we take center part of full convolution. For M>=N, we take indices floor((N-1)/2) to floor((N-1)/2)+M. For general case, we can compute start = (n - max(M,N))//2. For odd difference? Use floor. So start = (n - max_len)//2. Then slice start:start+max_len.
+
+Implement.
+
+Edge: if len_x==0 or len_y==0, return empty.
+
+Implement fast rfft. Use np.fft.rfft and irfft. Use pad to next power of 2 for speed. For small lengths, maybe use direct convolution. But we can always use FFT; overhead small for small signals.
+
+Implement function to compute next power of two: 1 << (n-1).bit_length().
+
+Let's code.
+
+Also handle dtype: cast to float64.
+
+Return dictionary with "convolution" key list.
+
+Now produce final code.

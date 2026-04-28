@@ -1,0 +1,54 @@
+We need to produce a faster implementation. Use FFT-based convolution. Use numpy. But we must ensure same results as np.convolve. For floating point, we can use numpy.fft.fft with real. Use np.fft.rfft? For real signals, we can use real FFT. But easiest: use np.fft.fft. For length N+M-1, we can use next power of two or use default. Implementation:
+
+```
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+    # next power of 2 for efficient FFT
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X * H, nfft)
+    return y[:L]
+```
+
+But this uses rfft for real input, but returns real output. Good.
+
+Need to import numpy. Should also consider small sizes: if L small maybe direct? But we can just do FFT.
+
+Also for very small arrays, maybe we can fallback to direct? But not necessary.
+
+Edge cases: zero-length? Not likely.
+
+Need to keep dtype float64.
+
+Test: np.allclose.
+
+Implement.
+
+Also note that rfft returns real output; we need to cast to float64.
+
+Implementation:
+
+```
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X * H, nfft)
+    return y[:L]
+```
+
+We should ensure dtype is float64: input arrays may be float64. rfft returns float64.
+
+Also we might need to handle 1-D arrays.
+
+Return y[:L].
+
+Add docstring.
+
+Ok. Provide entire file.

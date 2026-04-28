@@ -1,0 +1,66 @@
+We need to replace body of solve with faster implementation. Use numpy FFT or scipy. But maybe use np.fft.rfft for real signals. For general, use np.fft.fft. We can use convolution via np.fft.fft, multiply, inverse.
+
+Also handle modes: full, same, valid. We must match shape. We'll implement using numpy's rfft for speed.
+
+Edge cases: empty signals => result empty.
+
+We also need to return dictionary with key "convolution" as list? The is_solution expects "convolution". Yes.
+
+We need to ensure speed: use np.fft.rfft, length L = next power of two >= len_x + len_y -1? For full mode. For same and valid, we can compute full and slice.
+
+But we can compute minimal pad: N = len_x + len_y -1 for full. For same, we can use full and slice. For valid, similarly.
+
+Edge case: if len_x==0 or len_y==0 => result empty.
+
+Implementation:
+
+def solve(problem):
+    x = np.array(problem["signal_x"], dtype=np.float64)
+    y = np.array(problem["signal_y"], dtype=np.float64)
+    mode = problem.get("mode","full")
+    if x.size==0 or y.size==0:
+        return {"convolution": []}
+    n = len(x)+len(y)-1
+    # compute next power of two for speed? np.fft.fft2 automatically uses optimal.
+    # Use rfft: length n
+    # But rfft expects real input, which is fine.
+    X = np.fft.rfft(x, n=n)
+    Y = np.fft.rfft(y, n=n)
+    Z = X*Y
+    conv_full = np.fft.irfft(Z, n=n)
+    # conv_full is float64
+    if mode=="full":
+        result = conv_full
+    elif mode=="same":
+        # same length as max(len_x,len_y)
+        # compute start index
+        if len_x>=len_y:
+            start = (len_y-1)//2
+        else:
+            start = (len_x-1)//2
+        L = max(len_x,len_y)
+        result = conv_full[start:start+L]
+    elif mode=="valid":
+        if len_x>=len_y:
+            L = len_x - len_y + 1
+            start = len_y-1
+        else:
+            L = len_y - len_x + 1
+            start = len_x-1
+        if L<=0:
+            result = np.array([],dtype=np.float64)
+        else:
+            result = conv_full[start:start+L]
+    else:
+        raise ValueError("Invalid mode")
+    return {"convolution": result.tolist()}
+
+But need to ensure rounding issues? Use dtype float64.
+
+Edge case same mode when lengths equal? For same, definition: output length max(len_x,len_y). In numpy's convolve, same picks central part of length of larger input. Implementation: For same, start index = (n - max_len)//2? Actually for full conv length n. For same, want output length = max_len. The central part: start = (n - max_len)//2. n = len_x+len_y-1. So compute start = (n - max_len)//2. That works. Let's use that.
+
+Valid: output length = max(len_x,len_y)-min(len_x,len_y)+1. start = min(len_x,len_y)-1. And L = that length.
+
+Implement accordingly.
+
+Let's code.

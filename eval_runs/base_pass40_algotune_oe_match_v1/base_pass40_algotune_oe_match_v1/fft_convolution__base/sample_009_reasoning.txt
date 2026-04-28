@@ -1,0 +1,67 @@
+We need to optimize the FFT convolution solve. The baseline uses scipy.signal.fftconvolve which is okay but maybe slower for large signals. We can implement faster using numpy.fft.rfft for real signals. Use np.fft.rfft and irfft. Determine FFT length: next power of two >= len_x+len_y-1. Use rfft because inputs are real. For mode 'full', we return full length. For 'same', we need center part. For 'valid', only overlapping. Need to handle empty inputs.
+
+Also we can use np.fft.fft if we want arbitrary length. rfft reduces size by half. For real signals, we can use rfft. For 'same' and 'valid', we can slice.
+
+Also we can optionally use np.fft.rfft which returns length n//2+1. Then multiply elementwise, then irfft to get full convolution length. That should be fast.
+
+We need to ensure we handle large signals maybe > 1e6. Use numpy's FFT; it uses FFTW on many systems, but maybe slower than scipy.signal.fftconvolve? Probably fine.
+
+Also we can incorporate direct convolution for small lengths, e.g., if len_x*len_y < 5e5, use np.convolve.
+
+Implement solve:
+
+- Convert to numpy arrays dtype=float64.
+
+- If len_x==0 or len_y==0: return empty list.
+
+- If len_x * len_y < threshold: use np.convolve(signal_x, signal_y, mode=mode) return.
+
+- Else: compute full convolution via rfft.
+
+Compute n = len_x + len_y - 1. n_fft = 1 << (n-1).bit_length() maybe to next power of two. But rfft can handle any size, but might be slower for non-power-of-two? Let's use next power of two.
+
+Compute fft_x = np.fft.rfft(signal_x, n=n_fft), fft_y = np.fft.rfft(signal_y, n=n_fft). Multiply: fft_prod = fft_x * fft_y. Then conv_full = np.fft.irfft(fft_prod, n=n_fft). Then conv_full = conv_full[:n].
+
+Then slice according to mode.
+
+Return list.
+
+Need to ensure dtype float.
+
+Edge cases: mode 'same': output length = max(len_x, len_y). For signals of different lengths, same returns central part of length len_x (if len_x>=len_y) or len_y? In numpy's convolve, same returns len_x. The problem says output length is max(len(x), len(y)). So we need to match that. But numpy's convolve 'same' returns length len_x. We'll mimic that.
+
+The expected length for 'same' in problem: "output length is max(len(x), len(y))". So if len_x>len_y, same length len_x; else len_y. So we need to compute start offset accordingly.
+
+For full: n.
+
+For valid: output length = max(len_x - len_y + 1, 0) if len_x>=len_y else 0? Problem says "max(len(x) - len(y) + 1, 0)". So if len_x>=len_y, that value else 0.
+
+So we compute accordingly.
+
+Edge: if result length 0, return empty list.
+
+Testing: Provide example.
+
+Also, we should consider using np.fft.rfft for real signals. Use dtype float.
+
+Set threshold maybe 5000? Let's set threshold 5000*5000? Too big. Let's just use np.convolve for small signals up to 2000 maybe.
+
+Also, we can use np.fft.rfft for any length; overhead small.
+
+We also need to handle memory: use float64.
+
+Implement.
+
+Also consider use of np.fft.fft if signals are complex? But input is numbers maybe floats; assume real.
+
+Implement run_solver accordingly.
+
+Add imports.
+
+Wrap in a file.
+
+Also we need to keep solve signature same.
+
+Also ensure to convert to list.
+
+Let's write code.

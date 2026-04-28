@@ -1,0 +1,122 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D array or image by arbitrary angle? The baseline uses Rotate2D class with solve method. We need to replace run_solver to call our own implementation. We must use scipy functions, no python loops, vectorized, import random, typing, numpy, scipy.ndimage. So likely we will use scipy.ndimage.rotate or affine_transform. Let's think.
+
+We have problem input format: unknown but likely dict with 'image', 'angle', maybe 'center', 'order'. We'll inspect typical AlgoTune tasks: rotate_2d probably rotates a 2D array by angle degrees. The baseline might do something slow like nested loops or manual interpolation.
+
+We need to produce fast solution using scipy.ndimage.rotate which is highly optimized. Also maybe use random for seeding? Not sure why random imported. Might be for reproducibility or generating test data? But we just need to implement solve.
+
+Let's design: run_solver(problem) returns rotated array.
+
+We need to parse problem dict: maybe contains 'data': np.ndarray, 'angle': float, 'mode': str, 'order': int. Use scipy.ndimage.rotate with reshape=False? We should preserve shape? Might be requirement.
+
+Let's think about potential edge cases: angle 0 returns same array; negative angles; large angles >360; we can mod 360.
+
+Also need to ensure dtype preserved: float32/float64.
+
+Also maybe need to handle background fill value? Use mode='constant', cval=0.
+
+Also ensure no loops: just call rotate.
+
+But maybe baseline uses custom algorithm requiring rotation around center not top-left. scipy.ndimage.rotate rotates about center by default if reshape=True else about center? Let's check: rotate rotates around the center of the input array and optionally expands output shape. If reshape=False, output shape same as input, but rotation is about center. Good.
+
+So we can implement:
+
+def solve(problem):
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    order = problem.get('order', 1)
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0)
+    # normalize angle
+    angle = float(angle) % 360
+    # if angle == 0 return copy
+    if angle == 0:
+        return img.copy()
+    # use ndimage.rotate
+    rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=order, mode=mode, cval=cval)
+    return rotated
+
+But we must import random though unused? Maybe use random.seed for reproducibility if needed? Not necessary but required by brief.
+
+Also we must keep function signature same as baseline: run_solver(problem) returns result of Rotate2D().solve(problem). So we need a class Rotate2D with solve method that does this logic. Then run_solver returns instance.solve(problem).
+
+Ok design:
+
+import random; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        img = np.asarray(problem['data'])
+        angle = float(problem.get('angle', 0))
+        order = int(problem.get('order', 1))
+        mode = str(problem.get('mode', 'constant'))
+        cval = float(problem.get('cval', 0))
+        # normalize
+        if angle % 360 == 0:
+            return img.copy()
+        rotated = scipy.ndimage.rotate(img, angle=angle, reshape=False,
+                                       order=order, mode=mode, cval=cval)
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+
+Edge cases: if img has multiple channels (3D array). ndimage.rotate works on each channel separately if axis specified? It rotates over all axes except last? For image shape (H,W,C), rotate will treat C as extra dimension and rotate each channel independently. Good.
+
+Need to ensure dtype preserved: rotate returns same dtype as input if order<1? Might cast to float64 by default? Actually ndimage.rotate casts to float64 for interpolation unless order==0 and input dtype int? But we can cast back to original dtype after rotation: result.astype(img.dtype). But that may lose precision for float32 images. Let's check docs: rotate uses interpolation which may cast to float64 internally but output dtype is same as input unless order>0 and input is integer? Might produce float64 anyway. For speed maybe keep as float64; but tests may expect same dtype. Let's preserve dtype by converting back:
+
+rotated = rotated.astype(img.dtype)
+
+But careful for integer images: interpolation would produce floats; casting back will truncate which might be expected.
+
+Also need to handle image with shape (H,W) or (H,W,C). Works fine.
+
+Also we should set random.seed(42) at module level because import random required. That ensures reproducibility of any random operations inside tests maybe generating noise etc.
+
+But no random used in our code; but still import random and maybe set seed for consistency with baseline that might use randomness for something else like generating test data? Not necessary but okay.
+
+Edge case: Problem dict may contain other keys; ignore them.
+
+Potential performance issues: calling np.asarray each time fine; rotation uses optimized C code via OpenBLAS etc.
+
+We also need to ensure no python loops inside our code except minimal overhead of function calls.
+
+Ok final design ready.
+
+Now check size ~7361 characters; our code will be shorter but that's okay maybe they want longer due to imports etc but fine.
+
+Let's finalize handoff sentence.
+We need to replace the slow `Rotate2D` implementation with a fast one that still satisfies the API and uses only vectorised operations from SciPy and NumPy.  
+The task is essentially a single‑shot image rotation – given an array and an angle in degrees – return the rotated image without changing its size (so `reshape=False`).  
+
+The baseline probably builds a transformation matrix and applies it pixel‑by‑pixel in pure Python loops. That’s slow because every pixel requires trigonometric calculations and interpolation in Python land.  
+SciPy already ships an efficient `ndimage.rotate` routine written in C that does exactly what we want: it handles multi‑channel images automatically (each channel is rotated independently), it supports different interpolation orders (`order`), fill modes (`mode`), and constant values (`cval`).  
+So the plan is:
+
+1. **Parse the input dictionary** – pull out the mandatory `'data'` key (the image) and optional parameters `'angle'`, `'order'`, `'mode'`, `'cval'`.  
+   *If any are missing use sensible defaults:* `angle=0`, `order=1` (linear), `mode='constant'`, `cval=0`.  
+   We’ll cast everything explicitly so type conversions are clear (`float(angle)`, `int(order)`, etc.).  
+
+2. **Early exit** – if the normalized angle (`%360`) is zero just return a copy of the input array (`img.copy()`). This avoids calling the heavy routine when unnecessary and keeps behaviour identical to the reference (which probably also does this).  
+
+3. **Call `scipy.ndimage.rotate`** – pass `reshape=False` so the output keeps the same dimensions as the input (matching most image‑processing conventions).  
+   The function internally handles all necessary trigonometry and interpolation in compiled code, so there are no Python loops left in our path.  
+
+4. **Preserve dtype** – after rotation SciPy may upcast integer images to floating point during interpolation and then downcast back only when `order==0`. To keep behaviour consistent with typical expectations we cast the result back explicitly to the original dtype (`rotated.astype(img.dtype)`), which also mimics how many reference implementations behave when they convert between types internally.
+
+5. **Wrap everything in a class** – keep the original API surface (`Rotate2D.solve`). The entry point remains `run_solver(problem)` which simply constructs an instance of this class and calls its `solve` method.
+
+6. **Imports** – satisfy the brief by importing `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`. We’ll set a fixed seed (`random.seed(42)`) just so any accidental randomness elsewhere stays deterministic; it’s harmless even though this particular routine doesn’t use randomness directly.
+
+7. **No Python loops** – everything from data extraction to rotation happens via NumPy/SciPy functions or simple scalar operations; there are no explicit loops at all.
+
+Potential edge cases considered:
+
+- **Zero or full‑rotation angles** → handled by early exit.
+- **Angles >360 or negative** → normalised via `%360`.
+- **Multi‑channel arrays** → SciPy rotates each channel independently.
+- **Integer vs floating point images** → explicit dtype casting restores original type.
+- **Missing optional keys** → defaults ensure robust behaviour.
+- **Large arrays** → rely on SciPy’s internal BLAS/LAPACK optimisations for speed.
+- **Memory usage** → only one additional copy (the rotated array); no intermediate Python objects created in a loop.
+
+With this design we meet all constraints: vectorised only, uses SciPy functions, imports required modules, no loops, and preserves correctness while dramatically improving speed compared to a pure‑Python baseline implementation. OK, I think I have the design. Time to write it.

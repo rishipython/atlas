@@ -1,0 +1,75 @@
+We need to take the raw byte payload from the problem dictionary and turn it into a Base‑64 string without ever looping in Python – everything must be a bulk NumPy operation so that the code stays tight and fast.  
+
+Let’s assume the solver receives a single key called `data` containing the binary payload we must encode. The easiest way to keep things vectorised is to work directly on a `uint8` view of that buffer:
+
+```python
+arr = np.frombuffer(b, dtype=np.uint8)
+```
+
+The next step is padding so that the length is a multiple of three – exactly what Base‑64 expects – and then reshaping into groups of three bytes:
+
+```python
+n   = len(arr)
+pad = (-n) % 3          # how many zero‑bytes we have to add
+if pad:
+    arr = np.pad(arr, (0,pad), 'constant')
+arr3 = arr.reshape(-1,3)   # shape (k,3)
+```
+
+With the data now in a `(k,3)` matrix we can compute the four 6‑bit indices for every triplet in one shot:
+
+```python
+i0 = arr3[:,0] >> 2
+i1 = ((arr3[:,0] & 0x03) << 4) | (arr3[:,1] >> 4)
+i2 = ((arr3[:,1] & 0x0F) << 2) | (arr3[:,2] >> 6)
+i3 = arr3[:,2] & 0x3F
+indices = np.column_stack((i0,i1,i2,i3)).ravel()
+```
+
+Now we just need a lookup table for the standard Base‑64 alphabet – a plain byte array works fine:
+
+```python
+tbl = np.frombuffer(
+        b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+        dtype=np.uint8)
+```
+
+Mapping the indices gives us the raw ASCII codes for the encoded characters:
+
+```python
+encoded_bytes = tbl[indices]
+```
+
+If we added padding zeros earlier we must overwrite the corresponding trailing characters with `=`:
+
+```python
+if pad:
+    encoded_bytes[-pad:] = ord('=')
+```
+
+Finally convert back to a normal string:
+
+```python
+return encoded_bytes.tobytes().decode('ascii')
+```
+
+The whole routine is one continuous NumPy pipeline – no `for`, no comprehension – so it runs at C speed and scales linearly with input size.
+
+The `Base64Encoding.solve` method will just pull the payload out of the problem dict and feed it through this helper:
+
+```python
+def solve(self, problem):
+    raw_data = problem['data']            # expected to be bytes or bytearray
+    return {'solution': _b64_encode_bytes(raw_data)}
+```
+
+Because we’re asked to keep imports minimal yet satisfy the brief we’ll bring in `base64`, `os`, and typing utilities even if they’re not strictly needed by the core algorithm – that satisfies the “imports” requirement while keeping everything else lean.
+
+Edge‑case sanity checks:
+
+* Empty payload → `n==0`, `pad==0`, reshape gives `(0,3)` and everything works out cleanly.
+* Lengths of one or two bytes → padding logic sets `pad` to two or one respectively and replaces the last one or two output characters with `=` as per RFC 4648.
+* Non‑ASCII binary data → treated as raw bytes so encoding remains faithful.
+* Very large inputs → NumPy handles them in bulk; memory usage is proportional only to the input size plus a small constant overhead for the padded buffer and index array.
+
+With this design we satisfy all constraints: no Python loops, fully vectorised NumPy operations, correct handling of all edge cases, and a clean return structure matching what callers expect. OK, I think I have the design. Time to write it.

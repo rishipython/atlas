@@ -1,0 +1,19 @@
+We need to produce efficient convolution via FFT. Need to handle 1D arrays of floats, dtype float64. Use numpy. Use np.fft.fft for convolution. Compute length L = N+M-1. Pad arrays to next power of two or next multiple? np.fft.fft can accept length. Use np.fft.rfft? But we want real convolution. Use np.fft.rfft for efficiency. Let's implement using rfft.
+
+Compute nfft = 2**np.ceil(np.log2(L)).astype(int). Actually use int(2**np.ceil(np.log2(L))) or use np.fft.next_fast_len(L). Use np.fft.next_fast_len from numpy 1.19+. We'll use that.
+
+Compute X = np.fft.rfft(x, nfft), H = np.fft.rfft(h, nfft). Multiply: Y = X * H. Then y_full = np.fft.irfft(Y, nfft)[:L]. That returns float64.
+
+Edge cases: Input arrays may not be 1D? They are 1D. dtype float64. Should handle N or M zero? They might be empty? Convolution of empty with something? np.convolve returns empty? For N=0 or M=0, output length N+M-1 = -1? Should be 0? Let's test: np.convolve([], [1,2]) returns array([], dtype=float). length 0. So if either empty, return empty. Our implementation should handle that. If N==0 or M==0: return np.array([], dtype=np.float64). Use if N==0 or M==0: return np.empty(0, dtype=np.float64).
+
+Also handle dtype? Use float64.
+
+Implement conv1d accordingly.
+
+Return result.
+
+Make sure to import numpy. Use np.fft.rfft, irfft. Use next_fast_len if available: np.fft.next_fast_len(L). That may return integer > L. Use that.
+
+Ok produce file.
+
+Let's write code.

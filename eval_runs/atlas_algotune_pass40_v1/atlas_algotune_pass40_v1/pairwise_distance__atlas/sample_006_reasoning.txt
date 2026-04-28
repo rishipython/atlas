@@ -1,0 +1,21 @@
+We need to produce efficient implementation. Use vectorized operations: compute squared norms, and use broadcasting: dist[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Use np.dot or np.linalg.norm. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2 * X.dot(X.T)
+    return dist
+
+Make sure result is non-negative due to numerical errors: clip to >=0.
+
+Also handle N=0 or D=0: if N==0 return empty (0,0). If D==0, all distances 0. Implementation should work.
+
+Add import numpy as np at top.
+
+Return float64. Ensure dtype float64.
+
+Edge cases: large memory might be high but okay.
+
+Implement function.
+
+Let's produce final file.

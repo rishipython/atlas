@@ -1,0 +1,40 @@
+We need to write fast convolution. We can use scipy.signal.fftconvolve or numpy.fft. But we should not rely on SciPy? Problem says we can import scipy. So use scipy.signal.fftconvolve for speed.
+
+But need to ensure same dtype and shape. Provide fallback if scipy missing? But environment likely has SciPy. We'll import from scipy.signal import fftconvolve. Implementation:
+
+def conv1d(x, h):
+    return fftconvolve(x, h, mode='full')
+
+But need dtype float64. fftconvolve returns same dtype as inputs. If inputs float64, output float64.
+
+However, for small arrays, maybe use direct? But speed not critical. Let's implement using np.fft. Use next power of 2 length. Use rfft for real? Use numpy.fft.fft? Use np.fft.fft and ifft.
+
+Implementation:
+
+N=len(x); M=len(h); L=N+M-1; size=1<< (L-1).bit_length() # next power of two.
+
+X=np.fft.rfft(x, size)
+H=np.fft.rfft(h, size)
+Y = X*H
+y = np.fft.irfft(Y, size)[:L]
+return y
+
+This is fast. Let's use numpy only.
+
+Potential numeric differences due to rounding but should be fine.
+
+Edge cases: zero-length? Not expected.
+
+Let's produce code.
+
+Also ensure dtype double.
+
+Let's write file with imports and function.
+
+Test: random arrays, compare with np.convolve.
+
+Also use np.allclose.
+
+Return.
+
+Let's craft final code.

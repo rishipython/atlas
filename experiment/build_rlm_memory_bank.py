@@ -57,8 +57,24 @@ def main() -> None:
     args = p.parse_args()
 
     recs = [json.loads(l) for l in Path(args.in_path).read_text().splitlines() if l.strip()]
+
+    def _iter_num(r: dict) -> int:
+        meta = r.get("_meta") or {}
+        if "iteration" in meta:
+            return int(meta.get("iteration") or -1)
+        if "iteration" in r:
+            return int(r.get("iteration") or -1)
+        return -1
+
+    def _score(r: dict) -> float:
+        if "combined_score" in r:
+            return float(r.get("combined_score") or 0.0)
+        cm = r.get("child_metrics") or {}
+        pm = r.get("parent_metrics") or {}
+        return float(cm.get("combined_score", pm.get("combined_score", 0.0)) or 0.0)
+
     # Stable ordering: highest score first (most useful lessons up top).
-    recs.sort(key=lambda r: (-float(r.get("combined_score", 0.0)), r["_meta"]["iteration"]))
+    recs.sort(key=lambda r: (-_score(r), _iter_num(r)))
 
     parts: list[str] = []
     parts.append(
@@ -69,11 +85,17 @@ def main() -> None:
     )
 
     for idx, r in enumerate(recs, start=1):
-        cls = r["classification"]
-        score = float(r.get("combined_score", 0.0))
-        iteration = r["_meta"].get("iteration", -1)
-        thinking = (r["messages"][2].get("thinking") or "").strip()
-        code = (r["messages"][2].get("content") or "").strip()
+        cls = r.get("classification", "unknown")
+        score = _score(r)
+        iteration = _iter_num(r)
+        messages = r.get("messages") or []
+        thinking = ""
+        code = ""
+        if len(messages) >= 3:
+            thinking = (messages[2].get("thinking") or "").strip()
+            code = (messages[2].get("content") or "").strip()
+        if not code:
+            code = (r.get("child_code") or "").strip()
 
         lesson = _take_sentences(thinking, args.max_lesson_chars)
         code_lines = code.splitlines()[: args.code_lines]

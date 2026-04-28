@@ -1,0 +1,41 @@
+We need to replace body with efficient FFT-based convolution. Use numpy. For large arrays, we can compute via FFT. Need to handle any size. Use np.fft.fft with real input. Use np.fft.rfft for speed? But we need full convolution output. Use rfft of both arrays to length next power of 2? But easier: use np.fft.fft of length L = next_pow2(N+M-1). Compute product, inverse FFT, real part. Should be close to np.convolve.
+
+Edge cases: If one array empty? Usually length >=1. But handle 0? Let's implement robust.
+
+Also need to ensure dtype float64. Use np.fft.rfft for real-to-complex; but need to compute product. Use rfft of length L. Compute product, irfft. That returns length L real. Then slice to N+M-1.
+
+Also we could use scipy.signal.fftconvolve if available. But we can use numpy.
+
+Let's implement function conv1d(x,h). We'll compute:
+
+N=len(x); M=len(h); size = N+M-1; L = 1 << (size-1).bit_length()  # next power of 2
+
+X = np.fft.rfft(x, L); H = np.fft.rfft(h, L); Y = X*H; y = np.fft.irfft(Y, L); return y[:size]
+
+Edge: if size==0? Not possible. If N==0 or M==0? Could return empty array. We'll handle.
+
+Also consider small sizes where naive may be faster? But we can just use FFT.
+
+We also need to ensure dtype float64; we can cast to float64.
+
+Let's produce final code.
+
+Also include __all__ maybe.
+
+Let's produce file:
+
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    ...
+Return dtype float64.
+
+Test: For small arrays, should match np.convolve.
+
+Let's write.
+
+Also handle case when either array has length 0: return empty array.
+
+Also we can use np.require to ensure 1D. But not needed.
+
+Let's code.

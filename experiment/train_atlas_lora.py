@@ -84,6 +84,10 @@ image = (
         "pyyaml>=6",
         "ninja",  # needed at build-time by flash-attn
         "packaging",
+        # Modal runtime imports google.protobuf via modal_proto.
+        "protobuf>=4.25",
+        # Modal runtime also imports grpclib.client.
+        "grpclib>=0.4.7",
         # gpt-oss uses HF's ``kernels`` package to pull in an MXFP4 kernel
         # at load time; without it transformers refuses to load the model
         # even when it's dequantizing to bf16 for training.

@@ -1,0 +1,13 @@
+We need to produce a faster implementation. Standard trick: use broadcasting or dot product: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. Compute squared norms vector, then use np.add.outer and -2*dot. Use np.linalg.norm? but we can compute with np.dot. Implementation: compute sq_norms = np.sum(X**2, axis=1). Then dist = sq_norms[:,None] + sq_norms[None,:] - 2*X.dot(X.T). Ensure dtype float64. Use np.maximum to clip negative zeros due to numeric errors? Not necessary but safe.
+
+Return dist. Also ensure symmetrical.
+
+Edge cases: large N; memory. But fine.
+
+Let's implement.
+
+Also we might use np.einsum for memory. But dot is fine.
+
+Return np.asarray(dist, dtype=np.float64). Should be fine.
+
+Let's produce file.

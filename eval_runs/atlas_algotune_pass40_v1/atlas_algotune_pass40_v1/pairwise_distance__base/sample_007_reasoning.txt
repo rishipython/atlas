@@ -1,0 +1,21 @@
+We need to produce fast implementation. Use vectorized operations: compute Gram matrix. For squared Euclidean distance: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms vector of length N, then use broadcasting. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    D = norms[:, None] + norms[None, :] - 2 * X @ X.T
+    # due to numerical errors, small negative values may appear; clip to 0
+    np.maximum(D, 0, out=D)
+    return D
+
+We need to keep same signature. Ensure dtype float64. Should handle large arrays. Use np.dot or matmul. Use np.einsum maybe? But dot is fine. Complexity O(N^2 D). Implementation is efficient.
+
+Return same shape. Ensure no negative due to rounding.
+
+Edgecases: Input shape (0,D) maybe. But we can handle.
+
+Let's produce final code. Ensure imports: numpy as np.
+
+Return out.
+
+Let's produce file.

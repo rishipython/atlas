@@ -53,6 +53,8 @@ image = (
         "vllm==0.19.1",
         "openai>=1.50",
         "pyyaml>=6",
+        "grpclib>=0.4.7",
+        "protobuf>=4.25",
     )
     .add_local_dir(
         str(REPO_ROOT),

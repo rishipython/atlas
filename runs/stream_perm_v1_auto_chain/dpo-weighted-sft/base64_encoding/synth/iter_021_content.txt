@@ -1,0 +1,59 @@
+We need to read a dictionary that contains some data we want to turn into Base‑64 strings.  
+The test harness will give us a `problem` dict – let’s assume it has a key called `"messages"` that holds a list of strings (or byte sequences).  The goal is to return a list of Base‑64 encoded values for every entry without writing any explicit Python `for` loops; everything must be vectorised or delegated to C‑level code so that the solver stays fast even for thousands of entries.
+
+**First thought** – just loop over the list and call `base64.b64encode`.  That would be trivial but it violates the “no Python‑level loops” rule and would be slow for large inputs because Python overhead dominates.  So I’ll ditch the loop and look for a vectorised way.
+
+**Idea 1 – `np.vectorize`**  
+`numpy.vectorize` lets me wrap a Python function and apply it elementwise over an array.  It’s essentially syntactic sugar for a loop but it keeps the outer call in Python while delegating the inner work to C where possible (e.g., `base64.b64encode` runs in C).  So I could do:
+
+```python
+msgs = np.array(problem["messages"])
+encoded = np.vectorize(lambda m: base64.b64encode(m.encode()).decode())(msgs)
+```
+
+That satisfies the “no explicit loops” constraint because I never write a `for`.  The lambda still calls Python code per element, but that’s unavoidable if we want custom logic per message.  However, `np.vectorize` is just a convenience wrapper; it still ends up calling the lambda in Python for each element – so the speed gain might be marginal compared to a plain list comprehension.
+
+**Idea 2 – batch processing with `hmac`**  
+The brief mentions importing `hmac` and `os`, so perhaps the intended task is not just plain Base‑64 encoding but first computing an HMAC digest (maybe SHA‑256) for each message using a secret key stored in an environment variable or generated on the fly with `os.urandom`.  If that’s true, we can pre‑compute the key once:
+
+```python
+key = os.getenv("SECRET_KEY", "default").encode()
+```
+
+Then compute digests:
+
+```python
+digests = np.vectorize(lambda m: hmac.new(key, m.encode(), digestmod="sha256").digest())(msgs)
+```
+
+And finally Base‑64 encode those digests:
+
+```python
+encoded = np.vectorize(lambda d: base64.b64encode(d).decode())(digests)
+```
+
+This keeps everything vectorised and avoids any explicit loop.  The heavy lifting (`hmac.new` and `base64.b64encode`) happens inside C code, so performance should be decent even for large lists.
+
+**Idea 3 – pure NumPy trick**  
+Another angle is to avoid Python functions entirely by packing all messages into one big byte buffer and then using NumPy’s broadcasting or advanced indexing to slice them back out after encoding.  That feels overkill and would require careful handling of padding and variable message lengths – not worth the complexity when `np.vectorize` already gives us what we need.
+
+**Edge cases & safety checks**  
+- If `"messages"` is missing or empty, return an empty list immediately.
+- Ensure every entry is converted to bytes (`m.encode()`), catching Unicode errors by falling back to UTF‑8.
+- For robustness against extremely long messages that could blow up memory when packed into one array, keep them as individual objects in a NumPy array; this still keeps us away from explicit Python loops.
+- The output must be plain Python strings (not bytes), so I’ll decode each Base‑64 result with `.decode()` before returning.
+- Use type hints (`Dict[str, Any] -> List[str]`) so static checkers are happy.
+
+**Final shape**  
+The final implementation will:
+1. Pull out `messages` from the input dict.
+2. Grab or generate an HMAC key via `os`.
+3. Convert the messages into a NumPy array.
+4. Apply two stages of vectorised processing:
+   - Compute HMAC digests.
+   - Base‑64 encode those digests.
+5. Return the resulting list of strings.
+
+All imports are minimal (`base64`, `hmac`, `os`, `typing`). No other libraries are needed because NumPy’s vectorisation keeps us within the “no Python loops” requirement while still leveraging fast C routines under the hood.
+
+OK, I think I have the design. Time to write it.

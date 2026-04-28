@@ -1,0 +1,32 @@
+We need to write fast convolution. Use numpy. Use np.fft.fft to compute convolution via multiplication in frequency domain. Use np.fft.fft with length L = next power of 2 >= N+M-1 maybe. Use np.fft.rfft? For real signals, rfft may be faster. But simpler: use np.fft.fft. But need to ensure same numeric result. Use np.fft.fft with dtype float. Use complex. The output of np.fft.ifft should be real after rounding.
+
+Alternatively use scipy.signal.fftconvolve. But might not be allowed? The instructions say you may import scipy. Use it for simplicity: from scipy.signal import fftconvolve. That returns float64. But to ensure same result, just use that.
+
+But maybe they want to implement manually. We'll use np.fft.fft.
+
+Implementation:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    # next power of two
+    fftlen = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, fftlen)
+    H = np.fft.rfft(h, fftlen)
+    Y = X * H
+    y = np.fft.irfft(Y, fftlen)[:L]
+    return y
+
+This uses rfft for real input, giving speed. Should be numerically close.
+
+Edge cases: if L=0? Not possible as N and M positive? Could be zero-length arrays? Not typical. But handle: if N==0 or M==0 return empty array. Let's implement.
+
+Also ensure dtype float64. Use np.fft.rfft returns complex64? Actually returns float64 for real input? rfft returns complex128 for float64 input. Good.
+
+Return y as float64.
+
+Let's produce file with imports.
+
+Also we can optionally add check for dtype. Use np.asarray.
+
+Let's produce final.

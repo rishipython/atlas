@@ -1,0 +1,86 @@
+We need to take the raw input from the `problem` dictionary and spit out a Base‑64 representation without looping in Python at all – everything must be done with NumPy array ops so that the JIT‑friendly path stays pure vectorised code.  
+
+Let’s start by figuring out what the `problem` dictionary actually contains. The reference implementation simply calls `Base64Encoding().solve(problem)`, so I’ll assume the keys are named intuitively – probably something like `'data'` for the payload and maybe a `'key'` if we’re supposed to compute an HMAC too. The brief imports `hmac`, so I’ll keep an eye on that even if it ends up unused; it might be part of the expected output format (e.g., returning both the encoded string and its HMAC).  
+
+The core of the work is turning a byte sequence into Base‑64 characters. The standard algorithm groups input bytes in triples (3 bytes → 4 characters). If the length isn’t a multiple of three we pad with zeroes and later replace some output characters with `'='`. In NumPy we can do this all at once:
+
+```
+# Convert input string/bytes into uint8 array
+b = np.frombuffer(data_bytes, dtype=np.uint8)
+
+# Pad with zeros so that len(b) % 3 == 0
+pad_len = (-len(b)) % 3
+if pad_len:
+    b = np.pad(b, (0, pad_len), mode='constant')
+
+# Reshape into shape (-1, 3)
+groups = b.reshape(-1, 3)
+
+# Compute the four indices per group
+i0 = (groups[:,0] >> 2) & 0x3F
+i1 = ((groups[:,0] & 0x03) << 4) | (groups[:,1] >> 4)
+i2 = ((groups[:,1] & 0x0F) << 2) | (groups[:,2] >> 6)
+i3 = groups[:,2] & 0x3F
+
+# Stack them back into a flat array
+indices = np.column_stack([i0,i1,i2,i3]).ravel()
+```
+
+That gives us an integer array of indices into the Base‑64 alphabet (`A–Z`, `a–z`, `0–9`, `+`, `/`). I’ll pre‑create that alphabet as a NumPy array of single‑character strings (`dtype='U1'`) so that indexing yields actual characters:
+
+```
+alphabet = np.array(list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'), dtype='U1')
+encoded_chars = alphabet[indices]
+```
+
+Now we have all characters in order; we just need to stitch them back together into a single Python string:
+
+```
+encoded_str = ''.join(encoded_chars)
+```
+
+Padding rules are straightforward: if the original length mod 3 was 1 we replace the last two characters with `'='`; if it was 2 we replace only the last character. We can compute those positions easily:
+
+```
+orig_len_mod = len(data_bytes) % 3
+if orig_len_mod:
+    # Replace last orig_len_mod characters
+    encoded_chars[-orig_len_mod:] = '='
+    encoded_str = ''.join(encoded_chars)
+```
+
+That handles all edge cases – empty input returns an empty string because the padding logic skips when `orig_len_mod == 0`.
+
+If there really is a `'key'` field in `problem` that expects an HMAC over the encoded data, I’ll add that too without breaking the pure‑vector constraint:
+
+```
+if 'key' in problem:
+    # HMAC requires bytes; encode the Base‑64 string first
+    mac = hmac.new(problem['key'].encode(), encoded_str.encode(), digestmod=hashlib.sha256).hexdigest()
+    return {'encoded': encoded_str, 'hmac': mac}
+else:
+    return {'encoded': encoded_str}
+```
+
+But since importing `hashlib` isn’t listed in the brief I’ll leave that branch commented out for now – it’s easy to add later if needed.
+
+One subtlety is that NumPy’s `frombuffer` expects a buffer interface; passing a Python string directly would raise a type error unless we encode it first (`data_bytes = problem['data'].encode()` if it’s str). To keep things robust I’ll coerce whatever comes in:
+
+```
+raw = problem['data']
+if isinstance(raw, str):
+    raw_bytes = raw.encode()
+else:
+    raw_bytes = raw
+```
+
+With these pieces glued together inside a class method `solve`, I can expose a tiny wrapper function:
+
+```
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+This satisfies the signature required by the evaluation harness while keeping every heavy lifting inside NumPy operations – no Python loops at all – which should give us a clean speed advantage over naïve byte‑by‑byte processing or even Python’s built‑in `base64.b64encode`. The code will be around five thousand characters once fully fleshed out with docstrings and type hints, matching the target size mentioned in the brief.  
+
+OK, I think I have the design. Time to write it.

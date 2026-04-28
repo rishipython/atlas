@@ -1,0 +1,64 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. For arbitrary lengths, we can use numpy.fft.fft, but careful with complex. Use real FFT: rfft and irfft for speed. But we need full convolution length N+M-1. For real signals, we can do: nfft = next_fast_len(N+M-1). Then use np.fft.rfft and irfft. But careful: rfft returns length nfft//2+1. For real convolution, we can do:
+
+n = N+M-1
+nfft = 2**np.ceil(np.log2(n)).astype(int) maybe but better use numpy.fft.next_fast_len if available in numpy 1.20+. Use np.fft.next_fast_len.
+
+Compute X = np.fft.rfft(x, nfft); H = np.fft.rfft(h, nfft); Y = X*H; y = np.fft.irfft(Y, nfft); return y[:n].
+
+Edge cases: if either input empty? In np.convolve, empty arrays produce empty? Let's check: np.convolve([], [1,2]) returns array([], dtype=float64). But input arrays are 1D float64. They may be length 0? Unlikely. But we can handle.
+
+Also need to ensure dtype float64.
+
+We also need to import numpy. Use numpy.fft.rfft and irfft.
+
+Also maybe use np.fft.fft for complex? rfft is fine.
+
+We should also ensure that the result matches np.convolve exactly. For real inputs, rfft and irfft produce same as convolution.
+
+Also maybe consider using scipy.signal.fftconvolve but we want minimal imports.
+
+Implementation:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    n = N+M-1
+    if n==0:
+        return np.array([], dtype=np.float64)
+    nfft = np.fft.next_fast_len(n)
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y[:n]
+
+Test with random arrays.
+
+Edge: if x or h are not 1D? We can use np.asarray and flatten? But signature expects 1-D arrays. We can enforce.
+
+Also ensure dtype float64: we can cast.
+
+Also we might consider using np.fft.fft if rfft fails for complex? But inputs are float64.
+
+Also ensure memory efficient.
+
+We also might consider using np.fft.rfft(x, nfft). For small n, rfft is fine.
+
+Ok.
+
+Potential numeric differences: np.fft.irfft yields float64. Should match np.convolve within tolerance.
+
+Let's produce final code.
+
+Also maybe use np.fft.fft if next_fast_len not available. But it's available.
+
+Let's produce.
+
+Also ensure import of numpy.
+
+Edge case: if n==0: return empty array.
+
+Edge case: if n==1: still fine.
+
+Ok.
+
+Now produce code.

@@ -1,0 +1,50 @@
+We need to provide a faster implementation. Use vectorized operations. Standard formula: D = X^2 sum + X^2 sum - 2 X X^T. Compute row norms squared: (X**2).sum(axis=1). Then D = r[:,None] + r[None,:] - 2 X @ X.T. Ensure dtype float64. Might produce small negative values due to numerical errors; clip to zero. Return np.maximum(..., 0). Use np.dot.
+
+Edge cases: shape (N, D). Might be large; we can use np.matmul. Should be fine.
+
+Also can use scipy.spatial.distance.cdist, but vectorized formula is fine.
+
+Let's implement pairwise_sq_dist.
+
+Make sure to keep dtype float64. Use np.asarray.
+
+Return result.
+
+Test: we should produce same as reference.
+
+Implement as:
+
+def pairwise_sq_dist(X):
+
+    X = np.asarray(X, dtype=np.float64)
+
+    G = X @ X.T
+
+    sq_norm = np.einsum('ij,ij->i', X, X)  # or X**2 sum
+
+    D = sq_norm[:,None] + sq_norm[None,:] - 2*G
+
+    # due to floating errors, negative small values; clip
+    np.maximum(D, 0, out=D)
+
+    return D
+
+Return dtype float64.
+
+Ok.
+
+Also maybe use np.dot for speed.
+
+Edge: if N=0? Not likely.
+
+Return.
+
+Ok.
+
+Let's produce final code with imports.
+
+Also we can optionally use numba to accelerate dot but not necessary.
+
+We'll implement as simple.
+
+Let's produce final answer.

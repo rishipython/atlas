@@ -1,0 +1,10 @@
+We need to provide faster implementation. Use numpy FFT. Need to consider input arrays of float64. Use np.fft.fft. For linear convolution, zero-pad to length N+M-1, but we can do FFT of size next power of two >= N+M-1 for speed. Implementation: compute fft length L = 1 << ceil_pow2(N+M-1). Use np.fft.fft(x, L) etc. Multiply elementwise. Then inverse FFT, take real part. Truncate to N+M-1. Ensure dtype float64. Should handle 1D arrays. Also ensure that if x or h empty? They may be length 0? Probably not. But handle gracefully: if either empty, return empty array. Also ensure shape. Use np.fft.rfft? For real input we could use rfft for speed. But simpler: use np.fft.fft. Use np.fft.ifft. After ifft, take real part, round small imaginary. Use np.real. Might need to cast to float64. Provide function conv1d.
+
+Edge cases: if arrays contain complex? Problem says float64. So fine.
+
+Let's produce final code.
+
+Also note that for small arrays, direct convolution may be faster; but we can ignore.
+
+Let's produce final code.
+

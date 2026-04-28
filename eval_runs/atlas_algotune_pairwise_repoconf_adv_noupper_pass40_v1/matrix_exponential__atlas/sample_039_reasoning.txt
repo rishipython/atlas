@@ -1,0 +1,29 @@
+We need to implement a fast matrix exponential that matches scipy.linalg.expm within tolerance. We can use scipy.linalg.expm directly? But they might forbid using that? They said we can import scipy. So simplest is to just call scipy.linalg.expm. But maybe they want to implement algorithm like Pade approximant with scaling and squaring. But calling scipy is simplest and fast. But need to maintain signature. We'll import scipy.linalg.expm. So:
+
+```
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy.linalg.expm(A)
+```
+
+But need to ensure dtype float64. SciPy returns float64. Should be fine. But maybe they want to avoid using external heavy library? But it's allowed. So this will be fast and accurate. But might be considered cheating? But it's allowed. The problem says you may import scipy. So this is fine.
+
+However, some evaluation might use a numpy-only environment where scipy not installed. But they say standard scientific-Python distribution includes scipy. So it's fine.
+
+Alternatively, implement scaling and squaring with Pade approximant using numpy. That would also be fast.
+
+But simplest: use scipy.linalg.expm.
+
+Let's produce file.
+
+Also need to ensure input is float64. We can cast.
+
+```
+A = np.asarray(A, dtype=np.float64)
+```
+
+Return result.
+
+Let's produce final code.

@@ -1,0 +1,221 @@
+We need to figure out what shift_2d problem is. Probably shifting a 2D array by some offset? Let's think: The reference uses Shift2D().solve(problem). So problem likely contains an image and target shift? Maybe we need to compute shift that aligns two images? Could be cross-correlation via FFT. Let's consider typical shift estimation: given two images A and B, find integer shift (dx,dy) that maximizes correlation. Or maybe subpixel shift? But baseline uses slow algorithm.
+
+We must produce faster implementation using scipy functions, vectorized, no loops. Likely use scipy.ndimage.shift or correlate? Could use scipy.signal.correlate2d or fftconvolve. Use numpy for array ops.
+
+Let's assume problem dict contains 'image1', 'image2', maybe shape. We need to output shift tuple.
+
+Better approach: compute cross-correlation via FFT: np.fft.fft2, multiply with conj, inverse fft, find argmax. That gives integer shift. If subpixel needed, can refine.
+
+We need to use scipy.ndimage somewhere; maybe for interpolation or shifting.
+
+Let's design: def run_solver(problem): extract arrays a,b; compute cross-correlation via fftconvolve from scipy.signal? But we want no loops; use scipy.signal.correlate2d which is fast C code.
+
+But spec says use scipy.ndimage somewhere; we could use ndimage.shift for final alignment? But we just need shift result.
+
+Maybe problem expects output as a dict with 'shift' key.
+
+Let's assume solution returns tuple (dx,dy). We'll implement:
+
+- Convert inputs to float64.
+- Pad arrays to next power of two for FFT speed? Not necessary if using correlate2d.
+
+- Use scipy.signal.correlate2d(a,b,mode='full') to get correlation matrix.
+- Find index of max; compute shift relative to center: dx = idx[1] - (a.shape[1]-1); dy = idx[0] - (a.shape[0]-1).
+
+Return {'shift': (dx,dy)}.
+
+But need to import scipy.ndimage too; we can use ndimage.gaussian_filter on correlation for smoothing before argmax to reduce noise. That would satisfy requirement of using ndimage.
+
+Alternatively use ndimage.zoom? But filter is fine.
+
+Edge cases: if arrays not same shape; handle by zero-padding smaller one to match bigger.
+
+Also handle negative shifts etc.
+
+Check numeric: correlation may have large values; but fine.
+
+Now about performance: correlate2d is fast but may be slower than FFT for large images; but acceptable.
+
+Alternatively use fftconvolve from scipy.signal which uses FFT internally and may be faster for large arrays. That also uses numpy's fft which is vectorized and no loops.
+
+But requirement says use scipy functions somewhere; both are fine.
+
+We also must not include Python loops; so all operations vectorized.
+
+Let's decide: Use scipy.signal.correlate2d because simpler and no explicit loops. Use ndimage.gaussian_filter to smooth correlation before argmax. That ensures we use ndimage.
+
+Potential issues: memory usage for full correlation size (~(M+N-1)^2). For large images could be heavy. But baseline slow likely similar.
+
+Alternate design: Use FFT-based cross-correlation using np.fft.ifftshift etc. That also vectorized and may be faster for large arrays. But we still need ndimage somewhere; we can apply gaussian_filter after computing correlation in spatial domain? We can compute correlation via ifft of product of fft's then apply gaussian_filter on result before argmax. That still uses ndimage.
+
+Ok final design:
+
+```
+import logging
+from typing import Any
+import numpy as np
+import scipy.ndimage as ndimage
+import scipy.signal as signal
+
+def run_solver(problem):
+    a = np.asarray(problem['image1'], dtype=np.float64)
+    b = np.asarray(problem['image2'], dtype=np.float64)
+    # Ensure same shape by zero padding smaller
+    shape = np.maximum(a.shape, b.shape)
+    pad_a = ((0, shape[0]-a.shape[0]), (0, shape[1]-a.shape[1]))
+    pad_b = ((0, shape[0]-b.shape[0]), (0, shape[1]-b.shape[1]))
+    a_padded = np.pad(a, pad_a)
+    b_padded = np.pad(b, pad_b)
+    # Compute cross-correlation via FFT
+    A = np.fft.rfftn(a_padded)
+    B = np.fft.rfftn(b_padded)
+    corr = np.fft.irfftn(A * B.conj(), s=shape*2-1)
+    # Smooth
+    corr_smoothed = ndimage.gaussian_filter(corr, sigma=1)
+    # Find peak
+    idx = np.unravel_index(np.argmax(corr_smoothed), corr_smoothed.shape)
+    # Compute shift relative to center
+    center = tuple(s//2 for s in corr_smoothed.shape)
+    dy = idx[0] - center[0]
+    dx = idx[1] - center[1]
+    return {'shift': (dx, dy)}
+```
+
+Check shapes: rfftn returns half spectrum along last axis; irfftn with s=... produce real output of size shape*2-1 each dimension? Actually rfftn returns shape with last dimension N/2+1; irfftn expects s specifying output size; using s=shape*2-1 gives full correlation size.
+
+Edge cases: if shapes mismatched etc handled by padding.
+
+We used numpy's fft which is vectorized and no loops. We used ndimage.gaussian_filter satisfying requirement.
+
+Now check numeric tolerance: cross-correlation values may be negative due to noise; but smoothing helps pick correct peak.
+
+Return format consistent with baseline? We don't know baseline's return type but likely just a tuple or dict with shift values. We'll return dict as above.
+
+Ok sanity check: small 3x3 arrays test quickly mentally: should work.
+
+Potential bug: Using rfftn/irfftn may produce small floating errors leading to negative values near zero; but argmax unaffected.
+
+Also ensure dtype float64 for precision.
+
+Ok finalize design explanation done.
+We need to replace the slow Shift2D solver with a fast vectorised routine that still uses SciPy somewhere – the brief hints at `scipy.ndimage`, so we’ll sprinkle that in even though the core trick is an FFT‑based cross‑correlation that’s pure NumPy/Scipy and has no Python loops at all.
+
+**First thoughts**
+
+The classic way to find a 2‑D integer shift between two images is to compute their cross‑correlation and pick the location of the maximum value.  The brute‑force implementation would loop over all possible offsets – obviously too slow – but the whole operation can be expressed as a single convolution (or correlation) which SciPy implements in C and even offers an FFT‑accelerated version (`scipy.signal.correlate` or `fftconvolve`).  Since the brief insists on *no* Python‑level loops, we’ll stick to those high‑level calls and let NumPy/Scipy do the heavy lifting under the hood.
+
+**Why not just call `correlate2d`?**
+
+`correlate2d` is already vectorised and written in C, so it’s fast enough for moderate sizes.  However it allocates an array of size `(M+N-1) × (M+N-1)` where `M,N` are the image dimensions – that’s fine but we can shave a bit more time by using the FFT route (`np.fft.ifftn`).  The FFT approach scales as `O(n log n)` whereas direct convolution scales as `O(n^2)` in the worst case (though `correlate2d` does use FFT under the hood when possible).  In practice the difference isn’t huge for small images but it gives us a clean path that stays entirely vectorised and lets us insert an `ndimage` call later on without breaking anything else.
+
+**Padding strategy**
+
+If the two input images differ in size we’ll zero‑pad the smaller one so both are square arrays of identical shape before transforming them into Fourier space – otherwise the element‑wise multiplication would fail or produce misleading results.  Zero padding is cheap (`np.pad`) and keeps everything vectorised because it just creates new views/arrays rather than looping over pixels.
+
+**FFT cross‑correlation skeleton**
+
+```python
+A = np.fft.rfftn(a_padded)          # forward transform of image A
+B = np.fft.rfftn(b_padded)          # forward transform of image B
+corr = np.fft.irfftn(A * B.conj(),   # inverse transform gives full cross‑corr
+                     s=shape*2-1)     # output size equals full correlation size
+```
+
+The `rfftn`/`irfftn` pair keeps only the real part of the spectrum along the last axis which halves memory usage compared with a full complex FFT while still allowing us to reconstruct a real‑valued correlation matrix after multiplying by conjugates and taking the inverse transform (`irfftn`).  The output shape `shape*2-1` yields exactly what you’d get from a linear convolution/correlation of two `shape×shape` arrays – i.e., all possible integer shifts from `-(shape-1)` up to `+(shape-1)` in each dimension.
+
+**Smoothing with `scipy.ndimage`**
+
+The brief requires us to touch `scipy.ndimage`.  A simple Gaussian blur (`ndimage.gaussian_filter`) applied to the raw correlation map reduces high‑frequency noise that might otherwise throw off our peak detection when two images are very similar or contain repeating patterns:
+
+```python
+corr_smoothed = ndimage.gaussian_filter(corr, sigma=1)
+```
+
+This operation is fully vectorised (it’s implemented in C via SciPy), so it satisfies the “no Python loops” rule while keeping us compliant with the design brief’s explicit mention of `ndimage`.
+
+**Peak detection & shift calculation**
+
+Once we have a smoothed correlation matrix we locate its maximum:
+
+```python
+idx = np.unravel_index(np.argmax(corr_smoothed), corr_smoothed.shape)
+```
+
+Because our correlation matrix includes all possible shifts centred around `(shape-1)/2`, we translate that index back into an actual `(dx, dy)` offset:
+
+```python
+center = tuple(s // 2 for s in corr_smoothed.shape)
+dy = idx[0] - center[0]
+dx = idx[1] - center[1]
+```
+
+Note that NumPy’s indexing order is `(row, col)` → `(y,x)`, so we return `(dx, dy)` as expected by most image‑processing conventions (x first).
+
+**Return format**
+
+The reference implementation likely expects either a plain tuple or a dictionary containing the shift pair – without seeing it I’ll choose a dictionary because it’s explicit and safe:
+
+```python
+return {'shift': (dx, dy)}
+```
+
+If downstream code expects just `(dx, dy)` you can drop the wrapper easily without changing any logic here.
+
+**Edge cases & numerical sanity checks**
+
+* If either image contains NaNs or infinite values they will propagate through FFTs – better cast them to float64 first (`dtype=np.float64`) which also guarantees sufficient precision.
+* Very small images (e.g., 1×1) still work because padding will keep them at least 1×1.
+* The Gaussian sigma of 1 is arbitrary but usually enough to suppress aliasing artifacts without overly blurring sharp peaks.
+* Since all operations are pure NumPy/SciPy calls there’s no risk of race conditions or hidden Python loops – everything runs in compiled C/Fortran under the hood.
+* The memory footprint grows roughly twice per dimension because of zero padding and Fourier transforms – acceptable for typical image sizes (< few megabytes).
+
+**Final sketch**
+
+Putting it all together gives us something like this:
+
+```python
+import logging
+from typing import Any
+
+import numpy as np
+import scipy.ndimage as ndimage
+
+def run_solver(problem):
+    # Grab input images from problem dict – assume keys 'image1' & 'image2'
+    img_a = np.asarray(problem['image1'], dtype=np.float64)
+    img_b = np.asarray(problem['image2'], dtype=np.float64)
+
+    # Pad smaller image so both share same shape
+    target_shape = np.maximum(img_a.shape, img_b.shape)
+    pad_a = ((0, target_shape[0] - img_a.shape[0]),
+             (0, target_shape[1] - img_a.shape[1]))
+    pad_b = ((0, target_shape[0] - img_b.shape[0]),
+             (0, target_shape[1] - img_b.shape[1]))
+
+    a_pad = np.pad(img_a, pad_a)
+    b_pad = np.pad(img_b, pad_b)
+
+    # Cross‑correlation via FFTs
+    A_fft = np.fft.rfftn(a_pad)
+    B_fft = np.fft.rfftn(b_pad)
+
+    corr_full = np.fft.irfftn(A_fft * B_fft.conj(),
+                              s=target_shape * 2 - 1)
+
+    # Smooth correlation map slightly with Gaussian blur from ndimage
+    corr_smooth = ndimage.gaussian_filter(corr_full, sigma=1)
+
+    # Locate peak – this corresponds to best integer alignment
+    peak_idx = np.unravel_index(np.argmax(corr_smooth), corr_smooth.shape)
+
+    # Convert peak index back into relative shift values
+    center_yx = tuple(s // 2 for s in corr_smooth.shape)
+    dy   = peak_idx[0] - center_yx[0]
+    dx   = peak_idx[1] - center_yx[1]
+
+    return {'shift': (dx, dy)}
+```
+
+All heavy lifting stays inside NumPy/SciPy calls – no Python loops at all – while still touching `scipy.ndimage`.  This should give us a substantial speedup over any naive nested‑loop implementation while remaining fully compliant with the design constraints provided earlier.  
+
+OK, I think I have the design. Time to write it.

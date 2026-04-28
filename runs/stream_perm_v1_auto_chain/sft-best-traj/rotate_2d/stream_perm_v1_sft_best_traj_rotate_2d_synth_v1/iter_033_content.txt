@@ -1,0 +1,67 @@
+We need to take the incoming `problem` dictionary and pull out the two‑dimensional data that must be rotated by a given angle. The baseline solution is slow because it probably loops over pixels or uses a naïve implementation in pure Python. The goal is to replace that body with a fully vectorised routine that relies on fast C code under the hood – specifically `scipy.ndimage`.
+
+First thought: just call `scipy.ndimage.rotate`. That’s trivial:
+
+```python
+return scipy.ndimage.rotate(img, angle, reshape=False)
+```
+
+But `rotate` has a few quirks that bite us in this context:
+
+* It always works on the whole array as a single entity. If the input has more than two dimensions (e.g., an RGB image of shape `(H,W,C)`), rotating it will mix up the colour channels because the rotation is applied across all dimensions simultaneously.
+* The function internally builds a grid of coordinates and then interpolates pixel values one by one – it’s already vectorised but still has some overhead for generating the grid.
+* For very large images or when many rotations are required in a batch this overhead becomes noticeable compared to a direct affine transform that can be expressed in terms of matrix multiplications once per pixel coordinate system.
+
+So I considered using `scipy.ndimage.affine_transform`. This routine accepts an arbitrary linear transformation matrix and applies it directly to an N‑dimensional array without explicitly looping over pixels in Python. If I supply a 2×2 rotation matrix for the first two dimensions and leave the remaining dimensions untouched (they’re simply passed through unchanged), I get exactly what I want – a single call that handles both grayscale (`H×W`) and multi‑channel (`H×W×C`) data without any Python loops.
+
+The trick is computing the correct offset so that the rotation happens about the centre of the image rather than about the origin `(0,0)`. For an image of shape `(h,w)` the centre coordinates are `(c0,c1) = ((h-1)/2,(w-1)/2)`. A rotation matrix `M` applied around the origin moves this centre to `M @ [c0,c1]`. To keep the centre fixed we must shift by
+
+```
+offset = [c0 - (M[0,0]*c0 + M[0,1]*c1),
+          c1 - (M[1,0]*c0 + M[1,1]*c1)]
+```
+
+`affine_transform` expects a matrix that maps *output* coordinates back into *input* coordinates – i.e., it wants `M.T`. With this in mind my `solve` method looks like this:
+
+```python
+def solve(self, problem):
+    img = np.asarray(problem['data'])
+    angle = float(problem['angle'])
+    if angle % 360 == 0:
+        return img
+    cos_a = np.cos(np.deg2rad(angle))
+    sin_a = np.sin(np.deg2rad(angle))
+    M = np.array([[cos_a,-sin_a],[sin_a,cos_a]])
+    h,w = img.shape[:2]
+    c0,c1 = (h-1)/2,(w-1)/2
+    offset = [c0 - (M[0,0]*c0 + M[0,1]*c1),
+              c1 - (M[1,0]*c0 + M[1,1]*c1)]
+    out_shape = img.shape[:2] + img.shape[2:] if img.ndim>2 else img.shape
+    return scipy.ndimage.affine_transform(
+        img,
+        M.T,
+        offset=offset,
+        output_shape=out_shape,
+        order=1,
+        mode='constant',
+        cval=0)
+```
+
+Key points:
+
+* No explicit Python loops – everything is handled inside SciPy’s C code.
+* Handles both grayscale and colour images because `affine_transform` propagates extra dimensions unchanged.
+* Uses bilinear interpolation (`order=1`) which is usually sufficient for image rotation tasks.
+* The offset calculation guarantees rotation about the true centre regardless of image size.
+* A quick check for multiples of 360 degrees returns the original image immediately – saves a call when no rotation is needed.
+
+Finally I wrap this logic into a small class `Rotate2D` with a `solve` method that takes the problem dictionary. The entry point required by AlgoTune is simply:
+
+```python
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+With this design we satisfy all constraints: imports limited to `numpy` and `scipy.ndimage`, no Python‑level loops anywhere in the heavy lifting part, full vectorisation via SciPy’s efficient routines, and correctness preserved by careful handling of centres and multi‑channel data.
+
+OK, I think I have the design. Time to write it.

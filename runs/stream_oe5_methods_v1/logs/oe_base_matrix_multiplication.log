@@ -1,0 +1,411 @@
+
+$ /Users/rishi/miniconda3/envs/atlas/bin/modal run experiment/openevolve_runner.py --task-family algotune --problem-id matrix_multiplication --iterations 40 --random-seed 42 --run-name stream_oe5_methods_v1_base_matrix_multiplication_oe
+✓ Initialized. View run at 
+https://modal.com/apps/rishipython/main/ap-iylnhbw8SfShqyOf9kQd0R
+Building image im-CrZdTA9nFalzOqepDZBda9
+
+=> Step 0: FROM base
+
+=> Step 1: COPY . /
+Saving image...
+Image saved, took 2.54s
+
+Built image im-CrZdTA9nFalzOqepDZBda9 in 10.54s
+
+
+Building image im-NcmBTkCLUtkH5ZI5l7xopQ
+
+=> Step 0: FROM base
+
+=> Step 1: ENV PYTHONPATH=/atlas
+
+=> Step 2: ENV HF_HOME=/hf_cache
+Saving image...
+Image saved, took 1.56s
+
+Built image im-NcmBTkCLUtkH5ZI5l7xopQ in 2.87s
+
+
+✓ Created objects.
+├── 🔨 Created mount /Users/rishi/cs288/atlas/experiment/openevolve_runner.py
+├── 🔨 Created mount /Users/rishi/cs288/atlas
+└── 🔨 Created function run_evolution.
+[local] launching OpenEvolve: task_family=algotune problem=matrix_multiplication iterations=40 run_name=stream_oe5_methods_v1_base_matrix_multiplication_oe adapter=None seed=42
+[run] served_model=openai/gpt-oss-20b (base, no adapter)
+[config] applied 'algotune' OE-repo preset (top-level overrides: ['checkpoint_interval', 'database', 'diff_based_evolution', 'evaluator', 'llm', 'max_code_length', 'prompt'])
+[run] task_family=algotune problem=matrix_multiplication iterations=40 run_name=stream_oe5_methods_v1_base_matrix_multiplication_oe
+[run] output_dir=/outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe
+[run] initial_program (6042 bytes)
+[run] evaluator (4536 bytes)
+[vllm] launching: /usr/local/bin/python -m vllm.entrypoints.openai.api_server --model openai/gpt-oss-20b --port 8000 --gpu-memory-utilization 0.80 --max-model-len 32768 --reasoning-parser openai_gptoss
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299] 
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299]        █     █     █▄   ▄█
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299]  ▄▄ ▄█ █     █     █ ▀▄▀ █  version 0.19.1
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299]   █▄█▀ █     █     █     █  model   openai/gpt-oss-20b
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299]    ▀▀  ▀▀▀▀▀ ▀▀▀▀▀ ▀     ▀
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:299] 
+(APIServer pid=4) INFO 04-28 03:32:11 [utils.py:233] non-default args: {'model': 'openai/gpt-oss-20b', 'max_model_len': 32768, 'reasoning_parser': 'openai_gptoss', 'gpu_memory_utilization': 0.8}
+(APIServer pid=4) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(APIServer pid=4) INFO 04-28 03:32:40 [model.py:549] Resolved architecture: GptOssForCausalLM
+(APIServer pid=4) 
+[1AParse safetensors files:   0%|          | 0/3 [00:00<?, ?it/s]
+[1AParse safetensors files: 100%|██████████| 3/3 [00:00<00:00, 33.41it/s]
+(APIServer pid=4) INFO 04-28 03:32:40 [model.py:1678] Using max model len 32768
+(APIServer pid=4) INFO 04-28 03:32:40 [config.py:131] Overriding max cuda graph capture size to 1024 for performance.
+(APIServer pid=4) INFO 04-28 03:32:40 [vllm.py:790] Asynchronous scheduling is enabled.
+(EngineCore pid=22) INFO 04-28 03:33:00 [core.py:105] Initializing a V1 LLM engine (v0.19.1) with config: model='openai/gpt-oss-20b', speculative_config=None, tokenizer='openai/gpt-oss-20b', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=32768, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=mxfp4, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='openai_gptoss', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=openai/gpt-oss-20b, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'splitting_ops': ['vllm::unified_attention', 'vllm::unified_attention_with_output', 'vllm::unified_mla_attention', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::plamo2_mamba_mixer', 'vllm::gdn_attention_core', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::kda_attention', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_images_per_batch': 0, 'compile_sizes': [], 'compile_ranges_endpoints': [2048], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512, 528, 544, 560, 576, 592, 608, 624, 640, 656, 672, 688, 704, 720, 736, 752, 768, 784, 800, 816, 832, 848, 864, 880, 896, 912, 928, 944, 960, 976, 992, 1008, 1024], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False}, 'max_cudagraph_capture_size': 1024, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}
+(EngineCore pid=22) INFO 04-28 03:33:01 [parallel_state.py:1400] world_size=1 rank=0 local_rank=0 distributed_init_method=tcp://172.20.0.48:64215 backend=nccl
+(EngineCore pid=22) INFO 04-28 03:33:01 [parallel_state.py:1716] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, PCP rank 0, TP rank 0, EP rank 0, EPLB rank N/A
+(EngineCore pid=22) INFO 04-28 03:33:01 [gpu_model_runner.py:4735] Starting to load model openai/gpt-oss-20b...
+(EngineCore pid=22) INFO 04-28 03:33:04 [cuda.py:334] Using TRITON_ATTN attention backend out of potential backends: ['TRITON_ATTN'].
+(EngineCore pid=22) INFO 04-28 03:33:04 [mxfp4.py:352] Using 'MARLIN' Mxfp4 MoE backend.
+(EngineCore pid=22) <frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.cudart module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.runtime module instead.
+(EngineCore pid=22) <frozen importlib._bootstrap_external>:1301: FutureWarning: The cuda.nvrtc module is deprecated and will be removed in a future release, please switch to use the cuda.bindings.nvrtc module instead.
+(EngineCore pid=22) Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+(EngineCore pid=22) Loading safetensors checkpoint shards:   0% Completed | 0/3 [00:00<?, ?it/s]
+(EngineCore pid=22) Loading safetensors checkpoint shards:  33% Completed | 1/3 [00:02<00:04,  2.48s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards:  67% Completed | 2/3 [00:04<00:02,  2.38s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:06<00:00,  2.23s/it]
+(EngineCore pid=22) Loading safetensors checkpoint shards: 100% Completed | 3/3 [00:06<00:00,  2.28s/it]
+(EngineCore pid=22) 
+(EngineCore pid=22) INFO 04-28 03:33:12 [default_loader.py:384] Loading weights took 6.99 seconds
+(EngineCore pid=22) INFO 04-28 03:33:12 [mxfp4.py:836] Using MoEPrepareAndFinalizeNoDPEPModular
+(EngineCore pid=22) INFO 04-28 03:33:13 [gpu_model_runner.py:4820] Model loading took 13.72 GiB memory and 10.537099 seconds
+(EngineCore pid=22) INFO 04-28 03:33:29 [backends.py:1051] Using cache directory: /root/.cache/vllm/torch_compile_cache/f140a718be/rank_0_0/backbone for vLLM's torch.compile
+(EngineCore pid=22) INFO 04-28 03:33:29 [backends.py:1111] Dynamo bytecode transform time: 16.23 s
+(EngineCore pid=22) INFO 04-28 03:33:39 [backends.py:372] Cache the graph of compile range (1, 2048) for later use
+(EngineCore pid=22) INFO 04-28 03:33:48 [backends.py:390] Compiling a graph for compile range (1, 2048) takes 18.33 s
+(EngineCore pid=22) INFO 04-28 03:33:50 [decorators.py:655] saved AOT compiled function to /root/.cache/vllm/torch_compile_cache/torch_aot_compile/e4ff7c274e6a50cb9831ec5e0a52d31861a8175321f478624a32e47f262f789b/rank_0_0/model
+(EngineCore pid=22) INFO 04-28 03:33:50 [monitor.py:48] torch.compile took 37.18 s in total
+(EngineCore pid=22) INFO 04-28 03:33:51 [monitor.py:76] Initial profiling/warmup run took 0.87 s
+(EngineCore pid=22) INFO 04-28 03:34:04 [kv_cache_utils.py:829] Overriding num_gpu_blocks=0 with num_gpu_blocks_override=1024
+(EngineCore pid=22) INFO 04-28 03:34:04 [gpu_model_runner.py:5876] Profiling CUDA graph memory: PIECEWISE=83 (largest=1024), FULL=35 (largest=256)
+(EngineCore pid=22) INFO 04-28 03:34:08 [gpu_model_runner.py:5955] Estimated CUDA graph memory: 0.42 GiB total
+(EngineCore pid=22) INFO 04-28 03:34:08 [gpu_worker.py:436] Available KV cache memory: 48.45 GiB
+(EngineCore pid=22) INFO 04-28 03:34:08 [gpu_worker.py:470] In v0.19, CUDA graph memory profiling will be enabled by default (VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1), which more accurately accounts for CUDA graph memory during KV cache allocation. To try it now, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=1 and increase --gpu-memory-utilization from 0.8000 to 0.8053 to maintain the same effective KV cache size.
+(EngineCore pid=22) INFO 04-28 03:34:08 [kv_cache_utils.py:1319] GPU KV cache size: 1,058,320 tokens
+(EngineCore pid=22) INFO 04-28 03:34:08 [kv_cache_utils.py:1324] Maximum concurrency for 32,768 tokens per request: 60.55x
+(EngineCore pid=22) 
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   0%|          | 0/83 [00:00<?, ?it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   1%|          | 1/83 [00:00<00:13,  6.21it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   2%|▏         | 2/83 [00:00<00:12,  6.65it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   4%|▎         | 3/83 [00:00<00:11,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   5%|▍         | 4/83 [00:00<00:11,  6.90it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   6%|▌         | 5/83 [00:00<00:11,  6.94it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   7%|▋         | 6/83 [00:00<00:11,  6.96it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):   8%|▊         | 7/83 [00:01<00:10,  6.97it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  10%|▉         | 8/83 [00:01<00:10,  6.94it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  11%|█         | 9/83 [00:01<00:10,  6.97it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  12%|█▏        | 10/83 [00:01<00:10,  6.92it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  13%|█▎        | 11/83 [00:01<00:10,  6.92it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  14%|█▍        | 12/83 [00:01<00:10,  6.97it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  16%|█▌        | 13/83 [00:01<00:10,  6.96it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  17%|█▋        | 14/83 [00:02<00:09,  6.98it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  18%|█▊        | 15/83 [00:02<00:09,  6.98it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  19%|█▉        | 16/83 [00:02<00:09,  6.96it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  20%|██        | 17/83 [00:02<00:09,  6.94it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  22%|██▏       | 18/83 [00:02<00:09,  6.88it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  23%|██▎       | 19/83 [00:02<00:09,  6.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  24%|██▍       | 20/83 [00:02<00:09,  6.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  25%|██▌       | 21/83 [00:03<00:09,  6.85it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  27%|██▋       | 22/83 [00:03<00:09,  6.74it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  28%|██▊       | 23/83 [00:03<00:08,  6.74it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  29%|██▉       | 24/83 [00:03<00:08,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  30%|███       | 25/83 [00:03<00:08,  6.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  31%|███▏      | 26/83 [00:03<00:08,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  33%|███▎      | 27/83 [00:03<00:08,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  34%|███▎      | 28/83 [00:04<00:08,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  35%|███▍      | 29/83 [00:04<00:07,  6.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  36%|███▌      | 30/83 [00:04<00:07,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  37%|███▋      | 31/83 [00:04<00:07,  6.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  39%|███▊      | 32/83 [00:04<00:07,  6.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  40%|███▉      | 33/83 [00:04<00:07,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  41%|████      | 34/83 [00:04<00:07,  6.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  42%|████▏     | 35/83 [00:05<00:07,  6.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  43%|████▎     | 36/83 [00:05<00:07,  6.71it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  45%|████▍     | 37/83 [00:05<00:06,  6.73it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  46%|████▌     | 38/83 [00:05<00:06,  6.75it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  47%|████▋     | 39/83 [00:05<00:06,  6.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  48%|████▊     | 40/83 [00:05<00:06,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  49%|████▉     | 41/83 [00:06<00:06,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  51%|█████     | 42/83 [00:06<00:05,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  52%|█████▏    | 43/83 [00:06<00:05,  6.85it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  53%|█████▎    | 44/83 [00:06<00:05,  6.74it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  54%|█████▍    | 45/83 [00:06<00:05,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  55%|█████▌    | 46/83 [00:06<00:05,  6.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  57%|█████▋    | 47/83 [00:06<00:05,  6.86it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  58%|█████▊    | 48/83 [00:07<00:05,  6.91it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  59%|█████▉    | 49/83 [00:07<00:04,  6.90it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  60%|██████    | 50/83 [00:07<00:04,  6.89it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  61%|██████▏   | 51/83 [00:07<00:04,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  63%|██████▎   | 52/83 [00:07<00:04,  6.88it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  64%|██████▍   | 53/83 [00:07<00:04,  6.87it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  65%|██████▌   | 54/83 [00:07<00:04,  6.88it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  66%|██████▋   | 55/83 [00:08<00:04,  6.89it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  67%|██████▋   | 56/83 [00:08<00:03,  6.89it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  69%|██████▊   | 57/83 [00:08<00:03,  6.85it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  70%|██████▉   | 58/83 [00:08<00:03,  6.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  71%|███████   | 59/83 [00:08<00:03,  6.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  72%|███████▏  | 60/83 [00:08<00:03,  6.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  73%|███████▎  | 61/83 [00:08<00:03,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  75%|███████▍  | 62/83 [00:09<00:03,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  76%|███████▌  | 63/83 [00:09<00:02,  6.81it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  77%|███████▋  | 64/83 [00:09<00:02,  6.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  78%|███████▊  | 65/83 [00:09<00:02,  6.63it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  80%|███████▉  | 66/83 [00:09<00:02,  6.66it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  81%|████████  | 67/83 [00:09<00:02,  6.71it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  82%|████████▏ | 68/83 [00:09<00:02,  6.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  83%|████████▎ | 69/83 [00:10<00:02,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  84%|████████▍ | 70/83 [00:10<00:01,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  86%|████████▌ | 71/83 [00:10<00:01,  6.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  87%|████████▋ | 72/83 [00:10<00:01,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  88%|████████▊ | 73/83 [00:10<00:01,  6.77it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  89%|████████▉ | 74/83 [00:10<00:01,  6.78it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  90%|█████████ | 75/83 [00:10<00:01,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  92%|█████████▏| 76/83 [00:11<00:01,  6.83it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  93%|█████████▎| 77/83 [00:11<00:00,  6.76it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  94%|█████████▍| 78/83 [00:11<00:00,  6.80it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  95%|█████████▌| 79/83 [00:11<00:00,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  96%|█████████▋| 80/83 [00:11<00:00,  6.84it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  98%|█████████▊| 81/83 [00:11<00:00,  6.82it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE):  99%|█████████▉| 82/83 [00:12<00:00,  6.79it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 83/83 [00:12<00:00,  6.59it/s]
+[1ACapturing CUDA graphs (mixed prefill-decode, PIECEWISE): 100%|██████████| 83/83 [00:12<00:00,  6.81it/s]
+(EngineCore pid=22) 
+[1ACapturing CUDA graphs (decode, FULL):   0%|          | 0/35 [00:00<?, ?it/s]
+[1ACapturing CUDA graphs (decode, FULL):   3%|▎         | 1/35 [00:00<00:05,  6.42it/s]
+[1ACapturing CUDA graphs (decode, FULL):   6%|▌         | 2/35 [00:00<00:05,  6.48it/s]
+[1ACapturing CUDA graphs (decode, FULL):   9%|▊         | 3/35 [00:00<00:04,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  11%|█▏        | 4/35 [00:00<00:04,  6.56it/s]
+[1ACapturing CUDA graphs (decode, FULL):  14%|█▍        | 5/35 [00:00<00:04,  6.56it/s]
+[1ACapturing CUDA graphs (decode, FULL):  17%|█▋        | 6/35 [00:00<00:04,  6.55it/s]
+[1ACapturing CUDA graphs (decode, FULL):  20%|██        | 7/35 [00:01<00:04,  6.57it/s]
+[1ACapturing CUDA graphs (decode, FULL):  23%|██▎       | 8/35 [00:01<00:04,  6.57it/s]
+[1ACapturing CUDA graphs (decode, FULL):  26%|██▌       | 9/35 [00:01<00:03,  6.55it/s]
+[1ACapturing CUDA graphs (decode, FULL):  29%|██▊       | 10/35 [00:01<00:03,  6.57it/s]
+[1ACapturing CUDA graphs (decode, FULL):  31%|███▏      | 11/35 [00:01<00:03,  6.58it/s]
+[1ACapturing CUDA graphs (decode, FULL):  34%|███▍      | 12/35 [00:01<00:03,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  37%|███▋      | 13/35 [00:01<00:03,  6.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  40%|████      | 14/35 [00:02<00:03,  6.52it/s]
+[1ACapturing CUDA graphs (decode, FULL):  43%|████▎     | 15/35 [00:02<00:03,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  46%|████▌     | 16/35 [00:02<00:02,  6.48it/s]
+[1ACapturing CUDA graphs (decode, FULL):  49%|████▊     | 17/35 [00:02<00:02,  6.48it/s]
+[1ACapturing CUDA graphs (decode, FULL):  51%|█████▏    | 18/35 [00:02<00:02,  6.48it/s]
+[1ACapturing CUDA graphs (decode, FULL):  54%|█████▍    | 19/35 [00:02<00:02,  6.49it/s]
+[1ACapturing CUDA graphs (decode, FULL):  57%|█████▋    | 20/35 [00:03<00:02,  6.52it/s]
+[1ACapturing CUDA graphs (decode, FULL):  60%|██████    | 21/35 [00:03<00:02,  6.51it/s]
+[1ACapturing CUDA graphs (decode, FULL):  63%|██████▎   | 22/35 [00:03<00:02,  6.48it/s]
+[1ACapturing CUDA graphs (decode, FULL):  66%|██████▌   | 23/35 [00:03<00:01,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  69%|██████▊   | 24/35 [00:03<00:01,  6.46it/s]
+[1ACapturing CUDA graphs (decode, FULL):  71%|███████▏  | 25/35 [00:03<00:01,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  74%|███████▍  | 26/35 [00:03<00:01,  6.51it/s]
+[1ACapturing CUDA graphs (decode, FULL):  77%|███████▋  | 27/35 [00:04<00:01,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  80%|████████  | 28/35 [00:04<00:01,  6.51it/s]
+[1ACapturing CUDA graphs (decode, FULL):  83%|████████▎ | 29/35 [00:04<00:00,  6.50it/s]
+[1ACapturing CUDA graphs (decode, FULL):  86%|████████▌ | 30/35 [00:04<00:00,  6.56it/s]
+[1ACapturing CUDA graphs (decode, FULL):  89%|████████▊ | 31/35 [00:06<00:02,  1.41it/s]
+[1ACapturing CUDA graphs (decode, FULL):  91%|█████████▏| 32/35 [00:07<00:02,  1.16it/s]
+[1ACapturing CUDA graphs (decode, FULL):  94%|█████████▍| 33/35 [00:07<00:01,  1.54it/s]
+[1ACapturing CUDA graphs (decode, FULL):  97%|█████████▋| 34/35 [00:08<00:00,  1.99it/s]
+[1ACapturing CUDA graphs (decode, FULL): 100%|██████████| 35/35 [00:09<00:00,  1.22it/s]
+[1ACapturing CUDA graphs (decode, FULL): 100%|██████████| 35/35 [00:09<00:00,  3.61it/s]
+(EngineCore pid=22) INFO 04-28 03:34:31 [gpu_model_runner.py:6046] Graph capturing finished in 23 secs, took 0.69 GiB
+(EngineCore pid=22) INFO 04-28 03:34:31 [gpu_worker.py:597] CUDA graph pool memory: 0.69 GiB (actual), 0.42 GiB (estimated), difference: 0.26 GiB (38.4%).
+(EngineCore pid=22) INFO 04-28 03:34:31 [core.py:283] init engine (profile, create kv cache, warmup model) took 78.54 seconds
+(EngineCore pid=22) INFO 04-28 03:34:35 [vllm.py:790] Asynchronous scheduling is enabled.
+(APIServer pid=4) INFO 04-28 03:34:35 [api_server.py:592] Supported tasks: ['generate']
+(APIServer pid=4) WARNING 04-28 03:34:35 [serving.py:233] For gpt-oss, we ignore --enable-auto-tool-choice and always enable tool use.
+(APIServer pid=4) INFO 04-28 03:34:39 [hf.py:314] Detected the chat template content format to be 'string'. You can set `--chat-template-content-format` to override this.
+(APIServer pid=4) INFO 04-28 03:34:39 [api_server.py:596] Starting vLLM server on http://0.0.0.0:8000
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:37] Available routes are:
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /openapi.json, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /docs, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /redoc, Methods: GET, HEAD
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /tokenize, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /detokenize, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /load, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /version, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /health, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /metrics, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/models, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /ping, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /ping, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /invocations, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/chat/completions, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/chat/completions/batch, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/responses, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/responses/{response_id}, Methods: GET
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/responses/{response_id}/cancel, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/completions, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/messages, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/messages/count_tokens, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /inference/v1/generate, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /scale_elastic_ep, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /is_scaling_elastic_ep, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/chat/completions/render, Methods: POST
+(APIServer pid=4) INFO 04-28 03:34:39 [launcher.py:46] Route: /v1/completions/render, Methods: POST
+(APIServer pid=4) INFO:     Started server process [4]
+(APIServer pid=4) INFO:     Waiting for application startup.
+(APIServer pid=4) INFO:     Application startup complete.
+(APIServer pid=4) INFO:     127.0.0.1:62621 - "GET /v1/models HTTP/1.1" 200 OK
+[vllm] ready at http://localhost:8000/v1
+[oe] starting evolution → /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe
+2026-04-28 03:34:41,588 - INFO - Logging to /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe/logs/openevolve_20260428_033441.log
+2026-04-28 03:34:41,604 - INFO - Set random seed to 42 for reproducibility
+2026-04-28 03:34:41,645 - INFO - Initialized OpenAI LLM with model: openai/gpt-oss-20b
+2026-04-28 03:34:41,646 - INFO - Initialized LLM ensemble with models: openai/gpt-oss-20b (weight: 1.00)
+2026-04-28 03:34:41,653 - INFO - Initialized prompt sampler
+2026-04-28 03:34:41,655 - INFO - Set custom templates: system=evaluator_system_message, user=None
+2026-04-28 03:34:41,656 - INFO - Initialized program database with 0 programs
+2026-04-28 03:34:41,701 - INFO - Successfully loaded evaluation function from /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,701 - INFO - Initialized evaluator with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,702 - INFO - Initialized OpenEvolve with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/initial_program.py
+2026-04-28 03:34:41,703 - INFO - Evolution tracer initialized: /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe/evolution_trace.jsonl
+2026-04-28 03:34:41,703 - INFO - Evolution tracing enabled: /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe/evolution_trace.jsonl
+2026-04-28 03:34:41,704 - INFO - Adding initial program to database
+2026-04-28 03:34:41,708 - INFO - Evaluated program c5d3b55e-5e53-4fd3-b705-244e7308ea7f in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:34:41,709 - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 5, 'diversity': 0}
+2026-04-28 03:34:41,710 - INFO - Initialized process parallel controller with 4 workers
+2026-04-28 03:34:41,711 - INFO - Set max None tasks per child
+2026-04-28 03:34:41,712 - INFO - Started process pool with 4 processes
+2026-04-28 03:34:41,713 - INFO - Using island-based evolution with 4 islands
+2026-04-28 03:34:41,713 - INFO - Island Status:
+2026-04-28 03:34:41,714 - INFO -  * Island 0: 1 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0 (best: c5d3b55e-5e53-4fd3-b705-244e7308ea7f)
+2026-04-28 03:34:41,714 - INFO -    Island 1: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2026-04-28 03:34:41,714 - INFO -    Island 2: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2026-04-28 03:34:41,715 - INFO -    Island 3: 0 programs, best=0.0000, avg=0.0000, diversity=0.00, gen=0
+2026-04-28 03:34:41,715 - INFO - Starting process-based evolution from iteration 1 for 40 iterations (total: 41)
+2026-04-28 03:34:41,874 - INFO - Early stopping disabled
+2026-04-28 03:34:41,903 - INFO - Set custom templates: system=evaluator_system_message, user=None
+2026-04-28 03:34:41,907 - INFO - Successfully loaded evaluation function from /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,907 - INFO - Set custom templates: system=evaluator_system_message, user=None
+2026-04-28 03:34:41,908 - INFO - Initialized evaluator with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,908 - INFO - Set custom templates: system=evaluator_system_message, user=None
+2026-04-28 03:34:41,908 - INFO - Set custom templates: system=evaluator_system_message, user=None
+2026-04-28 03:34:41,910 - INFO - Successfully loaded evaluation function from /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,911 - INFO - Initialized evaluator with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,912 - INFO - Successfully loaded evaluation function from /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,912 - INFO - Initialized evaluator with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,913 - INFO - Successfully loaded evaluation function from /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,913 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:34:41,913 - INFO - Initialized evaluator with /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/evaluator.py
+2026-04-28 03:34:41,915 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:34:41,917 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:34:41,917 - INFO - Sampled model: openai/gpt-oss-20b
+(APIServer pid=4) INFO 04-28 03:34:49 [loggers.py:259] Engine 000: Avg prompt throughput: 261.4 tokens/s, Avg generation throughput: 222.4 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.4%, Prefix cache hit rate: 74.7%
+(APIServer pid=4) INFO 04-28 03:34:59 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 583.9 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.6%, Prefix cache hit rate: 74.7%
+(APIServer pid=4) INFO:     127.0.0.1:38360 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:60233 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:00,630 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:00,630 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:00,656 - INFO - Evaluated program b7273cb1-0d2e-41b9-af48-e480302f4e72 in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:00,656 - INFO - Evaluated program e3c9fc96-0f63-4c25-a091-06b10223a18e in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:00,660 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:00,660 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:00,671 - INFO - New MAP-Elites cell occupied in island 1: {'complexity': 0, 'diversity': 5}
+2026-04-28 03:35:00,676 - INFO - Iteration 3: Program e3c9fc96-0f63-4c25-a091-06b10223a18e (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 18.75s
+2026-04-28 03:35:00,677 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:00,681 - INFO - Iteration 4: Program b7273cb1-0d2e-41b9-af48-e480302f4e72 (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 18.74s
+2026-04-28 03:35:00,681 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO:     127.0.0.1:39343 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+(APIServer pid=4) INFO:     127.0.0.1:27824 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:04,631 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:04,631 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:04,657 - INFO - Evaluated program 7a1bdbba-14a6-4364-b911-f2b06608970d in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:04,657 - INFO - Evaluated program 5a829513-c05e-4bd7-b9b6-fc840b57eadc in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:04,661 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:04,664 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:04,671 - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 9, 'diversity': 9}
+2026-04-28 03:35:04,676 - INFO - Iteration 1: Program 5a829513-c05e-4bd7-b9b6-fc840b57eadc (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 22.75s
+2026-04-28 03:35:04,677 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:04,681 - INFO - Iteration 2: Program 7a1bdbba-14a6-4364-b911-f2b06608970d (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 22.75s
+2026-04-28 03:35:04,681 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:35:09 [loggers.py:259] Engine 000: Avg prompt throughput: 5.6 tokens/s, Avg generation throughput: 522.0 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.4%, Prefix cache hit rate: 87.2%
+(APIServer pid=4) INFO 04-28 03:35:19 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 504.7 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.6%, Prefix cache hit rate: 87.2%
+(APIServer pid=4) INFO 04-28 03:35:29 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 494.8 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.9%, Prefix cache hit rate: 87.2%
+(APIServer pid=4) INFO:     127.0.0.1:60233 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:30,431 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:30,443 - INFO - Evaluated program 09eec474-72bc-4d9e-bef8-f1e47e2db24e in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:30,447 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:30,452 - INFO - New MAP-Elites cell occupied in island 2: {'complexity': 9, 'diversity': 9}
+2026-04-28 03:35:30,459 - INFO - Iteration 6: Program 09eec474-72bc-4d9e-bef8-f1e47e2db24e (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 29.78s
+2026-04-28 03:35:30,459 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO:     127.0.0.1:39343 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:30,599 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:30,609 - INFO - Evaluated program 7555cee9-dd90-4e7b-ba6c-ce877b1ae8f1 in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:30,613 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:30,618 - INFO - New MAP-Elites cell occupied in island 3: {'complexity': 6, 'diversity': 5}
+2026-04-28 03:35:30,624 - INFO - Iteration 7: Program 7555cee9-dd90-4e7b-ba6c-ce877b1ae8f1 (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 25.95s
+2026-04-28 03:35:30,624 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO:     127.0.0.1:38360 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:35,193 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:35,203 - INFO - Evaluated program 33c58cfe-e9ca-4942-aadb-9d53a3702916 in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:35,206 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:35,210 - INFO - New MAP-Elites cell occupied in island 2: {'complexity': 0, 'diversity': 3}
+2026-04-28 03:35:35,214 - INFO - Iteration 5: Program 33c58cfe-e9ca-4942-aadb-9d53a3702916 (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 34.55s
+2026-04-28 03:35:35,215 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:35:39 [loggers.py:259] Engine 000: Avg prompt throughput: 1479.5 tokens/s, Avg generation throughput: 432.5 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.2%, Prefix cache hit rate: 60.2%
+(APIServer pid=4) INFO:     127.0.0.1:27824 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:35:40,598 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:35:40,613 - INFO - Evaluated program f2576931-64d4-4d3a-9359-a3a87af2181c in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:35:40,617 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:35:40,619 - INFO - New MAP-Elites cell occupied in island 3: {'complexity': 5, 'diversity': 2}
+2026-04-28 03:35:40,626 - INFO - Iteration 8: Program f2576931-64d4-4d3a-9359-a3a87af2181c (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 35.95s
+2026-04-28 03:35:40,627 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:35:49 [loggers.py:259] Engine 000: Avg prompt throughput: 944.4 tokens/s, Avg generation throughput: 444.4 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 50.9%
+(APIServer pid=4) INFO 04-28 03:35:59 [loggers.py:259] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 469.1 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.7%, Prefix cache hit rate: 50.9%
+(APIServer pid=4) INFO:     127.0.0.1:39343 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:04,014 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:04,028 - INFO - Evaluated program b6e4a49c-f06c-4803-9853-16d47a2ac62d in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:04,031 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:04,036 - INFO - New MAP-Elites cell occupied in island 1: {'complexity': 8, 'diversity': 7}
+2026-04-28 03:36:04,042 - INFO - Iteration 10: Program b6e4a49c-f06c-4803-9853-16d47a2ac62d (parent: b7273cb1-0d2e-41b9-af48-e480302f4e72) completed in 33.42s
+2026-04-28 03:36:04,042 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:04,043 - INFO - Checkpoint interval reached at iteration 10
+2026-04-28 03:36:04,044 - INFO - Island Status:
+2026-04-28 03:36:04,045 - INFO -  * Island 0: 3 programs, best=0.0000, avg=0.0000, diversity=429.87, gen=2 (best: c5d3b55e-5e53-4fd3-b705-244e7308ea7f)
+2026-04-28 03:36:04,045 - INFO -    Island 1: 3 programs, best=0.0000, avg=0.0000, diversity=848.00, gen=3 (best: e3c9fc96-0f63-4c25-a091-06b10223a18e)
+2026-04-28 03:36:04,046 - INFO -    Island 2: 2 programs, best=0.0000, avg=0.0000, diversity=1173.60, gen=2 (best: 09eec474-72bc-4d9e-bef8-f1e47e2db24e)
+2026-04-28 03:36:04,046 - INFO -    Island 3: 2 programs, best=0.0000, avg=0.0000, diversity=430.40, gen=2 (best: 7555cee9-dd90-4e7b-ba6c-ce877b1ae8f1)
+2026-04-28 03:36:04,085 - INFO - Saved database with 10 programs to /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe/checkpoints/checkpoint_10
+2026-04-28 03:36:04,088 - INFO - Saved best program at checkpoint 10 with metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:04,088 - INFO - Saved checkpoint at iteration 10 to /outputs/stream_oe5_methods_v1_base_matrix_multiplication_oe/oe/checkpoints/checkpoint_10
+(APIServer pid=4) INFO:     127.0.0.1:38360 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:09,582 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:09,595 - INFO - Evaluated program 976a0588-70b6-426b-8a15-7d501c195aeb in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:09,599 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:09,605 - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 6, 'diversity': 3}
+2026-04-28 03:36:09,612 - INFO - Iteration 11: Program 976a0588-70b6-426b-8a15-7d501c195aeb (parent: c5d3b55e-5e53-4fd3-b705-244e7308ea7f) completed in 34.39s
+2026-04-28 03:36:09,613 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:36:09 [loggers.py:259] Engine 000: Avg prompt throughput: 464.7 tokens/s, Avg generation throughput: 438.4 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.5%, Prefix cache hit rate: 45.8%
+(APIServer pid=4) INFO:     127.0.0.1:60233 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:11,683 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:11,698 - INFO - Evaluated program 57a1a373-6a9e-49d8-a03a-c45ff3057326 in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:11,704 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:11,713 - INFO - New MAP-Elites cell occupied in island 1: {'complexity': 5, 'diversity': 3}
+2026-04-28 03:36:11,718 - INFO - Iteration 9: Program 57a1a373-6a9e-49d8-a03a-c45ff3057326 (parent: e3c9fc96-0f63-4c25-a091-06b10223a18e) completed in 41.25s
+2026-04-28 03:36:11,719 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO:     127.0.0.1:39343 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:15,624 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:15,638 - INFO - Evaluated program bf69c738-fd1b-4447-b01d-ff58494dc8cc in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:15,643 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:15,651 - INFO - New MAP-Elites cell occupied in island 2: {'complexity': 0, 'diversity': 9}
+2026-04-28 03:36:15,659 - INFO - Iteration 13: Program bf69c738-fd1b-4447-b01d-ff58494dc8cc (parent: 09eec474-72bc-4d9e-bef8-f1e47e2db24e) completed in 11.61s
+2026-04-28 03:36:15,659 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:36:19 [loggers.py:259] Engine 000: Avg prompt throughput: 1833.7 tokens/s, Avg generation throughput: 394.4 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.7%, Prefix cache hit rate: 39.2%
+(APIServer pid=4) INFO:     127.0.0.1:27824 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:25,124 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:25,138 - INFO - Evaluated program 419a96ec-76b3-4962-b0be-47ba167bc305 in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:25,142 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:25,145 - INFO - New MAP-Elites cell occupied in island 0: {'complexity': 5, 'diversity': 2}
+2026-04-28 03:36:25,151 - INFO - Iteration 12: Program 419a96ec-76b3-4962-b0be-47ba167bc305 (parent: 7a1bdbba-14a6-4364-b911-f2b06608970d) completed in 44.52s
+2026-04-28 03:36:25,152 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO:     127.0.0.1:60233 - "POST /v1/chat/completions HTTP/1.1" 200 OK
+2026-04-28 03:36:27,095 - INFO - HTTP Request: POST http://localhost:8000/v1/chat/completions "HTTP/1.1 200 OK"
+2026-04-28 03:36:27,105 - INFO - Evaluated program 58f4401c-c912-4edf-88e7-bf77f959818c in 0.00s: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+2026-04-28 03:36:27,111 - INFO - Sampled model: openai/gpt-oss-20b
+2026-04-28 03:36:27,120 - INFO - New MAP-Elites cell occupied in island 2: {'complexity': 4, 'diversity': 2}
+2026-04-28 03:36:27,125 - INFO - Iteration 15: Program 58f4401c-c912-4edf-88e7-bf77f959818c (parent: 09eec474-72bc-4d9e-bef8-f1e47e2db24e) completed in 15.40s
+2026-04-28 03:36:27,125 - INFO - Metrics: correctness=0.0000, correctness_score=0.0000, performance_score=0.0000, combined_score=0.0000, speedup=0.0000, speedup_score=0.0000
+(APIServer pid=4) INFO 04-28 03:36:29 [loggers.py:259] Engine 000: Avg prompt throughput: 2246.3 tokens/s, Avg generation throughput: 369.5 tokens/s, Running: 4 reqs, Waiting: 0 reqs, GPU KV cache usage: 1.9%, Prefix cache hit rate: 32.1%

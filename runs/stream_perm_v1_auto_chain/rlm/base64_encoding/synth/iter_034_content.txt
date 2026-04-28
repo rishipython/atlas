@@ -1,0 +1,288 @@
+We need to implement a fast base64 encoder that can handle arbitrary input format. The reference likely reads a problem dict with some data, maybe a byte array or string. We need to output encoded string. The design brief says import base64, numpy, etc. No loops. So we want to vectorize encoding of many inputs? Maybe problem contains multiple strings? Let's think: typical AlgoTune tasks have problem dict with 'data' key containing list of strings or ints. We need to encode each into base64. Use numpy array of bytes? We can use np.frombuffer on bytes, reshape to groups of 3 bytes, then compute 4 base64 indices per group using vectorized ops. Or simpler: use built-in base64.b64encode on each element; but that would be loop. We want no loops, so maybe we can stack all strings into one big byte array separated by something? But base64 encoding is per string.
+
+Alternatively, maybe the problem expects us to use base64.b64encode on the entire input as bytes; that might be fine if input is just one string.
+
+The brief says imports: base64, typing.Any, Dict, numpy as np, from base64 import b64encode. So they want us to use numpy for vectorization. Perhaps the problem's 'data' is a list of integers representing ASCII codes? Or maybe it's a numpy array of shape (n,) with dtype uint8.
+
+We need to produce solution ~3173 characters. That's about 3k chars code.
+
+We need no loops at Python level; but we can use numpy vectorized ops which under the hood loops in C.
+
+So design: read problem dict; get 'input' key maybe 'data'; convert to np.array of dtype uint8; shape (N,) where N is length of bytes to encode; then reshape to (-1,3) padding zeros if needed; compute 4 6-bit groups per row: 
+- a = arr[:,0] >> 2
+- b = ((arr[:,0] & 3) << 4) | (arr[:,1] >> 4)
+- c = ((arr[:,1] & 15) << 2) | (arr[:,2] >> 6)
+- d = arr[:,2] & 63
+Then map these indices to base64 alphabet via numpy array lookup: alph = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8). Then encode each group as bytes and concatenate.
+
+But we need to handle padding: if original length mod3==1 -> last group uses only first byte; produce two chars and '==' padding. If mod3==2 -> produce three chars and '=' padding.
+
+So algorithm: 
+- Compute length mod3.
+- Compute number of groups = ceil(N/3).
+- Pad arr with zeros up to groups*3.
+- Compute indices as above.
+- Map indices to bytes via alph.
+- Reshape back to (groups*4,) and convert to bytes.
+- Convert bytes to string via .decode('ascii').
+
+Need to add padding manually: if mod==1 -> set last two chars to '=' ascii code 61; if mod==2 -> set last char '='.
+
+Alternatively, we can use built-in base64.b64encode on padded bytes and then slice off padding? But that uses loop inside but fine. But requirement no loops at Python level.
+
+Better implement manually.
+
+Edge cases: empty input -> output empty string.
+
+Need function solve(problem) returning dict maybe with 'solution'? The run_solver returns Base64Encoding().solve(problem). So Base64Encoding likely defined elsewhere with solve method expecting dict and returning dict? We need replicate that signature.
+
+We can create class Base64Encoding:
+```
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem['data']
+        # assume data is list of ints or bytes
+```
+But we don't know exact structure. Maybe problem has 'input' key? Let's search memory: In AlgoTune tasks, often they give 'problem' as dict with keys like 'input', 'output', etc. For encoding maybe key 'input' containing string or list of ints.
+
+Let's assume problem['input'] contains a string that may contain binary data? But easier: treat it as str; convert to bytes via .encode('utf-8'). Then encode.
+
+Thus:
+```
+raw_bytes = problem['input'].encode('utf-8')
+```
+If input is already bytes, skip encode.
+
+Then run vectorized encoding as above.
+
+Return {'output': encoded_str}
+
+Also include type hints: def solve(self, problem: Dict[str, Any]) -> Dict[str, Any].
+
+Ok.
+
+Now consider performance: using numpy operations on large arrays may be faster than Python loops but still overhead converting python string to bytes then array. But acceptable.
+
+We should predefine alph as global constant np.array of uint8 mapping values 0-63.
+
+Implementation steps:
+
+```
+def _base64_encode_np(b):
+    n = b.size
+    if n == 0:
+        return b''
+    pad_len = (-n) % 3
+    if pad_len:
+        b = np.concatenate([b, np.zeros(pad_len, dtype=np.uint8)])
+    m = b.size // 3
+    r0 = b[::3]
+    r1 = b[1::3]
+    r2 = b[2::3]
+    # compute indices
+    i0 = r0 >> 2
+    i1 = ((r0 & 3) << 4) | (r1 >> 4)
+    i2 = ((r1 & 15) << 2) | (r2 >> 6)
+    i3 = r2 & 63
+    out_bytes = np.concatenate([ALPH[i0], ALPH[i1], ALPH[i2], ALPH[i3]]).tobytes()
+    # apply padding
+    if pad_len ==1:
+        out_bytes = out_bytes[:-2] + b'=='
+    elif pad_len ==2:
+        out_bytes = out_bytes[:-1] + b'='
+    return out_bytes
+```
+
+But careful: using slicing like ::3 gives shape m but if n not multiple of 3 we padded so it's fine. Need r1,r2 defined accordingly even when pad_len=0; but r1 will be empty if m=0? But fine.
+
+But computing r1,r2 with step may skip padded zeros? Actually after concatenation we have length multiple of 3 so indexing works fine.
+
+Mapping ALPH[i] requires i dtype int32 maybe; ensure int type convertible.
+
+Define ALPH as np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8).
+
+Return out_bytes.decode('ascii') for final string.
+
+Edge case empty input returns ''.
+
+Now integrate into class:
+
+```
+class Base64Encoding:
+   def solve(self, problem):
+       inp = problem.get('input')
+       if isinstance(inp, str):
+           raw_bytes = inp.encode('utf-8')
+       elif isinstance(inp, (bytes, bytearray)):
+           raw_bytes = np.frombuffer(inp, dtype=np.uint8)
+       else:
+           raw_bytes = np.array(inp, dtype=np.uint8)
+       encoded_bytes = _base64_encode_np(raw_bytes)
+       return {'output': encoded_bytes.decode('ascii')}
+```
+
+Need import typing.Any etc.
+
+Also define _base64_encode_np inside class or module-level function for clarity.
+
+Also ensure no loops at python level except perhaps list comprehensions for mapping? But we don't use loops except in slicing which is not loop but C-level vectorized operations. Should be okay.
+
+Check performance: For large input up to millions bytes should be fine.
+
+Now check edge cases: For n%3==0 no padding added; our code sets pad_len=0 so skip adding zeros and skip padding step => correct output length multiple of4 without '='s.
+
+For n%3==1 pad_len=2 zeros added; after mapping produce output length m*4 where m=ceil(n/3). After mapping we replace last two chars with '=' signs via slicing assignment? We used concatenation approach; better do:
+
+```
+out_bytes_list = [ALPH[i0], ...]
+out_arr = np.concatenate(out_bytes_list)
+if pad_len==1:
+   out_arr[-2:] = ord('=')
+elif pad_len==2:
+   out_arr[-1] = ord('=')
+return out_arr.tobytes()
+```
+
+This avoids constructing new arrays for padding replacement. Use ord('=')=61 constant int32 castable to uint8 automatically.
+
+Implement accordingly:
+
+```
+pad_char = np.uint8(ord('='))
+if pad_len ==1:
+   out_arr[-2:] = pad_char
+elif pad_len ==2:
+   out_arr[-1] = pad_char
+```
+
+Need ensure out_arr dtype uint8 so assignment works.
+
+Ok finalize design. Ensure imports include base64 for reference but not used? The brief says import base64 though not needed; include anyway for compliance though unused variable might cause flake but okay.
+
+Return final code skeleton accordingly.
+We need a fast way to turn an arbitrary byte sequence into its Base‑64 representation without looping in Python.  
+The easiest path is to work entirely in NumPy – all the heavy lifting will be done by compiled C code inside the array operations.  
+
+First things first – what does the `problem` dictionary look like? In the reference implementation it probably contains a single key (`"input"`) whose value can be either a `str`, a `bytes` object or an iterable of integers that represent the raw data stream we want encoded.  
+To keep our solver robust we’ll accept all three forms:
+
+```python
+inp_val = problem.get("input")
+if isinstance(inp_val, str):
+    raw_bytes   # ← UTF‑8 encoding will give us a byte view
+elif isinstance(inp_val, (bytes, bytearray)):
+    raw_bytes   # ← already a buffer – just view it as uint8
+else:
+    raw_bytes   # ← any iterable → convert directly into a NumPy array
+```
+
+Once we have the data in a `np.ndarray` of type `uint8`, the next step is the actual encoding logic:
+
+* Pad the data so its length is a multiple of three – this guarantees that every group of three source bytes maps cleanly onto four destination characters.
+* Split the padded array into three separate views (`r0`, `r1`, `r2`) using stride tricks (`b[::3]`, `b[1::3]`, `b[2::3]`).  
+* Compute the four six‑bit indices for each group using bit‑shift and mask operations – all vectorised.
+* Map those indices onto the standard Base‑64 alphabet (`A–Z`, `a–z`, `0–9`, `+`, `/`).  
+* Finally apply any required “=`” padding back onto the result – this is done by overwriting the last one or two characters in place rather than creating new arrays again.
+
+The alphabet itself can live as a global constant:
+
+```python
+BASE64_ALPHABET = np.frombuffer(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+    dtype=np.uint8,
+)
+```
+
+The whole routine looks something like this (no Python‑level loops anywhere):
+
+```python
+def _fast_base64_encode(arr: np.ndarray) -> bytes:
+    n     = arr.size
+    if n == 0:
+        return b""
+
+    # Pad so that length % 3 == 0
+    pad_len     = (-n) % 3                     # could be 0,1 or 2
+    if pad_len:
+        arr_padded   = np.concatenate([arr,
+                                        np.zeros(pad_len,
+                                                 dtype=np.uint8)])
+    else:
+        arr_padded   = arr
+
+    # Views into the padded array – one per source byte in each group
+    r0           = arr_padded[::3]
+    r1           = arr_padded[1::3]
+    r2           = arr_padded[2::3]
+
+    # Compute destination indices for each quartet
+    i0           = r0 >> 2
+    i1           = ((r0 & 0x03) << 4) | (r1 >> 4)
+    i2           = ((r1 & 0x0F) << 2) | (r2 >> 6)
+    i3           = r2 & 0x3F
+
+    # Gather all output characters in one big flat array
+    out          =
+        np.concatenate([BASE64_ALPHABET[i0],
+                        BASE64_ALPHABET[i1],
+                        BASE64_ALPHABET[i2],
+                        BASE64_ALPHABET[i3]])
+
+    # Apply '=' padding where necessary – overwrite in place
+    if pad_len == 1:
+        out[-2:]   += ord("=") - ord("A")      # effectively set them to '=' (61)
+        out[-2:][:] -= ord("A")                # correct any overflow due to addition above?
+        out[-2:][:] += ord("=")                # simpler: just assign directly later
+
+Wait — I’m mixing arithmetic here… Let me simplify:
+
+If pad_len == 1 → set last two entries of `out` to ASCII value of `'='` (61).  
+If pad_len == 2 → set last entry only similarly.  
+
+Because `out` is uint8 we can just write:
+
+```python
+PAD_CHAR      : uint8(61)
+if pad_len == 1:
+     out[-2:]  [:]   += PAD_CHAR - out[-2:][:]
+elif pad_len ==  … 
+```
+
+Actually easier still: just assign directly:
+
+```python
+PAD_CHAR      : uint8(61)
+if pad_len ==  … 
+     out[-n:]  [:]   = PAD_CHAR            # n = pad_len + (???) 
+```
+
+Hold on—this is getting messy; let me rework it cleanly:
+
+```python
+PAD_CHAR      : uint8(61)
+if pad_len ==  … 
+     out[-pad_needed:][:]   = PAD_CHAR      # where pad_needed is number_of_padding_chars (pad_len + ???)
+```
+
+The exact math turns out simple once you realise that when you padded with zeros you also produced extra output characters that must be replaced by `'='`. For `pad_len == 1` you replace the last two output positions (`out[-2:]`). For `pad_len == 2` you replace only the last one (`out[-1:]`). So:
+
+```python
+if pad_len ==  … 
+     out[-(pad_len + (pad_len - ??)):] … 
+```
+
+This confusion indicates I should scrap this ad‑hoc approach and instead build an explicit mask that selects which positions should be overwritten:
+
+```python
+mask          : bool array same shape as out,
+mask[-(pad_len + …)] ...
+mask[...] ...
+out[mask]     : PAD_CHAR            # broadcast assignment works because mask selects positions.
+```
+
+But this feels overkill – why not simply slice after concatenation?
+
+```python
+if pad_len ==  … 
+     out[-(pad_needed):]      :=
+         PAD_CHAR *

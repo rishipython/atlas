@@ -1,0 +1,40 @@
+We need to replace with faster implementation: use scipy.signal.fftconvolve or numpy.fft. Use np.fft.fft with appropriate length (next power of two or next int). For real inputs, we can use np.fft.rfft to reduce. But simplest: use np.fft.fft and ifft. For 1D arrays, compute length L = N+M-1; compute next pow2 or maybe next suitable length for speed. But using np.fft.fft with length L2 = 2**ceil(log2(L)). That may be fine. Or we can use np.fft.fft(x, n=L2) and same for h. Then multiply and ifft, take real part, slice to L. Use np.fft.ifft.
+
+Need to ensure dtype float64. Use np.asarray. Should be fast.
+
+Edge cases: empty arrays? But lengths positive? Might handle zero length.
+
+Also can use scipy.signal.fftconvolve but we may not want to import scipy. But allowed. But numpy-based is fine.
+
+Let's implement:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N=x.size; M=h.size
+    L = N+M-1
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    nfft = 1 << (L-1).bit_length()  # next power of two >= L
+    X = np.fft.rfft(x, n=nfft)
+    H = np.fft.rfft(h, n=nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, n=nfft)
+    return y[:L]
+
+This uses real FFT. For real inputs, it's efficient. Use np.fft.irfft.
+
+Need to import numpy as np.
+
+Return y as float64.
+
+Edge: if L==0? N=0 or M=0 -> L=0? Actually if N=0, M>0, L=M-1? But if N=0, convolution of empty with h? np.convolve([], h, 'full') returns array([]). So L= M-1? Wait length of convolution of zero-length array with nonzero length? In numpy, np.convolve([], [1,2,3]) returns array([], dtype=float64). So return empty. So if N==0 or M==0: return empty.
+
+So we check if N==0 or M==0: return np.empty(0, dtype=np.float64)
+
+Ok.
+
+Testing: Should produce same as np.convolve(x,h,mode='full'). Should be within tolerance.
+
+Let's produce final file.
+

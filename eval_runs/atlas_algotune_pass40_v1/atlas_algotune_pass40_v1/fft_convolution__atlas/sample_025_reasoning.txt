@@ -1,0 +1,18 @@
+We need to replace with efficient FFT-based convolution. Use numpy. Use np.fft.fft, but need to zero-pad to next power of two for speed. Use np.fft.rfft for real-to-complex? Since inputs are real, can use rfft. Let's implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); n_out=N+M-1; n_fft = 1<< (n_out-1).bit_length()
+    X=np.fft.rfft(x, n_fft)
+    H=np.fft.rfft(h, n_fft)
+    y=np.fft.irfft(X*H, n_fft)
+    return y[:n_out]
+
+Should be fine. Use dtype float64.
+
+Edge cases: if one of arrays empty? Not specified. Assume length >=1.
+
+Return dtype float64.
+
+Let's produce file. Include imports. Provide conv1d. That's all.
+
+Let's produce final code.

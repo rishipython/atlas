@@ -1,0 +1,41 @@
+We need to write fast implementation of matrix exponential. Use scipy.linalg.expm or use scipy.linalg.expm? The problem says we can import scipy. But maybe we should implement scaling and squaring with Padé approximants. But we could just call scipy.linalg.expm, but the task is to replace body with faster implementation. But we can use scipy.linalg.expm itself? The function returns same as reference. But that would be trivial. However maybe they expect to implement algorithm manually but faster. But using scipy's expm is fine; it's fast. But we need to return same results within tolerance. So we can just call scipy.linalg.expm(A). That uses scaling and squaring and Padé. That would be correct and fast.
+
+But maybe the evaluator will compare against scipy.linalg.expm? They might compute reference via reference implementation? They will check with np.allclose. They might compute the expected result using reference implementation? They might compute using reference's algorithm? Actually the reference is naive, but they might use that to test? They may call our function and compare to scipy.linalg.expm? Not sure. But to be safe, we can implement algorithm ourselves. But simpler to call scipy.linalg.expm; that's okay.
+
+But they might forbid calling external library? They said you may import scipy. So it's fine.
+
+Thus implement:
+
+from scipy.linalg import expm as _scipy_expm
+
+def expm_fast(A):
+    return _scipy_expm(A)
+
+But we must ensure dtype float64. _scipy_expm will produce float64 if input float64.
+
+Return a numpy array.
+
+Edge: maybe A is not float64? But doc says float64.
+
+Let's implement.
+
+Also we could use np.asarray(A, dtype=np.float64). But we can just cast.
+
+Let's produce file.
+
+But we need to include imports at top.
+
+Let's produce:
+
+import numpy as np
+from scipy.linalg import expm as scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    return scipy_expm(A)
+
+We may also copy docstring.
+
+Let's also handle if A is not square? But not needed.
+
+Ok produce final.

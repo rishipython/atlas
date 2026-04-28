@@ -1,0 +1,44 @@
+We need to produce a faster, numerically stable implementation that matches scipy.linalg.expm within tolerance. We can use scipy.linalg.expm directly? But the problem might expect us to implement something else. But we can simply call scipy.linalg.expm and return that. However, the instructions: "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution. All required imports must live at the top of the file." So we can just import scipy.linalg.expm and return that. But the function name is expm_fast. That would be trivial. But maybe they want a more efficient implementation. But the easiest is to delegate to scipy.linalg.expm, which is highly optimized. That will be fast and accurate. So just implement:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But ensure dtype float64 and shape. But expm returns same shape. So that's fine.
+
+But maybe the tests will compare with scipy.linalg.expm, so calling expm(A) is identical. That should pass. The only potential issue is that the test may use a random matrix. But the result will be same.
+
+Thus solution: import scipy.linalg.expm. No loops. That is fast.
+
+We must keep the same signature.
+
+Edge: if A is not float64, maybe cast. But we can cast inside.
+
+Thus final code:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return expm(A)
+```
+
+Return expm(A). That is fine.
+
+But maybe the test expects the result to be same shape and dtype float64. expm returns float64 by default. Good.
+
+Thus final answer.
+
+But the problem statement: "The reference implementation is a naive Taylor-series truncation in pure Python (slow, and numerically unstable for large ||A||). Your task is to replace it with a fast, numerically-stable implementation that matches scipy.linalg.expm(A) within tight tolerance." So calling scipy.linalg.expm is exactly matching. So it's fine.
+
+Thus produce code.
+
+However, to be safe, we might want to set the backend to use high precision? But not necessary.
+
+Therefore final answer: provide code.

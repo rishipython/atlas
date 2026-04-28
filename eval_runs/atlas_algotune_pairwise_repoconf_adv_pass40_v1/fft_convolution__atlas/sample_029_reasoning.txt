@@ -1,0 +1,33 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. For arbitrary lengths, we can use numpy.fft.fft, but careful with complex. Use real FFT: rfft and irfft for speed. But we need full convolution length N+M-1. For real signals, we can do: nfft = next_fast_len(N+M-1). Then use np.fft.rfft and irfft. But careful: rfft returns length nfft//2+1. For real convolution, we can do:
+
+n = N+M-1
+nfft = 2**np.ceil(np.log2(n)).astype(int) maybe but better use numpy.fft.next_fast_len if available. In numpy 1.20+ there is np.fft.next_fast_len. Use that.
+
+Implementation:
+
+def conv1d(x,h):
+    N = x.shape[0]
+    M = h.shape[0]
+    n = N+M-1
+    nfft = np.fft.next_fast_len(n)
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y[:n]
+
+Need to cast to float64.
+
+Edge cases: empty arrays? But not likely. For safety, handle if N==0 or M==0 return zeros.
+
+Also need to import numpy as np. Use np.fft.rfft, irfft.
+
+Also ensure dtype float64.
+
+Let's produce file.
+
+Also may use np.fft.fft for complex but rfft faster.
+
+Return np.asarray(y[:n], dtype=np.float64). Should be fine.
+
+Let's produce final.

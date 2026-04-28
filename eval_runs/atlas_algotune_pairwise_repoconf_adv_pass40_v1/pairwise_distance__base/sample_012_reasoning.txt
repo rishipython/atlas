@@ -1,0 +1,21 @@
+We need to replace the body of pairwise_sq_dist with efficient implementation. Classic approach: use broadcasting or linear algebra: D = A + A^T - 2 X X^T. For squared distances: dist^2(i,j)=||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute norms squared: sqnorm = np.sum(X*X, axis=1). Then out = sqnorm[:,None] + sqnorm[None,:] - 2 * X.dot(X.T). Ensure dtype float64. Also ensure numeric stability: small negative values due to floating error set to zero.
+
+Implementation:
+
+```
+def pairwise_sq_dist(X):
+    sqnorm = np.einsum('ij,ij->i', X, X)
+    D = sqnorm[:,None] + sqnorm[None,:] - 2*np.dot(X, X.T)
+    np.maximum(D, 0, out=D)  # clip negative zeros
+    return D
+```
+
+Return D.
+
+Edge: X shape (N,D). Use np.dot. Complexity O(N^2 D). Should be fast.
+
+Also we can use np.linalg.norm but dot is fine.
+
+Need to import numpy at top. Provide full file.
+
+Let's produce final code.

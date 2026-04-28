@@ -1,0 +1,68 @@
+We need to implement a faster FFT convolution. Use numpy's FFT or scipy's fftconvolve. But we can implement our own using np.fft.rfft for real signals. Use zero padding to next power of two. Use mode handling.
+
+Also handle empty signals: return empty array.
+
+We need to output "convolution" key with list. Should be efficient.
+
+We can use numpy.fft.rfft, numpy.fft.irfft. For real signals, rfft reduces size. For mode 'full', zero pad to len_x+len_y-1. For 'same', we need center part of length max(len_x, len_y). For 'valid', length max(0, min(len_x,len_y)-abs(len_x-len_y)+1) Actually for valid: if len_x>=len_y: len_x - len_y +1 else len_y - len_x +1. Equivalent to max(0, min(len_x,len_y)-abs(len_x-len_y)+1). But easier: if len_x>=len_y: len_x - len_y +1 else len_y - len_x +1.
+
+We can compute full convolution result via FFT, then slice.
+
+Compute fft_len = 1 << (len_x + len_y -1).bit_length() maybe. Use next power of two.
+
+But for real signals, we can use rfft of length fft_len.
+
+Implementation:
+
+def fft_convolve(x, y, mode):
+
+    if len(x)==0 or len(y)==0: return np.array([], dtype=float)
+
+    n = len(x)+len(y)-1
+    fft_len = 1 << (n-1).bit_length()
+    X = np.fft.rfft(x, fft_len)
+    Y = np.fft.rfft(y, fft_len)
+    Z = X*Y
+    z_full = np.fft.irfft(Z, fft_len)[:n]
+
+    if mode=='full': return z_full
+    elif mode=='same':
+        L = max(len(x), len(y))
+        start = (n - L)//2
+        return z_full[start:start+L]
+    elif mode=='valid':
+        if len(x)>=len(y):
+            L = len(x)-len(y)+1
+        else:
+            L = len(y)-len(x)+1
+        start = n - L
+        return z_full[start:]
+    else: raise ValueError
+
+We should also consider that for small lengths, direct convolution via np.convolve might be faster. Use threshold maybe 200? but we can skip.
+
+Also handle dtype float.
+
+Return list.
+
+Let's implement solve accordingly.
+
+Also handle mode string case-insensitive? Keep as given.
+
+Return {"convolution": result.tolist()}
+
+Also need imports: numpy.
+
+We can remove unused imports.
+
+Also note that is_solution expects 'convolution' key, not 'result'.
+
+So implement accordingly.
+
+We should handle potential large memory if signals large; but okay.
+
+Let's code.
+
+Also we should add logging maybe.
+
+Let's produce final file.

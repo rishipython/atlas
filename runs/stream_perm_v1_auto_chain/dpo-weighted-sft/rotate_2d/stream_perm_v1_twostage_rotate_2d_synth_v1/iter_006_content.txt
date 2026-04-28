@@ -1,0 +1,75 @@
+We need to rewrite the solver for the Rotate2D task so that it runs fast and stays correct. The baseline uses a slow custom implementation – likely a nested loop that interpolates pixel values manually. The key is to replace that with a single call to a highly‑optimised SciPy routine and avoid any Python‑level loops.
+
+First thought: `scipy.ndimage.rotate` does exactly what we want – it rotates an n‑dimensional array around its last two axes using spline interpolation. It’s already vectorised and written in C/Fortran, so a single call should beat any manual implementation by orders of magnitude.
+
+But before committing, let’s consider the input format. The `problem` dictionary probably contains at least two keys:
+
+- `'data'`: a NumPy array of shape `(H, W)` for a single image or `(N, H, W)` for a batch.
+- `'angle'`: rotation angle in degrees (float).
+
+We must also be defensive: sometimes the test harness passes a plain list or tuple instead of an ndarray; or maybe the angle is missing (default to 0). Also ensure we preserve the original dtype – if the input is `float32`, the output should also be `float32`.
+
+Now, does `scipy.ndimage.rotate` support batching automatically? Yes – if you pass an array of shape `(N, H, W)`, it treats each `(H, W)` slice independently and returns an array of the same shape `(N, H, W)`. That means we can write:
+
+```python
+rotated = scipy.ndimage.rotate(data_array, angle_deg,
+                               reshape=False,
+                               order=3,
+                               mode='constant',
+                               cval=0.0)
+```
+
+The `reshape=False` keeps the output size equal to input size; `order=3` gives cubic interpolation which is smooth enough for most images; `mode='constant'` with `cval=0` handles borders consistently with many baselines.
+
+Potential pitfalls:
+- If `data_array` is integer type (e.g., uint8), SciPy will cast to float internally for interpolation and then cast back to integer when returning – this may introduce rounding errors but is usually fine.
+- For very large arrays (e.g., >10k×10k), memory usage might spike because SciPy creates intermediate arrays; but that’s unavoidable unless we write a streaming algorithm – not required here.
+- The rotation matrix used by SciPy assumes counter‑clockwise rotation for positive angles; make sure this matches the baseline expectation (likely yes).
+
+Edge case: what if the input has more than three dimensions (e.g., color images with shape `(H,W,C)`)? `scipy.ndimage.rotate` rotates around the last two axes too, so it will treat each channel separately – that’s fine if we want channel‑wise rotation. If there are extra leading dimensions (batch), they’re handled automatically too.
+
+So our minimal implementation looks like:
+
+```python
+def run_solver(problem):
+    data = np.asarray(problem.get('data'))
+    angle = float(problem.get('angle', 0))
+    rotated = scipy.ndimage.rotate(data,
+                                   angle,
+                                   reshape=False,
+                                   order=3,
+                                   mode='constant',
+                                   cval=0)
+    return {'rotated': rotated}
+```
+
+We’ll add logging at DEBUG level so that any unexpected shapes or types are reported without affecting speed when disabled:
+
+```python
+logging.debug(f"Input shape: {data.shape}, dtype: {data.dtype}")
+```
+
+Also import statements:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+The `random` import isn’t used directly here but may be required by other parts of the framework; keeping it satisfies the brief.
+
+Finally double‑check that no Python loops appear – we only call NumPy/SciPy functions which are internally vectorised. That satisfies “No Python-level loops”.
+
+Edge case sanity check:
+- Empty array (`shape=(0,)`) – SciPy handles it gracefully.
+- Negative angles – handled correctly.
+- Very small arrays (`1x1`) – rotation does nothing but still works.
+- Batch dimension of size 1 – still works.
+- Data dtype float32 → output remains float32 because SciPy preserves dtype when possible.
+
+All requirements met: imports include logging/random/typing/Numpy/SciPy; uses SciPy function; fully vectorised; no Python loops; final solution concise yet correct.
+
+OK, I think I have the design. Time to write it.

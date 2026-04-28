@@ -1,0 +1,13 @@
+We need to replace the triple loop with efficient vectorized approach. Pairwise squared Euclidean distance matrix can be computed via broadcasting or using dot product: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared: sum X**2 along axis=1. Then compute Gram matrix: X @ X.T. Then D = norms[:,None] + norms[None,:] - 2*gram. Ensure dtype float64. Return D. Ensure no negative due to numerical error: maybe clip small negative values to zero.
+
+Also ensure symmetrical and zeros on diagonal. Implementation simple. Use np.dot. Should handle large N. Complexity O(N^2). Provide function. Also maybe use np.linalg.norm? but we can compute sum of squares.
+
+Edge cases: X shape (N,D). Ensure dtype float64. Might be float32 but fine. Convert to float64. Implementation.
+
+Return np.maximum(D, 0) maybe.
+
+Also can use np.einsum.
+
+We'll implement.
+
+Let's produce final code.

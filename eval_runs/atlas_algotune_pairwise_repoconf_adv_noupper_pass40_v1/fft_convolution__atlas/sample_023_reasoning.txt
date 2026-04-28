@@ -1,0 +1,13 @@
+We need to provide faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must ensure same dtype float64. We'll implement using numpy.fft.fft. For real signals, we can use real FFT. But simpler: compute convolution via FFT: next power of two >= N+M-1. Use np.fft.rfft? Use rfft for speed. But we need real output. rfft of real input returns complex, multiply, irfft. But careful with lengths. Use np.fft.rfft(x, n) where n=next_pow2(N+M-1). Similarly for h. Multiply, then irfft. Then slice to length N+M-1. This yields same as np.convolve for float64. However, rfft may produce rounding differences but np.allclose should pass. Let's implement.
+
+Edge cases: x or h empty? Not expected. But we can handle.
+
+Compute n_fft = 1 << (N+M-1-1).bit_length().
+
+Return y[:N+M-1].
+
+Let's produce file with imports. Ensure dtype float64. Use np.asarray(x, dtype=np.float64). But if already dtype, fine.
+
+Return y.
+
+Let's produce final code.

@@ -1,0 +1,35 @@
+We need to write fast convolution. Use numpy. Use np.fft.fft to compute convolution via multiplication in frequency domain. Use np.fft.fft with length L = next power of 2 >= N+M-1 maybe. Use np.fft.rfft? For real signals, rfft may be faster. But simpler: use np.fft.fft with length L.
+
+Also we need to return float64 array of length N+M-1. Use np.fft.ifft result real part. We should ensure rounding errors small. Use np.fft.fft(x, L) * np.fft.fft(h, L) -> ifft.
+
+Edge cases: zero-length? But x and h are 1-D arrays. Might be empty? Not likely. But we can handle.
+
+We should also handle input dtype? They are float64. We'll cast.
+
+Implementation:
+
+def conv1d(x,h):
+    N=x.shape[0]; M=h.shape[0]; L = N+M-1
+    # next power of two maybe
+    L_fft = 1<< (L-1).bit_length()
+    X = np.fft.rfft(x, L_fft)
+    H = np.fft.rfft(h, L_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, L_fft)
+    return y[:L]
+
+But rfft returns length L_fft//2+1. The ifft with length L_fft returns full length. We slice first L.
+
+Check: rfft of real input length L_fft. The multiplication yields same shape. Then irfft returns real length L_fft.
+
+Alternatively, use np.fft.fft: easier but maybe slower. We'll use rfft.
+
+Edge: if L_fft==0? Not possible.
+
+Also we need to import numpy as np.
+
+Return y as float64. The dtype will be float64.
+
+This should be fast. Provide full file.
+
+Let's produce code.

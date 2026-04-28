@@ -1,0 +1,65 @@
+We need to replace with faster implementation. Use scipy.signal.fftconvolve or numpy. But we must be careful about data types and shape. The reference uses np.convolve(x, h, mode='full'). We can implement using FFT-based convolution.
+
+We can use np.fft.fft, but we need to handle real arrays. Use np.fft.rfft or rfft? For real input we can use rfft to reduce cost. But we need to produce real output. We can do:
+
+n = len(x)+len(h)-1
+Nfft = 1 << (n-1).bit_length()  # next power of two >= n
+
+X = np.fft.rfft(x, n=Nfft)
+H = np.fft.rfft(h, n=Nfft)
+Y = X * H
+y = np.fft.irfft(Y, n=Nfft)
+return y[:n]
+
+But need dtype float64. That is fine.
+
+Edge cases: x or h may be empty? In convolution, empty arrays? np.convolve handles? For empty arrays, returns empty array. Our code should replicate. For empty, we can handle by returning np.array([], dtype=np.float64). Let's test: np.convolve([], [1,2]) => [] (empty). So we can check if len(x)==0 or len(h)==0: return np.array([], dtype=np.float64). Similarly if both empty? returns empty.
+
+Also ensure shape 1-D. We can accept 1-D arrays. Should not error on 0-length arrays.
+
+Also note that for small arrays, using FFT may be slower, but still okay for correctness; but tests might involve small arrays? But we need to keep correctness.
+
+We can also use scipy.signal.fftconvolve which does same but might require SciPy. But SciPy may not be available. Use numpy only.
+
+Implementation: conv1d(x,h). Use np.asarray(x,dtype=float). Ensure 1-D. Then compute.
+
+Let's implement.
+
+Potential numeric difference: using rfft/irfft might produce small errors. But np.allclose with default rtol=1e-05, atol=1e-08? The evaluator uses some tolerance. Use np.fft.irfft; should be accurate.
+
+Edge: For large arrays, memory may be high if we choose next power of two. We could choose size n, but rfft requires size n. That is fine.
+
+We also need to ensure dtype float64. So we can cast.
+
+Let's produce final code.
+
+Also we can import numpy as np at top.
+
+Implement:
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    if x.size == 0 or h.size == 0:
+        return np.empty(0, dtype=np.float64)
+
+    n = x.size + h.size - 1
+    Nfft = 1 << (n - 1).bit_length()  # next power of two
+    X = np.fft.rfft(x, n=Nfft)
+    H = np.fft.rfft(h, n=Nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=Nfft)
+    return y[:n]
+
+But we might also need to handle case where n==0? Already handled by empty case.
+
+Edge: for small arrays, maybe n is small; next power of two computed fine.
+
+Return dtype float64.
+
+Let's produce final file.
+
+Also maybe we should use np.fft.fft for complex arrays? rfft is fine for real.
+
+Let's produce code.

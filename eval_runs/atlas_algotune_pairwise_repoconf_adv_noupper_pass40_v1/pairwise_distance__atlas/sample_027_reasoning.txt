@@ -1,0 +1,21 @@
+We need to write fast implementation. Use broadcasting or vectorized operations. For pairwise squared Euclidean distances, we can compute Gram matrix: D = X^2 sum - 2 X X^T + (X^2 sum)^T. Use np.dot. Use float64. Ensure shape N,N. Implementation:
+
+def pairwise_sq_dist(X):
+    sq = np.sum(X**2, axis=1)
+    D = sq[:,None] + sq[None,:] - 2*np.dot(X, X.T)
+    # ensure non-negative due to numerical errors
+    D = np.maximum(D, 0.0)
+    return D
+
+Need to import numpy. That's it.
+
+Also note that X may be large; but this is efficient. Should be numerically close.
+
+Return dtype float64.
+
+Edge case: X empty? shape (0,D). Then sq shape (0,), dot shape (0,0). D shape (0,0). Works.
+
+Return as np.ndarray float64. Good.
+
+Let's produce final code.
+

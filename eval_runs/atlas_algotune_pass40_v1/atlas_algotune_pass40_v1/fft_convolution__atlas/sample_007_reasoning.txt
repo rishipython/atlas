@@ -1,0 +1,36 @@
+We need to produce fast implementation. Use numpy. Use np.fft. But we must keep same output type float64. Use np.fft.rfft for real? For speed, we can use rfft if both real. Use np.fft.irfft. Implementation:
+
+def conv1d(x, h):
+    N, M = len(x), len(h)
+    size = N + M - 1
+    # next power of two for speed? Use np.fft.fft with length >= size
+    L = 1 << (size-1).bit_length()  # next pow2
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:size]  # cast to float64
+
+But need to ensure dtype float64. np.fft.rfft returns complex128, irfft returns float64. Good.
+
+Edge cases: if N or M zero? Not likely. But maybe empty arrays? Should handle: return np.array([]). If any zero length, size=0. L? bit_length of -1? Not good. So handle separately: if size==0: return np.array([], dtype=np.float64). Or if N==0 or M==0: return np.array([], dtype=np.float64). Provide that.
+
+Also we could use np.fft.fft for general case if complex? But arrays are float64.
+
+Also we can use np.fft.fft with n, but rfft is more efficient for real.
+
+Implement.
+
+Also we might consider using scipy.signal.fftconvolve for maybe better speed? But we can implement ourselves.
+
+Edge: When size is small, maybe direct method is faster? But not necessary.
+
+We'll produce code.
+
+Also we need imports at top: numpy as np.
+
+Add docstring.
+
+Return.
+
+Let's produce final code.

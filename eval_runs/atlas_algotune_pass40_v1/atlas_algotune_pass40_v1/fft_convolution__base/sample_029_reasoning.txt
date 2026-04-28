@@ -1,0 +1,76 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. But need to consider numeric equivalence: using np.fft.rfft or fft. Use real-valued convolution: we can use np.fft.fft of length next power of two? Actually we can just use np.fft.fft of length N+M-1 with zero-padding. Use np.fft.ifft to get result. Use dtype float64. The output should be real. The result may have small imaginary due to numerical errors; we can take real part and round near zero.
+
+Edge cases: If either array empty? but input likely non-empty. But we can handle if lengths zero: return empty array.
+
+Also we can consider using scipy.signal.fftconvolve for speed. But we can just implement ourselves.
+
+Implementation:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    if N==0 or M==0: return np.array([], dtype=np.float64)
+    n = N + M - 1
+    # next power of two for speed? But for large arrays, using np.fft.fft may be efficient.
+    # compute FFT length L = 2**ceil(log2(n))
+    L = 1 << (n-1).bit_length()
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y[:n]
+
+But we must ensure dtype float64. Use np.fft.rfft? We can use rfft to reduce compute. But we need to get output length n. rfft returns length L//2+1. Multiply, then irfft to get length L. Then slice first n. That is fine.
+
+But rfft may produce small errors; but taking real part of irfft returns real. So use:
+
+X = np.fft.rfft(x, L)
+H = np.fft.rfft(h, L)
+Y = X * H
+y = np.fft.irfft(Y, L)  # returns real array length L
+return y[:n]
+
+This is efficient. Also we can use np.fft.fft for general but rfft is faster for real input. We'll implement.
+
+Also consider if arrays contain complex? Problem says float64. So fine.
+
+Edge case: if n=0? But N+M-1 zero only if both zero? But can't be zero length? Might be empty arrays. We'll handle.
+
+Also we might want to use np.fft.fft with dtype=complex. But rfft is fine.
+
+Return type: np.ndarray float64.
+
+Potential speed: good.
+
+Let's implement.
+
+Also we need to import numpy.
+
+Also we need to preserve function signature. We'll provide top-level function conv1d.
+
+We'll also include __all__ maybe not needed.
+
+Write code.
+
+We should also consider that for very small n, overhead of FFT might be slower than direct. But test likely large. But we can add a threshold: if n <= 64 use direct loop. But not necessary.
+
+But to be safe, we can implement fallback for small lengths: if n <= 64: compute directly using np.convolve? But we want speed for large. But direct loop might be slower. But for small we can use np.convolve which is implemented in C. So we can just call np.convolve if n <= 64. But we can skip.
+
+But maybe we can just rely on np.fft.fft; for small arrays overhead might be high but still fine.
+
+But to guarantee correctness, we must ensure no rounding errors beyond tolerance.
+
+np.fft.ifft yields complex with small imaginary part; we take real. That should be fine.
+
+Also we need to ensure that for very large arrays, using rfft with length L might exceed memory? But typical.
+
+Ok.
+
+Let's produce final code.
+
+We'll include docstring.
+
+Also we can define conv1d to accept any array-like; convert to np.array.
+
+Ok.

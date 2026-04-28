@@ -1,0 +1,96 @@
+We need to speed up a shift_2d algorithm. Let's think: shift_2d probably shifts a 2D array by some offset, maybe with interpolation. We want FFT based approach. Use scipy.ndimage for interpolation? Or use scipy.signal.fftconvolve? The baseline is slow; we need vectorized, no loops, use FFT O(N log N). Use numpy and scipy.ndimage. Might use scipy.signal.fftconvolve or scipy.ndimage.shift? But shift with subpixel might need interpolation.
+
+Maybe the problem: given an image and a shift vector, compute shifted image via Fourier shift theorem: multiply Fourier transform by phase ramp e^{-i 2π (k_x * dx + k_y * dy)/N}. Then inverse FFT. That is O(N log N). Use numpy. But requirement: use scipy functions somewhere. Could use scipy.fftpack or scipy.fft.
+
+Also need to keep same function signature: run_solver(problem). Problem likely dict with 'image' and 'shift' keys.
+
+We need logging and random? Maybe for debugging.
+
+Edge cases: shift values can be fractional; need wrap-around? Probably periodic boundary conditions.
+
+Let's design:
+
+- parse problem dict: get 'data' (2D array) and 'shift' (tuple of floats).
+- Compute FFT of data using np.fft.fftn or scipy.fft.fftn.
+- Build frequency grid using np.meshgrid of kx, ky with shape matching data.
+- Compute phase factor: exp(-2j * pi * (kx*dx/Nx + ky*dy/Ny)).
+- Multiply in Fourier domain.
+- Inverse FFT to get shifted image.
+- Return real part, maybe cast to original dtype.
+
+Use scipy.ndimage.shift? But that's slower.
+
+We also need to use scipy.ndimage somewhere; maybe for padding or cropping? Could use scipy.ndimage.zoom? Not necessary.
+
+But requirement says uses scipy functions somewhere; we can use scipy.ndimage.shift as a fallback for small arrays? But we want fast.
+
+Alternatively, use scipy.signal.fftconvolve with kernel derived from shift? Not efficient.
+
+Better: use scipy.ndimage.shift for validation but not main path.
+
+We could also add random seed for reproducibility of any randomness; but not needed.
+
+Ok design:
+
+- Import logging, random, typing.Any, Dict
+- import numpy as np
+- import scipy.ndimage
+- import scipy.fft
+
+Set logger level debug.
+
+Define run_solver(problem): extract data, shift; call _shift_fft(data, shift); return result.
+
+Define _shift_fft(data, shift): compute shape; create freq arrays via np.arange; convert to centered frequencies using fftfreq; compute phase = exp(-2j * pi * (fx*dx + fy*dy)). Multiply; ifftn; return real part clipped to dtype range.
+
+Edge cases: dtype float32/float64; cast accordingly.
+
+Also ensure no loops: all vectorized.
+
+Use random only maybe for test harness; not used in core logic but included per brief.
+
+Potential pitfalls: memory usage if large arrays; but okay.
+
+Now produce final design summary and handoff.
+We need to speed up the 2‑D shift routine so that it runs in \(O(N\log N)\) instead of the naïve \(O(N^2)\) approach that loops over every pixel and builds a big kernel or uses nested loops in Python. The problem statement gives us a `problem` dictionary that contains the input array and the desired shift vector – probably something like `{'data': np.ndarray, 'shift': (float, float)}` – and we must return the shifted array with the same shape and type as the input.
+
+The key idea is to use the Fourier‑shift theorem: shifting an image by \((dx,dy)\) in real space corresponds to multiplying its Fourier transform by a complex exponential phase factor
+\[
+e^{-2\pi i \left(\frac{k_x\,dx}{N_x}+\frac{k_y\,dy}{N_y}\right)}.
+\]
+So we can:
+1. Take the forward FFT of the data (`np.fft.fftn` or `scipy.fft.fftn`).
+2. Build frequency grids `kx`, `ky` that match the shape of the FFT output using `np.arange` combined with `np.meshgrid`.  
+   - We can get centered frequencies directly with `scipy.fft.fftfreq` which gives us values in \([-0.5,0.5)\); multiplying by \(N\) gives integer indices.
+3. Compute the phase factor in one vectorised expression.
+4. Multiply the FFT by this phase factor.
+5. Inverse FFT back to real space (`np.ifftn`).
+6. Take the real part (the imaginary part should be negligible) and cast back to the original dtype.
+7. Return this result as the solution.
+
+This approach has no Python‑level loops – everything is done in bulk on NumPy arrays – and it runs in \(O(N\log N)\) thanks to the underlying FFT implementation in NumPy/Scipy which calls highly optimised BLAS/LAPACK routines on modern CPUs (or even GPU if available).
+
+We still have to satisfy two extra constraints from the brief:
+* **Use `scipy` functions somewhere** – we’ll call `scipy.ndimage.shift` once as a sanity check or fallback when the input is tiny (say less than 16×16), because for very small arrays an explicit loop or built‑in shift may actually be faster than an FFT pipeline.
+* **No Python‑level loops** – our main path has none; only a tiny conditional branch that calls `scipy.ndimage.shift`.
+
+The imports will therefore include:
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+import scipy.fft
+```
+`logging` lets us emit debug information if needed; `random` satisfies the brief even though it isn’t used directly in the algorithm (it could be used to seed any optional stochastic steps). The core logic lives in a helper function `_shift_fft`, which is called from `run_solver`.
+
+Edge‑case handling:
+* If either component of `shift` is an integer multiple of the image size, the phase factor becomes 1 everywhere and we simply return a copy of the input – this is handled automatically by the exponential formula.
+* For negative shifts we rely on modulo arithmetic inherent in `fftfreq`; no extra code needed.
+* We clip tiny negative imaginary parts that arise from numerical noise before casting back to float32/float64.
+* If the input dtype is integer, we cast back after clipping to valid range `[0, 255]`.
+
+With this design we keep everything vectorised, leverage SciPy’s highly optimised FFT routines, satisfy all import requirements, and stay within a single file that can be executed directly by calling `run_solver(problem)`.
+
+OK, I think I have the design. Time to write it.

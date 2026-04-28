@@ -1,0 +1,5 @@
+We need to produce faster implementation. Use numpy broadcasting or linear algebra: D[i,j] = sum_k (x_i - x_j)^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared: sq_norm = (X**2).sum(axis=1). Then use outer addition and subtract 2*X @ X.T. Use np.add.outer. Ensure dtype float64. Return result. Ensure non-negative due to numerical errors small negative may appear, clip to zero? They say numerically-close; np.allclose probably fine. Might clip negative tiny values to zero.
+
+Implement pairwise_sq_dist accordingly. Ensure imports at top.
+
+Let's produce final code.

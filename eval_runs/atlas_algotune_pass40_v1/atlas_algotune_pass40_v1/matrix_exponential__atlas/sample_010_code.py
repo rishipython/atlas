@@ -1,0 +1,21 @@
+import numpy as np
+import scipy.linalg as la
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """
+    Return the matrix exponential of a square float64 matrix ``A``.
+    This implementation delegates to SciPy's highly optimized routine,
+    which uses scaling and squaring with Padé approximants for
+    numerical stability and speed.
+
+    Parameters
+    ----------
+    A : ndarray
+        Square matrix of shape (n, n) with dtype float64.
+
+    Returns
+    -------
+    ndarray
+        The matrix exponential of ``A``.
+    """
+    return la.expm(A)

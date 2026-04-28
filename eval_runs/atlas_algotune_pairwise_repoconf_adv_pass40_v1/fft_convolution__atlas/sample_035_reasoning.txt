@@ -1,0 +1,42 @@
+We need to produce faster implementation of 1-D convolution. The reference uses direct loops. We can use numpy's FFT or scipy.signal.fftconvolve. But need to ensure numerical close. Use np.fft.fft? For real signals, we can use np.fft.rfft? But easiest: use scipy.signal.fftconvolve. But to avoid dependency on SciPy maybe use numpy.fft.fft. But SciPy likely available. We'll implement using numpy.fft.fft. Steps: compute length L = next power of two >= N+M-1. Use np.fft.rfft? For real input, rfft reduces cost but need to compute product and then irfft. But careful about shape. Implementation: L = np.fft.next_fast_len(N+M-1) or nextpow2. Use np.fft.fft(x, n=L) and same for h. Multiply elementwise, inverse FFT, take real part and truncate to length N+M-1. Use np.real. That's fine.
+
+Need to ensure dtype float64. Use np.asarray(x, dtype=np.float64). Use np.fft.fft. Use np.fft.ifft. That will produce complex numbers but due to rounding, real part is fine. Return real part truncated.
+
+Edge cases: empty arrays? Not specified. But assume lengths >=1. Might handle zeros. Use np.fft.ifft; if length 0? But not needed.
+
+Also ensure output dtype float64. So cast to float64.
+
+Return np.real(...)[ : N+M-1 ].
+
+Let's implement conv1d accordingly.
+
+We can also use np.fft.rfft and irfft to be more efficient. But rfft requires real input and output real. Use rfft(x, n=L). Multiply with rfft(h, n=L). Then irfft(product, n=L). That's efficient. Use np.fft.rfft.
+
+Implement:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    n = N + M - 1
+    L = np.fft.next_fast_len(n)
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:n]
+
+Need to import numpy as np. Should be fine.
+
+Also, if using SciPy's fftconvolve maybe simpler but may import SciPy. But numpy is fine.
+
+Edge: When either array length zero, n=0? np.fft.next_fast_len(0) returns 0? Let's check. But not needed.
+
+But we can handle if n==0: return np.array([], dtype=np.float64). But not necessary.
+
+Let's produce final code. Use docstring.
+
+Return np.real? irfft returns real array. So fine.
+
+Let's produce final code.

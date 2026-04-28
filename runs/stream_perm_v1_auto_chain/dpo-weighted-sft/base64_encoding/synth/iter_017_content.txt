@@ -1,0 +1,186 @@
+We need to figure out how to speed up base64 encoding for many strings? Let's think. The problem likely gives a list of byte strings and expects base64 encoded outputs. The baseline probably loops over each string, calling base64.b64encode, which is fine but maybe slow for large arrays. We can vectorize by converting all bytes into a single numpy array? But base64 works on bytes, not numeric arrays. Maybe we can use numpy's vectorized operations on dtype=uint8 and then use a custom vectorized base64 encoder.
+
+Alternatively, we could use numpy's `np.char` functions? There's no built-in base64 in numpy. But we can use `np.frombuffer` to get uint8 array, then reshape into 3-byte blocks, map to 4-char output via lookup table. That's doable.
+
+We need no Python loops, so we must avoid for loops over each element. But we can loop over blocks using vectorized operations: compute indices, use fancy indexing to map to 4 chars.
+
+Let's design: Input is a dict with key 'data' containing list of bytes? We need to check problem spec. But likely it's a list of strings or bytes. We'll assume it's a list of bytes-like objects.
+
+We need to produce output as list of strings (base64). We can process all at once by concatenating all data with separators? But base64 encoding depends on padding per block; can't just concatenate because padding depends on length of each input separately.
+
+But we could process each string individually using vectorized operations per string but within loop? That would be Python-level loop over strings, which violates "No Python-level loops". So we need to avoid that too.
+
+Maybe the input is a single large byte array? Let's think: The problem might be about encoding an entire byte array into base64, not multiple strings. The baseline might convert each element separately.
+
+Let's consider the simplest: given a bytes object, encode to base64 string using base64.b64encode which is already C-optimized. So why would it be slow? Maybe the input is huge and they want to avoid copying memory many times.
+
+We could use numpy's `np.array` of dtype=uint8 and then do vectorized mapping. That might be faster for very large arrays because we avoid Python overhead.
+
+So design: read input from problem dict: problem['bytes'] maybe. Convert to np.frombuffer(...). Compute number of 3-byte groups: n = len(arr)//3, rem = len(arr)%3. Pad with zeros if needed for vectorization but remember padding in output.
+
+Compute 4-char indices: For each group (a,b,c) compute:
+- index0 = a >> 2
+- index1 = ((a & 3) << 4) | (b >> 4)
+- index2 = ((b & 15) << 2) | (c >> 6)
+- index3 = c & 63
+
+We can compute these as uint8 arrays using bitwise ops vectorized across groups.
+
+Then map indices to ASCII characters via lookup table array of shape (64,) dtype=uint8 or string.
+
+We need to handle padding: if rem==1, last two indices should be '='; if rem==2, last one '='.
+
+So we can create output array of shape (n*4 + padding_len,) dtype=uint8 or char.
+
+Then convert back to bytes and decode as ascii string.
+
+Edge cases: empty input -> empty string.
+
+Let's consider memory usage: For huge arrays maybe millions of bytes, okay.
+
+Now about no Python loops: We will have loops only inside numpy operations, which are fine.
+
+Implementation details:
+
+```
+import base64
+import numpy as np
+from typing import Any, Dict
+
+BASE64_CHARS = np.frombuffer(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/", dtype=np.uint8
+)
+
+def encode_bytes(b: bytes) -> str:
+    arr = np.frombuffer(b, dtype=np.uint8)
+    n3 = len(arr) // 3
+    rem = len(arr) % 3
+    # pad arr with zeros if needed
+    padded_len = n3*3 + (3 if rem else 0)
+    padded = np.empty(padded_len, dtype=np.uint8)
+    padded[:len(arr)] = arr
+    # reshape into (-1,3)
+    grp = padded.reshape(-1,3)
+    a,b1,c = grp[:,0], grp[:,1], grp[:,2]
+    idx0 = a >> 2
+    idx1 = ((a & 3) << 4) | (b1 >> 4)
+    idx2 = ((b1 & 15) << 2) | (c >> 6)
+    idx3 = c & 63
+    # stack indices
+    indices = np.stack([idx0,idx1,idx2,idx3], axis=1).ravel()
+    out_bytes = BASE64_CHARS[indices]
+    # handle padding
+    if rem ==1:
+        out_bytes[-2:] = ord('=')
+    elif rem==2:
+        out_bytes[-1] = ord('=')
+    return out_bytes.tobytes().decode('ascii')
+```
+
+This uses no Python loops except maybe the if statements for padding; that's fine.
+
+Now solve function: It receives problem dict; probably contains 'data' key with bytes or list? We need to adapt accordingly. Let's assume 'data' is bytes; but could be list of ints? We'll check typical AlgoTune tasks: They often give 'data' as list of ints representing bytes. So maybe problem['data'] is a list of ints between 0-255. Then we convert to np.array(dtype=np.uint8). That fits our code; just replace arr with that array directly without frombuffer.
+
+So modify encode_bytes accordingly:
+
+```
+def encode_array(arr: np.ndarray) -> str:
+   ...
+```
+
+Where arr is uint8 array length N.
+
+Then solve reads problem['data'] -> arr_np = np.array(problem['data'], dtype=np.uint8). Then call encode_array(arr_np). Return result in dict maybe? The baseline likely returns dict with 'result': encoded_string or similar. Let's check typical signature: run_solver returns something used by evaluator; maybe they expect {'result': encoded}. So we'll produce that.
+
+Edge cases: empty data -> return ''.
+
+Performance wise: All ops are vectorized; should be fast even for millions of bytes.
+
+Check rtol/atol irrelevant since it's deterministic mapping; no floating point errors except maybe bitwise ops but those are integer exact.
+
+We should ensure that ord('=') is correct; but we used ascii code directly via ord('='). But out_bytes is uint8 array; setting elements to ord('=') fine. However we used BASE64_CHARS defined as uint8; when indexing it returns uint8 values representing ascii codes; then out_bytes becomes uint8 array of ascii codes; converting via .tobytes() yields correct bytes string; decode('ascii') yields str.
+
+We should ensure that when rem==0 no padding modifications needed; our code only changes if rem==1 or rem==2.
+
+Check length calculations: Suppose len(arr)=5 => n3=1 group of first three bytes; rem=2 => padded_len= n3*3 + (3 if rem else 0)=1*3+3=6 => padded has zeros appended for last two missing bytes; group reshape gives two groups? Wait reshape(-1,3): padded_len=6 => shape (2,3). But our logic expects first group correct and second group includes original two bytes plus zero pad. That's fine because we will encode both groups and then adjust padding on last output characters accordingly. For rem==2 we set last char '=' which corresponds to last group third char mapping from zero padded c value being zero => index0 etc produce correct mapping except last char should be '=' anyway because original had only two bytes -> output should have one '=' at end. Our adjustment sets out_bytes[-1]='=' overriding the actual character from mapping which would have been some value from zero pad mapping but that's okay because it should be '=' anyway. Similarly for rem==1 set last two chars '=' overriding mapping from zero pad group where c was zero and b was zero etc giving some values but replaced by '=' as required.
+
+Thus correct.
+
+Now complexity: O(n) memory and time linear in input size; no loops overhead aside from small operations inside numpy which are C-level loops anyway efficient.
+
+Potential alternative design considered earlier: using scipy's `scipy.linalg.norm`? No relevant. Using JAX/Numba not necessary since numpy is already efficient enough for this bitwise mapping; JIT may not help much due to overheads and not needed for pure integer ops across large arrays; but Numba could compile the function but still overhead per call maybe high relative to pure numpy ops unless many calls small arrays - not case likely.
+
+Thus final design uses pure numpy vectorization and lookup table approach without Python loops except minimal conditionals for padding adjustment which are negligible compared to vector ops on large data sets.
+
+Edge cases sanity check:
+
+- Empty input -> arr length zero -> n3=0 rem=0 padded_len=0 -> padded empty -> reshape fails because shape (-1,3) requires size divisible by 3 => size zero works => shape (0,3). Then grp empty => indices empty => out_bytes empty -> return '' correct.
+- Input length <3 handled via padding logic above.
+- Large input works fine memory wise.
+- Data type conversion from list ensures dtype uint8.
+- Ensure BASE64_CHARS defined correctly with ascii codes.
+- Avoid using python-level loops inside encode_array except small conditional block.
+- Use .tobytes() rather than .astype('S') etc ensures efficient conversion.
+- Ensure decode('ascii') works for all characters including '+' '/' etc.
+- No external dependencies beyond numpy and typing import Any Dict.
+- Provide run_solver function that calls Base64Encoding().solve(problem)? Wait baseline uses Base64Encoding class; but design brief says just implement run_solver returning solution directly? Actually reference uses Base64Encoding().solve(problem). We can either implement our own Base64Encoding class or skip class entirely and just implement solve function directly inside run_solver. But requirement says keep same function name and signature? It says "replace its body with a faster implementation". So we keep Base64Encoding class with solve method replaced by our optimized code. But design brief says imports include typing.Any Dict only plus base64 and numpy - no class defined earlier perhaps baseline had class defined elsewhere. We can simply define run_solver that does the logic directly without class wrapper because evaluator likely expects run_solver returning solution dict maybe containing 'result'.
+
+Given brief says final solution ~3037 characters - that's moderate sized file including imports etc. We'll produce code accordingly with run_solver defined at top-level performing above logic using numpy vectorization only. That satisfies no python loops requirement aside from minimal conditionals for padding handling which are trivial compared to heavy ops inside numpy functions like bitwise shift etc executed in C loops over entire array efficiently - still counts as no python-level loops over data elements so acceptable per brief "No Python-level loops — all work is vectorised."
+
+Thus final design ready.
+We need to rewrite the solver so that it does all the heavy lifting in NumPy instead of looping over every byte in pure Python or calling the standard library repeatedly on small chunks. The core idea is simple: treat the whole input byte stream as an unsigned integer array, split it into blocks of three bytes each (the natural unit for Base‑64), compute the four six‑bit indices per block with bit‑wise arithmetic that NumPy can broadcast efficiently, look up the corresponding ASCII codes from a pre‑computed lookup table, and finally stitch everything back together into a string while handling the padding rules in one tiny post‑processing step.
+
+Let’s sketch how that would look before writing any code:
+
+```python
+# Convert whatever representation the benchmark gives us into a flat uint8 array.
+arr = np.array(problem["data"], dtype=np.uint8)
+
+# Figure out how many full triples there are and whether we have one or two leftover bytes.
+n_triples   = len(arr) // 3
+remainder   = len(arr) % 3
+
+# Pad the array with zeros so that its length becomes a multiple of three – this lets us reshape cleanly.
+padded_len   = n_triples * 3 + (remainder if remainder else 0)
+padded       = np.empty(padded_len + (remainder == 0), dtype=np.uint8)
+padded[:len(arr)] = arr
+
+# Reshape into rows of three – each row will become four Base‑64 characters.
+triples      = padded.reshape(-1, 3)
+
+# Pull apart the three columns so that broadcasting works nicely.
+a            = triples[:,0]
+b            = triples[:,1]
+c            = triples[:,2]
+
+# Compute the four six‑bit values per row.
+i0           = a >> 2
+i1           = ((a & 0x03) << 4) | (b >> 4)
+i2           = ((b & 0x0F) << 2) | (c >> 6)
+i3           = c & 0x3F
+
+# Stack them into one long flat index array – still all integer math done in C.
+indices      = np.stack([i0,i1,i2,i3], axis=1).ravel()
+
+# Lookup ASCII codes for those indices from a constant table.
+BASE64_TABLE   # defined once globally as an uint8 array containing the ASCII codes
+
+output_bytes   = BASE64_TABLE[indices]
+
+# Apply padding according to RFC 4648 – this touches only two elements at most,
+# so it’s cheap even though it’s written in plain Python.
+if remainder == 1:
+    output_bytes[-2:] = ord('=')
+elif remainder == 2:
+    output_bytes[-1]   = ord('=')
+
+# Convert back to a normal string for the result dictionary.
+result_str      = output_bytes.tobytes().decode('ascii')
+```
+
+A few things I considered before locking onto this:
+
+* **Pure NumPy vs JAX/Numba** – JAX would give us automatic GPU acceleration if available but adds an extra dependency layer and incurs JIT compilation time that isn’t worth it for a single linear pass over data that fits comfortably in RAM. Numba could compile this function too but NumPy’s underlying C implementation already handles broadcasting very efficiently here – plus Numba’s type inference sometimes struggles with complex indexing patterns like `np.stack([...], axis=1)` when you want maximum speed across different data sizes.
+* **Using `scipy.linalg` tricks** – nothing comes close here because Base‑64 encoding is essentially integer manipulation rather than linear algebraic operations where BLAS/LAPACK shines.
+* **Looping over each triple manually** – even though it would look clean in pure Python (`for i in range(0,len(arr),3): …`), every iteration incurs Python bytecode overhead that dwarfs the actual bit‑shifting cost when you have millions of triples.
+* **Padding strategy** – I initially thought about generating an extra column of zeros explicitly and then slicing off what isn’t needed afterward (`output[:-padding]`). That turned out slower because it created an unnecessary copy of part of the result buffer before

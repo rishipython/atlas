@@ -1,0 +1,38 @@
+We need to provide a faster implementation. Use numpy's fft. Ensure result same as np.convolve. Use np.fft.rfft or fft. We can use np.fft.fft. But need to avoid overflow? Use real FFT.
+
+Simplest: use np.fft.fft. For real inputs, use np.fft.fft and then inverse. Use numpy.fft.fft to compute length L = N+M-1, but we need to zero-pad to next power of two or to length L. FFT of length L works. Use np.fft.fft(x, L) * np.fft.fft(h, L). Then inverse. Then take real part.
+
+Edge cases: N=0? Not likely. But we can handle if any array empty? Not necessary.
+
+We need to return dtype float64.
+
+Also we could use scipy.signal.fftconvolve but we may not have scipy. But we can import numpy. So use numpy.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]; M = h.shape[0]
+    L = N + M - 1
+    # next power of 2? Not needed but maybe faster
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)[:L]
+    return y
+
+But need to ensure dtype. Use np.fft.rfft returns float64.
+
+Edge: if N==0 or M==0? Then L=0? But we can handle: if L==0 return np.array([], dtype=np.float64).
+
+Also, for small arrays, maybe direct method is faster. But we can just use FFT.
+
+Testing: We'll test with random arrays.
+
+Also we need to preserve same name conv1d.
+
+Return y. Use float64.
+
+Ok.
+
+Let's produce final code.

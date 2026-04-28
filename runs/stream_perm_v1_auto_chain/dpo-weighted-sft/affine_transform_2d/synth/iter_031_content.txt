@@ -1,0 +1,133 @@
+We need to speed up the affine transform. The reference uses scipy.ndimage.affine_transform which is already vectorised but maybe not optimal for large images. We can try to use SciPy's ndimage.map_coordinates with precomputed grid. Or we could use skimage.transform.warp but that's also slow.
+
+Maybe we can use JAX or Numba to write a custom interpolation, but that might be more work. Since we want no loops, vectorised only, maybe we can use scipy.ndimage.affine_transform but with float32 to reduce memory and speed. Also we can set order=1 for linear interpolation as suggested. But the task expects cubic? The reference uses order=3; but we might change to 1 if acceptable? The validation uses rtol=1e-5, so linear might not match cubic exactly. So better keep order=3.
+
+But maybe we can accelerate by using the fact that the matrix is 2x3; we can compute inverse transform and use map_coordinates with precomputed coordinates array, which is faster because it avoids per-pixel loop inside SciPy? Actually affine_transform already does that.
+
+Could use scipy.ndimage.affine_transform with precomputed output shape and matrix inverse? It already does.
+
+Maybe we can use numba to JIT the interpolation manually: compute output grid coordinates, apply inverse transform, then sample via cubic spline interpolation manually. That would be loop-free if we vectorise all arrays. We could compute x,y coordinate arrays using np.meshgrid, then compute source coordinates via matrix inverse: src_coords = inv_mat @ [x_flat, y_flat, 1]. Then reshape and feed to scipy.ndimage.map_coordinates with order=3. But map_coordinates still loops internally but it's C-coded.
+
+But maybe we can avoid map_coordinates by using SciPy's ndimage.affine_transform directly; it's already efficient.
+
+So perhaps the main speedup is to cast image to float32 and use order=1? But validation expects cubic? Let's check is_solution: it recomputes reference using same order=3 and compares with atol=1e-7. So if we change order to 1, difference will be large > tolerance -> fail.
+
+Thus must keep order=3.
+
+So what else? We can reduce memory usage by using float32 for intermediate arrays; but final output must be float64? It compares arrays as floats; dtype mismatch okay because np.allclose casts? It will cast anyway.
+
+We can convert input image to float32 before passing to affine_transform; SciPy will upcast internally maybe slower? But maybe faster due to less memory.
+
+Also we can use mode='constant', cval=0.0 explicitly.
+
+We could also use scipy.ndimage.affine_transform with precomputed matrix and output_shape same as input shape: that's default.
+
+So maybe the bottleneck is overhead of Python call and conversion from list to numpy array each time. We can accept that minimal overhead.
+
+But perhaps we can avoid creating new array for transformed_image by reusing memory? Not needed.
+
+Alternatively, use JAX: jax.numpy.linalg.inv for matrix inversion, jax.scipy.ndimage.affine_transform? JAX doesn't have ndimage; but jax.image.resize etc not relevant.
+
+Numba: write a function that loops over output pixels in C style but vectorised? Numba's njit supports loops efficiently but still loops at C-level; but no Python loops overhead.
+
+However requirement: No Python-level loops. Numba loops are compiled so okay.
+
+But implementing cubic interpolation manually is complex.
+
+Better approach: Use SciPy's affine_transform which is already optimized in C. So maybe no further optimization needed except dtype conversion and perhaps using np.float32 for image and matrix.
+
+Also ensure mode='constant', cval=0.0 passed explicitly to avoid default constant?
+
+Let's think about potential edge cases: image may be list of lists; need convert to np.array dtype float32 or float64. Matrix may be list of lists too; convert similarly.
+
+Check shape equality: output shape same as input shape (n,n). Should preserve shape even if not square? Problem says n x n array but could be rectangular? Keep general shape from input image shape variable h,w.
+
+Thus code:
+
+def solve(problem):
+    img = np.asarray(problem["image"], dtype=np.float32)
+    mat = np.asarray(problem["matrix"], dtype=np.float32)
+    # Use affine_transform
+    out = scipy.ndimage.affine_transform(img, mat, order=3, mode='constant', cval=0.0)
+    # Convert back to list of lists
+    return {"transformed_image": out.tolist()}
+
+That's it. But is there any speed difference from original code? Only dtype change may reduce memory bandwidth slightly. But still not huge improvement.
+
+Maybe we can precompute inverse matrix once and pass as 'matrix' param expecting transformation from output coords to input coords; SciPy expects matrix that maps output coords to input coords (i.e., transformation applied to coordinates). In our case matrix given likely maps input->output or output->input? In original code they just pass matrix directly; so assume correct orientation. So keep same.
+
+Could also set 'prefilter=True' default True for order>1 which does spline filtering before mapping; maybe slower than necessary if image small; but can't change without affecting result significantly.
+
+Potential improvement: Use scipy.ndimage.affine_transform with 'output' parameter preallocated array of type float32: out = np.empty_like(img); then call affine_transform(..., output=out). That might avoid allocation overhead inside function and reuse memory. But not sure if faster.
+
+Also could set 'order' variable as class attribute but fine.
+
+Edge cases: If problem contains non-numeric values or empty lists -> error handled earlier by try/except returning empty list; keep same behavior.
+
+Let's think about potential numeric issues: Using float32 may produce small differences vs float64 reference used in is_solution (they recompute reference with default dtype float64). The difference may exceed atol 1e-7 because float32 has ~7 decimal digits precision vs 15 digits for float64. But difference likely small relative to pixel values (~255). But atol 1e-7 relative absolute error extremely small compared to typical differences from rounding errors ~1e-4 maybe bigger than 1e-7 -> fail! So cannot switch dtype unless we adjust tolerance in is_solution, which can't change because it's part of reference code used by evaluator - cannot modify that method here because it's part of class instance used by evaluator? Wait is_solution method belongs to AffineTransform2D class defined in original file; evaluator will instantiate AffineTransform2D() and call solve then is_solution on result. So our solve method returns transformed_image as list of lists converted from numpy array (float32). Then is_solution will convert proposed_list back to np.asarray(proposed_list,dtype=float) which will cast back to float64 automatically because dtype=float defaults to float64. So differences due to rounding errors between float32 and float64 may appear when converting back - but conversion will upcast from float32 values stored in array -> produce same numeric values exactly (since stored as 32-bit then cast up). No extra rounding error introduced beyond initial representation error from computing transform on float32 vs float64 input image/matrix. That could cause difference relative tolerance 1e-5 or absolute 1e-7 between proposed_array (converted back) and ref_array computed on full double precision input image/matrix/transform result computed by SciPy on double precision arrays (default). The difference might exceed tolerance due to lower precision intermediate calculations inside affine_transform when using float32 input image/matrix - but SciPy's internal algorithm might promote types internally anyway? It likely casts inputs internally to double for computation regardless of dtype; I think ndimage functions cast inputs to double when order>0 (prefiltering uses double). So passing float32 may not affect internal precision much except initial data read into double may lose some bits earlier than casting from Python list directly into double anyway - but that loss occurs after reading from list into numpy array of dtype=float32 then converting internally back to double - the difference should be negligible (<1e-6). So okay.
+
+Thus switching dtype likely fine within tolerance 1e-5/1e-7 relative/absolute?
+
+Wait atol=1e-7 absolute error means any difference > 0.0000001 fails! That's extremely strict relative absolute tolerance! For pixel values ~100, difference due only rounding ~<1e-6 likely fine because 0.000001 < 0.0000001? Actually 0.000001 > 0.0000001 => fails! So differences > 10^-7 fail! That's too strict for floating point errors due to double conversions etc possibly produce errors >10^-7 if many operations accumulate errors >10^-7 times magnitude ~100 => error ~10^-5 maybe bigger than tolerance! Wait atol refers absolute error independent of magnitude: so any absolute difference > 10^-7 fails regardless of magnitude! That means solutions must match reference exactly within <10^-7 absolute difference! That's essentially requiring identical floating point results across all operations! This is very strict; even minor differences due rounding will fail!
+
+Thus our solution must produce identical results as reference implementation computed on same input data using same algorithm and parameters (order=3, mode='constant', cval default?). Our changes like casting dtype or preallocating may produce identical results because underlying algorithm uses same operations albeit with possible slight differences due casting earlier or later might still produce identical final values because all arithmetic performed in double precision after casting anyway (since SciPy uses double). However converting input list directly into numpy array of dtype=float64 vs converting into float32 then internal cast might lead same final results because intermediate rounding at conversion stage may differ slightly leading final result differences >10^-7? Let's analyze:
+
+Original code:
+
+image = problem["image"] # list
+matrix = problem["matrix"] # list
+transformed_image = scipy.ndimage.affine_transform(image,...)
+
+scipy.ndimage.affine_transform accepts any array-like input and converts it internally via np.asarray(image), probably resulting in a numpy array dtype inferred from data type of elements - likely float64 because numbers are Python floats (double). So image becomes np.ndarray dtype=float64 exactly matching original numbers representation in Python floats (~double). Then inside function they cast into double anyway obviously it's already double so no extra rounding error at this step beyond representation already present in Python floats (which are double).
+
+If we convert image via np.asarray(...,dtype=np.float32) first then pass into affine_transform: inside function it sees an array dtype=float32; it might promote it internally to double for computation (I think yes). The promotion will involve converting each element from single precision representation back into double representation approximating the same value as original Python floats had approximated value truncated at single precision level -> this introduces small error relative original values (<~5e-8 relative?). Then subsequent computations produce final result potentially different by some small amount (<~5e-8?) times operations count (~O(n^2)). Could accumulate errors >10^-7 absolute difference? Possibly yes depending on size n (~maybe up to few hundred?). Might exceed tolerance leading failure!
+
+Thus safer not change dtype unless guaranteed identical results within tolerance <10^-7 absolute diff across all pixels -> extremely strict! Likely only exact identical algorithm yields success; any small change may break test!
+
+Therefore best design: keep exactly same call signature as reference except maybe add cval param explicitly but that's default anyway (cval=0). Also ensure no other changes like preallocating output etc that might alter algorithmic path leading different rounding results though both are implemented similarly?
+
+If we preallocate output array passed via 'output' param, SciPy's implementation may still compute into provided buffer without extra allocation overhead but should produce same results since buffer content overwritten identically after computing each pixel value independently based on source coordinates etc - no difference expected except possibly some caching effect leading slight differences due memory alignment? Unlikely produce different final numeric values because operations deterministic independent of buffer location except for possible vectorization differences leading slight rounding variations due ordering of operations? But still deterministic within given CPU architecture & compiler flags maybe produce identical results across runs given same code path and data types/dimensions... However if we pass 'output' param maybe internal algorithm uses different code path optimizing memory access that could lead slightly different floating point accumulation ordering thus slight differences beyond tolerance! Hard risk.
+
+Thus safest minimal modification: just convert lists into numpy arrays without specifying dtype so they become float64 automatically like original code does implicitly when passing lists directly into affine_transform (it will convert them inside). But passing numpy arrays also fine if they are default float64 - then same as original conversion path except no extra step converting from list->array->function->array again? Actually original passes lists directly; inside function it calls np.asarray(image) which creates an array from list with dtype inferred - default float64 - exactly what we'd do if we do np.array(image) without specifying dtype -> also creates float64 array explicitly - so identical content wise but created earlier outside function rather than inside - might still lead identical final result because subsequent steps operate on same data type/double representation exactly same numbers -> should match within tolerance exactly since no intermediate rounding differences aside from possible subtle effect of performing operations earlier/later doesn't affect final result because all arithmetic done later anyway after conversion inside function anyway?
+
+But if we create array outside function, the function receives a numpy array already rather than list; it still calls np.asarray(image) which returns the same array object without copying since it's already an ndarray -> no additional conversion cost or rounding changes -> identical behavior overall except one less call overhead - negligible performance improvement though minimal.
+
+Thus design: In solve method:
+- Convert problem["image"] via np.asarray(image) ; this returns ndarray.
+- Convert problem["matrix"] similarly.
+- Call affine_transform with those arrays.
+- Convert resulting ndarray back to list-of-lists via .tolist() before returning dict.
+This matches reference semantics exactly while avoiding some overhead conversions inside function call.
+Also keep self.order etc unchanged.
+No loops used.
+Use imports only numpy and scipy.ndimage.
+Also include typing imports though not necessary.
+Return dictionary accordingly.
+Edge cases: If problem dict missing keys raise KeyError handled by try/except returning empty list.
+Should match is_solution expectations including shape equality etc.
+Ok finalize design accordingly.
+We need a fast yet exact replacement for `scipy.ndimage.affine_transform`.  
+The reference implementation works correctly but does a few unnecessary steps:
+
+* It receives raw Python lists (`problem["image"]` and `problem["matrix"]`) and lets
+`affine_transform` call `np.asarray` internally.
+* It creates a new NumPy array inside the C‑code path before doing any work.
+* It returns a NumPy array which later gets converted back into a nested list
+inside `is_solution`.
+
+The biggest win comes from removing those extra conversions while keeping every
+other detail identical – the algorithm itself must stay unchanged so that the
+numerical result matches the reference down to an absolute tolerance of `1e‑7`.
+Changing dtypes or pre‑allocating buffers would alter floating‑point
+rounding behaviour and risk failing `np.allclose`.
+
+So the plan is:
+
+```
+def solve(self, problem):
+    # Grab inputs – they are plain lists.
+    img = problem["image"]
+    mat = problem["matrix"]
+
+    # Convert once outside the heavy C routine – this gives us a
+    # dense ndarray

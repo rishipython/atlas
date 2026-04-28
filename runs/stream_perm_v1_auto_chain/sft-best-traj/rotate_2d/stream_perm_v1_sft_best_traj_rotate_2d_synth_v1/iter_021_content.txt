@@ -1,0 +1,175 @@
+We need to figure out how to solve the rotate_2d problem efficiently. Let's first think what the problem actually is: probably given a 2D array (image) and a rotation angle, we need to rotate it by that angle. The reference implementation is slow; we want a faster one using scipy.ndimage.rotate or similar.
+
+We must keep function signature `run_solver(problem)` returning something. The problem likely contains input data: maybe a dictionary with keys 'image' and 'angle'? Let's check typical AlgoTune tasks: They usually provide a dict with keys 'image', 'angle', maybe 'order', 'reshape'. We should inspect the baseline but we can't. So we assume `problem` is a dict with at least 'image' (numpy array) and 'angle' (float). Might also contain 'reshape' flag. We'll design to handle common keys.
+
+We need to use numpy and scipy.ndimage. No Python loops; vectorized.
+
+Potential approach: use scipy.ndimage.rotate with reshape=False, order=1 or 3? Might need bilinear interpolation for speed. Use mode='constant', cval=0.0.
+
+But maybe we need to rotate multiple images in batch? If problem contains list of images? But typical rotate_2d is single image.
+
+Let's think: The baseline might compute rotation via matrix multiplication of coordinates, then interpolation manually, which is slow. We can replace with scipy.ndimage.rotate which is C-optimized.
+
+Also, we may consider using SciPy's `affine_transform` which can do rotation with matrix and offset. That might be faster if many images.
+
+But requirement: no loops, vectorized. If batch, we could stack images into 3D array and apply rotate along last two axes using broadcasting? But scipy.ndimage.rotate does not support batch directly; but we can loop over batch dimension in Python but that's a loop - not allowed? It says no Python-level loops; all work vectorised. So likely only single image.
+
+Thus implement:
+
+```
+def run_solver(problem):
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    reshape = problem.get('reshape', False)
+    order = problem.get('order', 1)
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0)
+    rotated = scipy.ndimage.rotate(img, angle, reshape=reshape, order=order,
+                                   mode=mode, cval=cval)
+    return {'rotated': rotated}
+```
+
+But the baseline returns just rotated image maybe. Let's inspect typical pattern: In AlgoTune tasks, run_solver returns solution dict or just value? Might return rotated array directly.
+
+Better to return rotated array directly.
+
+Edge cases: if angle==0 return copy of image.
+
+Also handle dtype: preserve dtype if possible; scipy rotates float64 by default; if input is uint8, output will be float64; we may cast back if needed.
+
+So do:
+
+```
+out = rotated.astype(img.dtype) if np.can_cast(rotated.dtype, img.dtype) else rotated
+```
+
+But careful: cast may clip values for uint8; but that's fine.
+
+Also consider performance: using SciPy's rotate uses interpolation; for large images might be heavy but still faster than pure python loops.
+
+We could also use `scipy.ndimage.affine_transform` with rotation matrix computed via cos/sin; that might be slightly faster as it avoids computing sin/cos each call? But rotate already does that internally.
+
+We might also consider using `scipy.ndimage.interpolation.rotate` older name; but current is `scipy.ndimage.rotate`.
+
+Ok.
+
+Now design final code structure:
+
+- import logging
+- from typing import Any, Dict
+- import numpy as np
+- import scipy.ndimage
+
+Define run_solver(problem: Dict[str, Any]) -> np.ndarray:
+
+- Extract image
+- Validate shape (2D)
+- Get angle
+- Use scipy.ndimage.rotate
+- Return result
+
+Add docstring minimal.
+
+Set logger maybe not needed but required import.
+
+Edge cases: negative angles handled fine; reshape default True? For speed maybe set reshape=False to keep same shape; but baseline might use reshape=True by default? We need to guess; maybe keep reshape=True to preserve original size? Actually rotation changes shape if reshape=True; baseline may preserve shape? Hard to know. We'll use reshape=False as default for speed and consistency with typical usage. But allow override via problem dict.
+
+Also allow specifying order of interpolation via problem dict.
+
+Return rotated image as np.ndarray.
+
+Now think about performance details: SciPy's rotate uses multithreading via OpenMP if available; good.
+
+We should avoid copying unnecessarily: pass `prefilter=False` maybe speeds up for order<1? But default prefilter=True for order>1 to avoid aliasing; we can set prefilter=False for speed but risk quality. Baseline may not prefilter either. We can set prefilter=False for speed unless order>1? But let's keep default prefilter=True for safety.
+
+Ok final design ready.
+
+Now sanity check edge cases:
+
+- Input dtype uint8 -> output float64 -> cast back -> ok.
+- Angle NaN or inf -> rotate will error; assume valid.
+- Empty image -> return empty.
+- Problem missing keys -> raise KeyError or fallback defaults.
+- Problem contains extra keys -> ignored.
+
+Alright produce final chain-of-thought ending with handoff sentence.
+We need to take the incoming `problem` dictionary and pull out the image data and the rotation parameters. The baseline probably expects a 2‑D NumPy array under some key like `'image'` and an angle in degrees under `'angle'`. It might also allow optional flags such as whether the output should keep the same shape (`reshape`) or what interpolation order to use (`order`). Since the task explicitly forbids Python‑level loops, our implementation must rely on vectorised operations provided by SciPy/Numpy only.
+
+Let’s sketch a minimal interface first:
+
+```python
+def run_solver(problem):
+    img   = problem['image']          # expects a NumPy array
+    angle = problem.get('angle', 0)   # default no rotation
+    ...
+```
+
+If I just call `scipy.ndimage.rotate(img, angle)` that will do everything in C under the hood – it handles coordinate transforms, interpolation, padding etc., all without any explicit Python loops. That’s exactly what we want for speed and simplicity.
+
+Now I have to decide on defaults for optional parameters:
+
+* **reshape** – By default SciPy’s `rotate` expands the output so that the whole rotated image fits inside (`reshape=True`). That changes the shape of the output compared to the input which might be undesirable if downstream code expects the same dimensions. The baseline implementation probably uses `reshape=False` because most simple rotate tasks keep the same canvas size (the pixel outside becomes black). I’ll go with `reshape=False` as a safe default but still expose it so callers can override it.
+* **order** – Interpolation order controls quality vs speed (0 nearest neighbour, 1 bilinear, 3 cubic). The baseline likely uses bilinear (`order=1`). I’ll expose it too.
+* **mode** – How borders are handled (`constant`, `nearest`, etc.). The usual choice is `'constant'` with zero padding – this matches many simple implementations.
+* **cval** – The constant value used when mode='constant'. Default zero is fine.
+* **prefilter** – For orders > 1 SciPy applies a Gaussian prefilter by default (`prefilter=True`). That adds some overhead but improves quality slightly. Since we’re after speed and the baseline probably doesn’t prefilter either (or at least doesn’t care), I’ll leave it at its default value (`True`) so we don’t degrade quality unexpectedly.
+* **dtype preservation** – SciPy’s rotate always returns float64 regardless of input dtype. If callers expect an integer type (e.g., uint8 images), we should cast back after rotation while clipping appropriately to avoid overflow/underflow issues. I’ll add an optional step that casts back only when safe (`np.can_cast(rotated.dtype, img.dtype)`).
+
+With those thoughts in mind my skeleton looks like this:
+
+```python
+def run_solver(problem):
+    img   = problem['image']
+    angle = problem.get('angle', 0)
+
+    # optional overrides
+    reshape = problem.get('reshape', False)
+    order   = problem.get('order', 1)
+    mode    = problem.get('mode', 'constant')
+    cval    = problem.get('cval', 0)
+
+    # perform rotation using SciPy's fast C implementation
+    rotated = scipy.ndimage.rotate(
+        img,
+        angle,
+        reshape=reshape,
+        order=order,
+        mode=mode,
+        cval=cval,
+        prefilter=True
+    )
+
+    # preserve dtype if possible
+    if np.can_cast(rotated.dtype, img.dtype):
+        rotated = np.clip(rotated, np.iinfo(img.dtype).min,
+                          np.iinfo(img.dtype).max).astype(img.dtype)
+
+    return rotated
+```
+
+That satisfies all constraints:
+
+* No Python loops – everything happens inside SciPy/Numpy.
+* Uses SciPy (`scipy.ndimage.rotate`) as required.
+* Vectorised – just one function call per image.
+* Handles typical edge cases (empty arrays return empty arrays).
+* Keeps logging import because it was mentioned in the brief even though not used here – could be useful for debugging later.
+* Keeps typing imports in case future extensions need type hints.
+
+Before finalising I double‑check potential pitfalls:
+
+* If `img` is not 2‑D (e.g., color image with shape `(H,W,C)`), `rotate` will treat it as multi‑dimensional and rotate all axes simultaneously which is wrong. The baseline probably only deals with grayscale images so this isn’t an issue here. If needed I could add an assertion or flatten last dimension first.
+* Casting back from float64 to uint8 may produce values outside `[0,255]`. Using `np.clip` ensures they stay within bounds before casting.
+* For very large images memory consumption could spike due to intermediate arrays created by SciPy’s implementation – but that’s inherent in any high‑quality rotation routine anyway.
+* If callers pass an angle of exactly zero or multiples of 360°, SciPy still does work unnecessarily; I could short‑circuit those cases:
+
+```python
+if angle % 360 == 0:
+    return img.copy()
+```
+
+but modulo on floats can be imprecise; instead check `abs(angle) < 1e-12`.
+
+I’ll add that quick guard because it saves time on trivial rotations without affecting correctness otherwise.
+
+Putting it all together gives us a concise yet fully functional implementation that respects every constraint from the brief while being fast thanks to SciPy’s internal optimisations. OK, I think I have the design. Time to write it.

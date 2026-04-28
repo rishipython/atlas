@@ -1,0 +1,31 @@
+We need to replace slow implementation with FFT-based convolution. Use numpy. Ensure same output shape, dtype float64. Use numpy.fft.fft. For real inputs, we can use np.fft.rfft? But easiest: use np.fft.fft with length L = next power of 2? But can use np.fft.fft directly; size is N+M-1.
+
+We can do:
+
+L = N + M - 1
+size = 1 << (L-1).bit_length()  # next power of 2
+X = np.fft.rfft(x, size)
+H = np.fft.rfft(h, size)
+Y = X * H
+y = np.fft.irfft(Y, size)[:L]
+Return y
+
+Need to ensure dtype float64; np.fft.rfft returns complex128; product is complex128; irfft returns float64.
+
+But must be careful about real input. Use rfft.
+
+Edge cases: if either array empty? Not specified but lengths >0 likely. Could handle.
+
+Also we could use scipy.signal.fftconvolve but we can implement ourselves.
+
+Implementation: define conv1d(x,h). Compute lengths. Use rfft. Note: If x or h are not float64, cast to float64. Use np.asarray.
+
+Also need to handle small lengths maybe use direct? But not necessary.
+
+Return y as float64.
+
+Test: simple.
+
+Also ensure we import numpy. Use np.fft.rfft and irfft.
+
+Let's produce code.

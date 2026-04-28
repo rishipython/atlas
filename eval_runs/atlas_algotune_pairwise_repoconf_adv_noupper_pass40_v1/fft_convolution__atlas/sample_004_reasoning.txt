@@ -1,0 +1,31 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use np.fft.rfft but easier: use np.fft.fft of length L = N+M-1 padded to next power of two for speed? But evaluator maybe small. Use np.fft.fft of length N+M-1. Do: y = np.fft.ifft(np.fft.fft(x, L) * np.fft.fft(h, L)).real. Need to ensure dtype float64. Also handle zero-length? Not needed. Should preserve numeric closeness. Use np.fft.fft with dtype complex. Provide efficient. Use np.fft.ifft, cast to float64.
+
+Implement conv1d. Add imports.
+
+Edge cases: if x or h empty? They may have length zero? Not likely. But np.convolve with empty returns empty? If either empty returns empty. We can handle: if N==0 or M==0: return np.array([], dtype=np.float64). Use that.
+
+Also maybe want to use np.fft.fft with length L = N+M-1. That's fine.
+
+Return y.astype(np.float64). Might need to round small imag part.
+
+Implementation:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    if N==0 or M==0:
+        return np.empty(0, dtype=np.float64)
+    L = N + M - 1
+    # choose next power of 2 for speed? Not necessary but okay
+    # compute FFT
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = np.fft.irfft(X * H, n=L)
+    return Y
+
+Using rfft/irfft returns real array. dtype float64. Good.
+
+Return Y.
+
+Make sure to import numpy. That's all. Ensure function name conv1d. Provide entire file.

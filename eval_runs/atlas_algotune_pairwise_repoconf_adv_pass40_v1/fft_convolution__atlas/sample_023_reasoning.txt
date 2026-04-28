@@ -1,0 +1,27 @@
+We need to provide faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must ensure same dtype float64. We'll implement using numpy.fft.rfft for real? But easier to use np.fft.fft. We compute length L = next power of two? For full convolution length N+M-1. We'll compute length L = 1 << (N+M-1-1).bit_length() maybe. Then compute FFT of padded arrays, multiply, inverse FFT, real part, round to float64. Use np.fft.fft.
+
+We must handle empty arrays? maybe not.
+
+Implementation:
+
+def conv1d(x, h):
+    N=len(x); M=len(h)
+    if N==0 or M==0: return np.array([], dtype=np.float64)
+    L = 1 << ((N+M-1)-1).bit_length()
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X*H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+
+But rfft returns length L/2+1. Works.
+
+Need to import numpy as np.
+
+Edge cases: negative or small arrays. Works.
+
+Return dtype float64. The result is float64. Ensure dtype.
+
+Test with np.allclose.
+
+Let's produce final code.

@@ -1,0 +1,40 @@
+We need to produce faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to import. Let's use scipy.signal.fftconvolve. That returns float64. Should be fine. But we need to ensure same dtype. Provide same output shape.
+
+Also test may use large arrays. Need to ensure performance.
+
+Edge cases: zero-length? But input arrays length >0. But handle 0 gracefully.
+
+Let's produce:
+
+def conv1d(x,h):
+    return scipy.signal.fftconvolve(x,h,mode='full')
+
+But need to import scipy.signal. Ensure we import.
+
+Also we might use numpy.fft.fft. But scipy is fine.
+
+Let's implement with numpy only to avoid external dependency? But SciPy may not be installed. But typical environment includes SciPy. But to be safe, implement using numpy. Use np.fft.fft and ifft.
+
+We need to compute length L = N+M-1. Next power of two or just use next power-of-two for speed? Use np.fft.fft with size L. Actually we need to compute convolution: y = ifft(fft(x, L) * fft(h, L)). This yields complex but real due to real inputs. Use np.real. Use dtype float64. Ensure rounding.
+
+Let's implement:
+
+def conv1d(x,h):
+    N=x.shape[0]; M=h.shape[0]; L=N+M-1
+    nfft = 1<< (L-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)[:L]
+    return y
+
+But we must ensure dtype float64. np.fft.rfft returns complex64? Actually default dtype float64 -> complex128. Good.
+
+Return y. Use np.real? irfft returns real array. Good.
+
+Edge case L=0? if both empty? but not.
+
+Let's produce final code. Provide imports.
+
+Also we might optionally fallback to numpy.fft.fft with complex but use rfft to reduce.
+
+Let's produce final file.

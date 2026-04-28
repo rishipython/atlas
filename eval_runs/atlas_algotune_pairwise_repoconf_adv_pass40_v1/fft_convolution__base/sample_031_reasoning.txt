@@ -1,0 +1,32 @@
+We need to implement fast convolution. Use numpy. Use FFT-based convolution. For real input, we can use np.fft.fft. For 1D arrays. Ensure correct length.
+
+We can use np.fft.rfft or fft. For general case, we can use np.fft.fft to compute convolution.
+
+We should handle arbitrary length. Use length L = N + M - 1. Compute next power of two maybe for speed. Use np.fft.rfft of length L? Actually rfft returns length L/2+1. But we can compute with rfft to reduce computation if real.
+
+But easiest: use np.fft.fft on length L. Compute X = np.fft.fft(x, L), H = np.fft.fft(h, L). Then y = np.fft.ifft(X * H).real. That returns length L. For real input, we can use rfft. But we can just use fft for simplicity.
+
+Edge cases: if x or h length zero? Not likely. But we can handle.
+
+We need to import numpy as np. Provide conv1d.
+
+Make sure dtype float64.
+
+Also ensure we use np.fft.ifft returns complex, but due to numerical error, take .real.
+
+Let's implement.
+
+Also maybe use np.fft.rfft for speed: length L. X = np.fft.rfft(x, L) etc. Then y = np.fft.irfft(X*H, L). That returns real.
+
+We'll implement with rfft. Use dtype float64.
+
+Return y.
+
+Also ensure that if x or h is not 1D? They are 1D arrays. We'll treat shape[0].
+
+Also handle when either length 0? Not needed.
+
+Return y.
+
+Ok. Let's produce code.
+

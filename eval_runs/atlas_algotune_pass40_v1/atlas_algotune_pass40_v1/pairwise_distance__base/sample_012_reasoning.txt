@@ -1,0 +1,24 @@
+We need to replace the body of pairwise_sq_dist with efficient implementation. Classic approach: use broadcasting or linear algebra: D = A + A^T - 2 X X^T. For squared distances: compute row norms squared: sum of squares per row. Use np.dot. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    D = norms[:, None] + norms[None, :] - 2 * X @ X.T
+    D = np.maximum(D, 0.0) # due to numerical errors
+    return D
+
+Need to ensure dtype float64.
+
+Edge cases: negative zeros? fine.
+
+Return shape (N,N). Should be fine.
+
+We can also use np.linalg.norm but dot product is efficient.
+
+Let's produce full file with imports.
+
+Also we may want to set np.seterr? Not necessary.
+
+Return.
+
+Let's produce final code.

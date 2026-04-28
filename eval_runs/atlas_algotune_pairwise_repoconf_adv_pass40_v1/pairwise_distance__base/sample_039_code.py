@@ -1,0 +1,20 @@
+import numpy as np
+
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    """Return the (N, N) pairwise squared Euclidean distance matrix.
+
+    Args:
+        X: np.ndarray of shape (N, D), dtype float64.
+
+    Returns:
+        np.ndarray of shape (N, N), dtype float64.
+    """
+    X = np.asarray(X, dtype=np.float64)
+    # Compute squared norms of each row
+    sq_norms = np.sum(X ** 2, axis=1)
+    # Use the expansion: ||a - b||^2 = ||a||^2 + ||b||^2 - 2 a·b
+    D = sq_norms[:, None] + sq_norms[None, :] - 2.0 * X @ X.T
+    # Numerical errors can lead to tiny negative values; clip them to zero
+    np.maximum(D, 0.0, out=D)
+    return D

@@ -1,0 +1,38 @@
+We need to replace the slow implementation with efficient vectorized approach. The standard formula: pairwise squared distances can be computed as:
+
+Let G = X @ X.T (dot product). Then distances: D = diag(G).reshape(-1,1) + diag(G).reshape(1,-1) - 2*G. But careful with numerical precision: use np.sum(X**2, axis=1).reshape(-1,1). Then compute:
+
+sum_X_sq = np.sum(X**2, axis=1).reshape(-1,1)
+dist = sum_X_sq + sum_X_sq.T - 2 * X @ X.T
+
+Make sure dtype float64. Ensure no negative values due to round-off: set negative small values to zero via np.maximum(dist, 0).
+
+Return dist.
+
+Also might use broadcasting: dist = np.sum((X[:,None,:] - X[None,:,:])**2, axis=2). But that uses memory O(N^2 D). For large N, it's heavy. But vectorized dot approach uses O(N^2) memory for G anyway. So fine.
+
+Thus implement pairwise_sq_dist accordingly.
+
+Also maybe use np.dot.
+
+Let's produce code file:
+
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sum_X_sq = np.sum(X**2, axis=1).reshape(-1,1)
+    dist = sum_X_sq + sum_X_sq.T - 2*np.dot(X, X.T)
+    # Numerical errors: set small negative to zero
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+That should be correct.
+
+Edge cases: N=0? Should return empty (0,0). Works: sum_X_sq shape (0,1). dot returns (0,0). dist shape (0,0). Good.
+
+Return dtype float64.
+
+Ok.
+
+Let's produce final code.

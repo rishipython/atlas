@@ -1,0 +1,53 @@
+We need to replace the slow double loop with efficient FFT-based convolution. Use numpy. For 1-D arrays, we can use np.fft.fft and ifft. Need to handle real arrays, return real output. Use np.fft.rfft? But simplest: compute FFT of both padded to length L = N+M-1, but we need next power of 2? Actually for FFT, we can choose L = N+M-1 or next power-of-2 to speed. But correctness: if we pad to N+M-1, we get exact linear convolution. Use np.fft.fft(x, L). Multiply with fft(h, L). Compute ifft. Real part. Should be fine.
+
+Potential numeric differences: use np.fft.fft for real inputs; results may have small imaginary due to rounding. Use np.real.
+
+Edge cases: if x or h empty? Not expected. Use np.fft.fft. But we can also use scipy.signal.fftconvolve. But maybe we want minimal dependencies. Use numpy.
+
+So code:
+
+def conv1d(x,h):
+    N, M = len(x), len(h)
+    L = N+M-1
+    # next power of 2 for speed? Use L if small else next pow2
+    # But for correctness, we can use L.
+    # compute FFT
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    y = np.fft.ifft(X * H)
+    return np.real(y)
+
+We also need to handle dtype: x, h may not be float64? But we can cast to float64.
+
+Also need to import numpy.
+
+This will be faster.
+
+But we must keep same function signature, no other changes.
+
+Edge: If arrays are not contiguous? Not issue.
+
+Let's produce final file with imports and function.
+
+Also maybe we want to handle dtype: convert to float64.
+
+Ok.
+
+We produce code.
+
+But to ensure numeric closeness, maybe use np.fft.ifft with dtype complex, then real part. Use np.real.
+
+All good.
+
+Also we can consider using np.fft.fft with n=next power of 2 for speed. But for small arrays, overhead may be more. But we can implement nextpow2.
+
+Implement:
+
+def _next_pow2(n):
+    return 1 << (n-1).bit_length()
+
+But not necessary.
+
+Ok.
+
+Let's produce final answer.

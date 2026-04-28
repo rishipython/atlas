@@ -1,0 +1,43 @@
+We need to implement fast convolution. Use numpy. Use numpy.fft.fft for real signals. Use np.fft.fft(x, n=...). For real double arrays, we can use np.fft.rfft for speed. But need full convolution output length N+M-1. We can compute the minimal length for FFT: L = 1 << (N+M-1-1).bit_length() or just use next_pow2. Use np.fft.fft. Then multiply elementwise, inverse FFT, take real part, round small errors.
+
+We should ensure dtype float64. Use np.fft.fft and ifft. Use np.fft.rfft and irfft to avoid complex. But rfft length is L, we need to compute L as next power of two >= N+M-1. Then use rfft of x padded to L and h padded to L. Multiply, irfft. That yields length L real array. Then slice first N+M-1. Use np.real.
+
+Edge cases: empty arrays? conv1d may be called with zero-length arrays? In that case N or M zero? For full convolution, if either zero, result is empty array. Let's handle.
+
+Implement conv1d:
+
+```
+def conv1d(x,h):
+    N, M = x.shape[0], h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = 1 << ((N+M-1-1).bit_length())
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+```
+
+Note: np.fft.irfft returns real array of length n. Good.
+
+Test numeric closeness: Should be fine.
+
+But we must import numpy. Should we import scipy? Not needed.
+
+We must ensure dtype float64. Input arrays may be float64 or other. Use np.asarray(x, dtype=np.float64). But if we cast, may change? But fine.
+
+But we need to preserve dtype? They expect float64 output. We'll output float64.
+
+Edge: rounding errors small. They use np.allclose. Acceptable.
+
+Let's produce final code.
+
+Also we can use np.fft.fft with full complex but rfft is efficient.
+
+Let's implement.
+
+Also we might handle when input arrays are not 1D? Problem says 1-D arrays. So fine.
+
+Let's produce final code.
+

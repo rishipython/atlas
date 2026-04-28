@@ -1,0 +1,190 @@
+We need to compute pairwise squared Euclidean distances efficiently. The naive triple loop is too slow. Let's brainstorm options.
+
+First thought: use the standard trick: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms vector, then outer sum, then subtract 2 times dot product matrix. That requires a matrix multiplication X @ X.T, which is BLAS-backed. That's fast. Then we can do broadcasting to add norms. That is pure numpy, no loops.
+
+But the brief says we must use scipy somewhere and numba JIT compilation. So we need to incorporate those. We could use scipy.spatial.distance.cdist or scipy.linalg.norm? But cdist already does pairwise distances; but maybe we want to use it for something else? Or we could use scipy.linalg.blas.dgemm for the dot product, but that's basically what numpy uses under the hood.
+
+Also, numba JIT: maybe we want to write a small numba function that computes the dot product or something? But that might be overkill; numpy's dot is already fast. However, requirement says "Uses numba JIT compilation". So we must include a @jit decorated function somewhere that does something non-trivial.
+
+Maybe we can write a numba function that computes the Gram matrix X @ X.T in a loop but JIT compiled. That would be slower than numpy's BLAS but still faster than pure python loops? Might not be necessary, but requirement says must use numba.
+
+Alternatively, we could use numba to compute the squared norms vector via a loop, but again numpy can do that quickly with np.sum(X**2, axis=1). But maybe we want to show numba usage.
+
+But we also must use scipy somewhere. Could use scipy.linalg.blas.sgemm or dgemm explicitly to compute Gram matrix; that's a scipy function.
+
+So design: import numpy as np, import numba, import scipy.linalg.blas as blas.
+
+Define a numba-compiled function that computes squared norms: maybe:
+
+```
+@numba.njit
+def _squared_norms(X):
+    N = X.shape[0]
+    out = np.empty(N, dtype=np.float64)
+    for i in range(N):
+        s = 0.0
+        for k in range(X.shape[1]):
+            v = X[i,k]
+            s += v*v
+        out[i] = s
+    return out
+```
+
+This uses loops but JIT compiled; okay.
+
+Alternatively compute Gram matrix via scipy blas:
+
+```
+G = blas.dgemm(alpha=1.0, a=X, b=X.T, trans_a=False, trans_b=True)
+```
+
+But dgemm expects arrays of shape (M,N) and (N,P). We want X (N,D) times X.T (D,N). So dgemm(alpha=1., a=X, b=X.T). That returns shape (N,N). That uses BLAS and is fast.
+
+Then compute D = norms[:,None] + norms[None,:] - 2*G
+
+Need to clip small negative values due to floating errors: maybe np.maximum(D, 0). But not necessary if data is fine.
+
+Finally return D.
+
+We also need to ensure dtype float64 throughout; input dtype float64 as per docstring.
+
+Edge cases: N=0? Might happen? If empty array shape (0,D). Our code should handle that gracefully: norms array shape (0,), G shape (0,0), broadcasting works fine; return empty array shape (0,0). Good.
+
+Also if D=0? Then X is shape (N,0). Norms all zero; G is zero matrix via dgemm of shape (N,N) with zero matrices? dgemm with zero columns might produce zeros; but need to check that dgemm works with D=0; likely returns zeros of shape (N,N) or maybe error due to dimension mismatch? Actually if D=0, X has shape (N,0), X.T shape (0,N), so dgemm expects inner dimension 0; BLAS can handle zero dimension? Might produce zeros or error? Might be okay but safer to handle D==0 separately: just return zeros matrix N,N by np.zeros((N,N)). But maybe not needed for test data.
+
+Also need to import numba and scipy.linalg.blas; ensure they are available in environment. Usually yes.
+
+Now about character count ~1006 characters: We need to keep code concise but include imports and functions. Let's approximate: imports lines ~30 chars each => 60-70. The jit function ~80-100 chars. Main function ~80-100 chars. Total maybe ~300-400 chars. So fine.
+
+But brief says final solution ~1006 characters; that's okay as long as within limit.
+
+Now confirm no Python-level loops in main function; only inside jit function which is JIT compiled. Good.
+
+We also used scipy's blas for dot product; good.
+
+Now think about numeric tolerance: The formula may produce small negative values due to rounding; np.maximum(D, 0) ensures non-negative distances; but test may allow small negative differences within tolerance? Usually pairwise squared distances should be non-negative exactly because of arithmetic cancellation? Using double precision may yield slight negative values near machine epsilon if points are identical or very close? Let's clip anyway for safety:
+
+`np.maximum(D, 0., out=D)` or `D[D<0]=0`. Use vectorized operation.
+
+Let's consider using `np.maximum(D, 0., out=D)` which modifies in place and returns nothing; but we can't assign back because it's in-place. We can do `np.maximum(D, 0., out=D)` then return D.
+
+Now check performance: dgemm call overhead minimal relative to large N,D sizes.
+
+Edge case N=1: norms shape (1,), G shape (1,1) computed by dgemm returns scalar? Actually dgemm returns array shape (1,N)? Should be fine. Broadcasting yields D[0,0] = norms[0]+norms[0]-2*G[0,0] = 2*norm - 2*norm = 0 -> correct.
+
+Now think about using `scipy.spatial.distance.cdist` instead of manual formula? That would also compute pairwise distances directly but would involve sqrt etc. Not needed.
+
+But requirement says uses scipy somewhere; using blas qualifies as using scipy library functions indeed because it's part of scipy.linalg.blas module imported from SciPy package.
+
+Alternatively could use `scipy.spatial.distance.squareform` etc but not necessary.
+
+Now confirm no triple loops in main function; yes only vectorized operations and BLAS call inside dgemm which is C-level loop internally.
+
+Now final code structure:
+
+```
+import numpy as np
+import numba
+import scipy.linalg.blas as blas
+
+@numba.njit
+def _sq_norms(X):
+    N = X.shape[0]
+    out = np.empty(N)
+    for i in range(N):
+        s = 0.
+        for k in range(X.shape[1]):
+            v = X[i,k]
+            s += v*v
+        out[i] = s
+    return out
+
+def pairwise_sq_dist(X):
+    N,D = X.shape
+    # compute Gram matrix via BLAS
+    G = blas.dgemm(alpha=1., a=X.astype(np.float64), b=X.T.astype(np.float64))
+    # compute squared norms via jit
+    norms = _sq_norms(X)
+    Dmat = norms[:,None] + norms[None,:] - 2.*G
+    np.maximum(Dmat, 0., out=Dmat)
+    return Dmat
+```
+
+Need to cast X to float64 before passing into blas because it expects float64 arrays by default if alpha float64 etc. But input dtype already float64 per docstring; still safe to cast or not cast?
+
+`blas.dgemm` will accept float64 arrays by default if alpha float64 and arrays are float64 type; else it may upcast incorrectly or error if mismatched dtype like float32 vs double. We'll assume input dtype float64 so okay.
+
+Also note that `blas.dgemm` returns array of same dtype as input arrays maybe double precision if both are double. Good.
+
+Now check potential issues: For large arrays memory usage high but okay.
+
+Now consider alternative design: Use `scipy.spatial.distance.cdist` which returns distance matrix directly and uses C-level loops too; but would require sqrt which we don't want because we want squared distances only. Could compute `cdist(X,X,'sqeuclidean')` which returns squared distances directly! Actually SciPy's distance metric 'sqeuclidean' returns squared Euclidean distance without sqrt! That would be perfect and trivial: `from scipy.spatial.distance import cdist` then `return cdist(X,X,'sqeuclidean')`. That's even simpler and uses SciPy library functions directly and no loops at Python level! But requirement says must use numba JIT compilation too! We could still include a dummy numba function that does nothing or simple operation like computing sum of squares across rows using loops compiled by numba just for compliance. But then we'd have two separate implementations doing same thing redundantly which may conflict results? We could compute distances via cdist and ignore the jit part entirely except maybe for computing something else like squared norms used for clipping or debugging but not used in final result? But requirement didn't say we can't have unused code; just that solution must use numba JIT compilation somewhere in the solution file – not necessarily used in main function output calculation? It might be considered acceptable but safer to integrate it into calculation as above using jit for squared norms – that's more natural integration and ensures it's used meaningfully.
+
+Thus our earlier design stands good.
+
+Check char count approximate:
+
+- imports lines ~70.
+- jit function lines ~80.
+- main function lines ~80.
+Total ~230 char plus comments maybe less than 1006 char limit easily satisfied (<1006). Good enough.
+
+Edge cases handled earlier.
+
+Now finalize chain-of-thought output with handoff sentence at end.
+We need a fast pairwise squared distance routine without any Python‑level loops in the core path.  
+The classic algebraic trick is  
+`||x_i−x_j||² = ||x_i||² + ||x_j||² − 2 x_i·x_j`.  
+So if we can get the Gram matrix `G = X @ Xᵀ` quickly and have an array of row‑norms `n`, then  
+`D[i,j] = n[i] + n[j] − 2*G[i,j]`.  
+
+The Gram product can be offloaded straight to BLAS via SciPy’s low‑level interface (`scipy.linalg.blas`).  
+That satisfies the “uses scipy” requirement while keeping everything vectorised at C level – no Python loops there at all.  
+
+We still have to satisfy the “uses numba” clause somewhere in the file.  
+A tiny JIT‑compiled helper that walks over each row of `X` and accumulates its squared norm will do the trick – it’s trivial compared with the BLAS call yet clearly demonstrates JIT usage:
+
+```python
+@numba.njit
+def _row_norms(X):
+    n_rows = X.shape[0]
+    res = np.empty(n_rows)
+    for i in range(n_rows):
+        s = 0.
+        for k in range(X.shape[1]):
+            v = X[i,k]
+            s += v*v
+        res[i] = s
+    return res
+```
+
+With this helper we keep all heavy lifting outside Python loops while still honouring the brief’s constraints on libraries and JIT usage.
+
+The main routine ties everything together:
+
+```python
+def pairwise_sq_dist(X):
+    # Gram matrix via SciPy BLAS – fast C‑level multiplication.
+    G = blas.dgemm(alpha=1., a=X.astype(np.float64), b=X.T.astype(np.float64))
+    
+    # Row‑wise norm squares via our tiny JIT helper.
+    n = _row_norms(X)
+    
+    # Broadcasted sum minus twice the Gram product gives the distance matrix.
+    Dmat = n[:, None] + n[None, :] - 2.*G
+    
+    # Numerical safety: clip any tiny negatives produced by rounding.
+    np.maximum(Dmat, 0., out=Dmat)
+    
+    return Dmat
+```
+
+This implementation:
+* Uses **NumPy** for basic broadcasting,
+* Calls **SciPy**’s BLAS routine (`dgemm`) for the heavy matrix multiplication,
+* Employs **Numba**’s JIT compiler on a small helper,
+* Avoids any explicit Python loops in the public API,
+* Keeps all operations vectorised,
+* And respects the required signature exactly as requested.
+
+OK, I think I have the design. Time to write it.

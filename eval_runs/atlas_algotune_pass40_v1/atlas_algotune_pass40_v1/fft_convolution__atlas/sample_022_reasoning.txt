@@ -1,0 +1,19 @@
+We need to write efficient convolution. We can use numpy. Since the arrays are float64, use np.fft.fft. We need to compute full convolution length N+M-1. For FFT, we can compute next power of two size >= N+M-1. Compute FFTs of padded arrays, multiply, inverse FFT, take real part, round maybe. Ensure dtype float64. Use np.fft.rfft for real input? But easier: use np.fft.fft. Complexity O(n log n). Use np.fft.fftpack? We'll use np.fft.fft.
+
+Implementation: def conv1d(x, h): N, M = len(x), len(h); n = N+M-1; size = 1 << (n-1).bit_length() maybe. Then pad arrays to size. Compute X = np.fft.rfft(x, size); H = np.fft.rfft(h, size); Y = X*H; y = np.fft.irfft(Y, size)[:n]; return y
+
+But note that rfft returns length size//2+1. Use that. For better speed, use np.fft.rfft.
+
+Edge cases: empty arrays? But lengths positive? We'll assume at least 1. For zero length? We'll handle.
+
+Also we need to ensure dtype float64. rfft returns float64 if input float64. Use dtype= np.float64.
+
+Return y as float64.
+
+Test: Should match np.convolve.
+
+We'll produce file with imports and function.
+
+Also we may want to guard against small size: if size < 64 maybe use direct? But not necessary.
+
+Let's craft code.

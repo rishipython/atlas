@@ -1,0 +1,99 @@
+```python
+import logging
+import numpy as np
+import scipy.ndimage
+from typing import Any, Dict
+
+class AffineTransform2D:
+    """
+    Optimised implementation of the 2D affine transformation task.
+    Uses SciPy's C‑level `affine_transform` routine with minimal Python overhead.
+    """
+
+    def __init__(self):
+        self.order = 3          # cubic spline interpolation
+        self.mode = "constant"  # padding with zeros
+
+    def solve(self, problem):
+        """
+        Apply the affine transformation described by a 2x3 matrix.
+        The input image is treated as a NumPy array of type float32 for speed.
+        """
+        try:
+            # Extract data and cast to float32
+            img = np.asarray(problem["image"], dtype=np.float32)
+            mat = np.asarray(problem["matrix"], dtype=np.float32)
+
+            # Separate linear part and translation (offset)
+            lin_mat = mat[:2, :2]
+            offset = mat[:2, 2]
+
+            # Perform the transformation
+            transformed = scipy.ndimage.affine_transform(
+                img,
+                lin_mat,
+                offset=offset,
+                order=self.order,
+                mode=self.mode,
+                cval=0.0,
+            )
+
+            return {"transformed_image": transformed}
+
+        except Exception as exc:
+            logging.error(f"AffineTransform2D.solve failed: {exc}")
+            return {"transformed_image": []}
+
+    def is_solution(self, problem, solution):
+        """
+        Validate the solution against SciPy's reference implementation.
+        """
+        try:
+            if not isinstance(solution, dict) or "transformed_image" not in solution:
+                logging.error("Solution missing 'transformed_image' key.")
+                return False
+
+            out = solution["transformed_image"]
+            if isinstance(out, list):
+                out_arr = np.asarray(out, dtype=float)
+            else:
+                out_arr = np.asarray(out)
+
+            # Reference computation
+            ref_img = np.asarray(problem["image"], dtype=np.float32)
+            ref_mat = np.asarray(problem["matrix"], dtype=np.float32)
+            ref_lin_mat = ref_mat[:2, :2]
+            ref_offset = ref_mat[:2, 2]
+            ref_out = scipy.ndimage.affine_transform(
+                ref_img,
+                ref_lin_mat,
+                offset=ref_offset,
+                order=self.order,
+                mode=self.mode,
+                cval=0.0,
+            )
+
+            # Compare shapes
+            if out_arr.shape != ref_out.shape:
+                logging.error("Output shape mismatch.")
+                return False
+
+            # Compare values within tolerance
+            if not np.allclose(out_arr.astype(float), ref_out.astype(float), rtol=1e-5, atol=1e-7):
+                logging.error("Output values differ from reference.")
+                return False
+
+            return True
+
+        except Exception as exc:
+            logging.error(f"is_solution failed: {exc}")
+            return False
+
+
+def run_solver(problem):
+    """
+    Entry point used by the evaluation harness.
+    """
+    solver = AffineTransform2D()
+    return solver.solve(problem)
+```

@@ -38,13 +38,40 @@ def _load_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
-def _read_base_prompts(synth_dir: Path, problem_id: str) -> tuple[str, str]:
+def _read_base_prompts(
+    synth_dir: Path,
+    problem_id: str,
+    prompt_source: str,
+    strict_prompt_match: bool,
+) -> tuple[str, str]:
+    canonical_system, canonical_user, _ = build_algotune_prompts(problem_id)
     ctx_files = sorted(synth_dir.glob("iter_*_context.json"))
-    if ctx_files:
+    if prompt_source == "canonical":
+        if ctx_files:
+            first_ctx = json.loads(ctx_files[0].read_text())
+            mismatch = (
+                (first_ctx.get("base_system", "") != canonical_system)
+                or (first_ctx.get("base_user", "") != canonical_user)
+            )
+            if mismatch:
+                msg = (
+                    "Synth context prompts differ from current canonical prompts; "
+                    "using canonical prompts anyway."
+                )
+                if strict_prompt_match:
+                    raise ValueError(msg)
+                print(f"[build_fft] WARNING: {msg}")
+        return canonical_system, canonical_user
+
+    if prompt_source == "synth_context":
+        if not ctx_files:
+            raise FileNotFoundError(
+                f"prompt_source=synth_context but no iter_*_context.json in {synth_dir}"
+            )
         first_ctx = json.loads(ctx_files[0].read_text())
         return first_ctx["base_system"], first_ctx["base_user"]
-    base_system, base_user, _ = build_algotune_prompts(problem_id)
-    return base_system, base_user
+
+    raise ValueError(f"Unknown prompt_source={prompt_source!r}")
 
 
 def _load_synth_reasoning_map(synth_dir: Path) -> dict[int, str]:
@@ -92,6 +119,23 @@ def main() -> None:
     p.add_argument("--out-best", required=True)
     p.add_argument("--handoff-suffix", default="it")
     p.add_argument("--correct-threshold", type=float, default=0.99)
+    p.add_argument(
+        "--prompt-source",
+        choices=["canonical", "synth_context"],
+        default="canonical",
+        help=(
+            "Where to source system/user prompts. "
+            "Default canonical ensures train/eval prompt alignment."
+        ),
+    )
+    p.add_argument(
+        "--strict-prompt-match",
+        action="store_true",
+        help=(
+            "When prompt-source=canonical and synth context exists, fail if "
+            "stored synth prompts differ from canonical prompts."
+        ),
+    )
     args = p.parse_args()
 
     trace_path = Path(args.trace)
@@ -101,7 +145,12 @@ def main() -> None:
     out_best = Path(args.out_best)
 
     records = _load_jsonl(trace_path)
-    base_system, base_user = _read_base_prompts(synth_dir, args.problem_id)
+    base_system, base_user = _read_base_prompts(
+        synth_dir=synth_dir,
+        problem_id=args.problem_id,
+        prompt_source=args.prompt_source,
+        strict_prompt_match=bool(args.strict_prompt_match),
+    )
     synth_reasoning_map = _load_synth_reasoning_map(synth_dir)
 
     assembled: list[dict] = []

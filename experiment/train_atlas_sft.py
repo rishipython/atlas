@@ -76,6 +76,10 @@ image = (
         "kernels>=0.7",
         "ninja",
         "packaging",
+        # Modal runtime imports google.protobuf via modal_proto.
+        "protobuf>=4.25",
+        # Modal runtime also imports grpclib.client.
+        "grpclib>=0.4.7",
     )
     .run_commands(
         "pip install --no-deps "

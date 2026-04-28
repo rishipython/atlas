@@ -1,0 +1,16 @@
+We need to provide fast implementation. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. So compute dot product matrix G = X @ X.T, norms = np.sum(X**2, axis=1). Then D = norms[:,None] + norms[None,:] - 2*G. Ensure dtype float64. Might need to clip small negative due to rounding: D = np.maximum(D, 0). Return D.
+
+Edge cases: N can be large; memory for X @ X.T uses N^2 memory. But that's required anyway to output N,N. So fine.
+
+Implementation: just compute.
+
+Add import numpy as np.
+
+Return dtype float64.
+
+Add small epsilon? Use np.maximum(D, 0.0). That keeps numeric close.
+
+Thus final code.
+
+Let's produce file.
+

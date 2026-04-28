@@ -1,0 +1,43 @@
+We need to produce a faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must keep same function signature. We need to handle arbitrary lengths, ensure float64 dtype. The result should be numerically close. Using np.fft.rfft maybe. But easiest is to use scipy.signal.fftconvolve. However not sure if SciPy available. The problem states we may import scipy. We'll use scipy.signal.fftconvolve.
+
+But we must ensure that if SciPy not available, fallback to numpy FFT. But we can just use scipy. The evaluator's environment likely has SciPy. Let's use scipy.signal.fftconvolve. Implementation:
+
+from scipy.signal import fftconvolve
+
+def conv1d(x,h): return fftconvolve(x,h,mode='full')
+
+But we must ensure dtype float64. The output from fftconvolve may be float64. Good.
+
+But the problem says return numerically-equal result on evaluator's test inputs. FFT may produce small round-off errors but should be within tolerance.
+
+Alternatively we can implement using numpy.fft.fft. Use next power of two.
+
+We can do:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size = N+M-1
+    nfft = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, nfft)[:size]
+    return y
+
+But rfft returns real FFT; we can use rfft. That may be slightly faster.
+
+Let's implement with numpy only. Use np.fft.rfft.
+
+Edge cases: if size==0? Not possible because N>=1 M>=1. Good.
+
+We'll return float64.
+
+Let's produce final file.
+
+We need to import numpy as np.
+
+Let's test with random arrays. Should produce same as np.convolve.
+
+We'll implement conv1d as above.
+
+Let's produce final code.

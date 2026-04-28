@@ -1,0 +1,155 @@
+We need to figure out what shift_2d problem is. Likely a 2D shift detection? Might involve aligning images via cross-correlation. The reference uses Shift2D().solve, maybe from some library. We need to implement faster version using numpy and scipy.ndimage.
+
+We must avoid Python loops, use vectorization, maybe use FFT-based cross-correlation via scipy.signal.correlate2d or fftconvolve. Or use scipy.ndimage.shift for shifting images? The problem probably expects to find shift between two images that maximizes correlation.
+
+Let's think: input format likely a dictionary with keys: 'reference' and 'target', each a 2D array. We need to compute shift that aligns target to reference. Could use phase correlation: compute FFT of both, compute cross-power spectrum, inverse FFT to get correlation map, find peak.
+
+Use numpy. Use scipy.signal.fftconvolve? Actually phase correlation uses FFT and cross-power.
+
+Implementation: def solve(problem): ref = problem['reference']; tgt = problem['target']; compute FFTs: F1 = np.fft.rfft2(ref); F2 = np.fft.rfft2(tgt); cross = F1 * np.conj(F2); cross /= np.abs(cross) + 1e-12; corr = np.fft.irfft2(cross, s=ref.shape); peak = np.unravel_index(np.argmax(corr), corr.shape); shift = (peak[0] - ref.shape[0]//2, peak[1] - ref.shape[1]//2). Return dict with shift.
+
+Need to handle even/odd shapes? Use np.roll to compute shift? But we just return shift.
+
+Edge cases: if arrays not same shape? Might need to pad to next power of two for speed? But spec maybe same shape.
+
+We also need logging import; typing Any, Dict; numpy; scipy.ndimage maybe used for subpixel refinement or smoothing? But requirement says uses scipy functions somewhere; we can use scipy.ndimage.gaussian_filter for smoothing correlation before finding peak.
+
+Also we must avoid loops; all vectorized.
+
+Ok design: run_solver(problem): return Shift2D().solve(problem). So we need class Shift2D with solve method.
+
+Implement Shift2D with __init__ maybe nothing.
+
+Within solve: get arrays; compute correlation via phase correlation; optional smoothing via gaussian_filter from scipy.ndimage; find peak; compute shift as difference from center; return dict {'shift': (dy, dx)} or similar.
+
+We also might need to handle negative shifts etc.
+
+Let's think about numeric issues: division by zero in cross-power; add epsilon.
+
+Also ensure dtype float64 for accuracy.
+
+Edge cases: if arrays contain NaNs? Might ignore.
+
+Also we can use np.real for inverse FFT output real part.
+
+Now about performance: using numpy FFT is fast; no loops. Using gaussian_filter is also vectorized via SciPy's C implementation.
+
+Return shape maybe expected by baseline: maybe a tuple or dict with 'shift' key. We'll assume dict with 'shift'.
+
+Ok final design outline:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        ref = problem['reference']
+        tgt = problem['target']
+        # ensure same shape
+        if ref.shape != tgt.shape:
+            raise ValueError('Images must have same shape')
+        # compute phase correlation
+        f_ref = np.fft.rfft2(ref)
+        f_tgt = np.fft.rfft2(tgt)
+        product = f_ref * np.conj(f_tgt)
+        eps = 1e-12
+        product /= np.abs(product) + eps
+        corr = np.fft.irfft2(product, s=ref.shape)
+        # smooth
+        corr_smooth = scipy.ndimage.gaussian_filter(corr, sigma=1)
+        peak_idx = np.unravel_index(np.argmax(corr_smooth), corr_smooth.shape)
+        # compute shift relative to center
+        center = tuple(s//2 for s in ref.shape)
+        dy = peak_idx[0] - center[0]
+        dx = peak_idx[1] - center[1]
+        return {'shift': (dy, dx)}
+
+def run_solver(problem):
+    return Shift2D().solve(problem)
+
+That's design.
+
+Edge case: if shape odd/even difference leads to correct center calculation? For even size center at size//2 which is lower half index; fine.
+
+We might also consider subpixel refinement by fitting parabola around peak but not necessary.
+
+Ok final check: uses logging import but not used? We can log debug message maybe but not required.
+
+Also uses scipy.ndimage.gaussian_filter so requirement satisfied.
+
+Now produce final handoff sentence.
+We need to replace the slow reference solver with a fast, fully vectorised version that still uses SciPy somewhere and avoids any Python‑level loops.  
+The “shift_2d” task is essentially an image‑registration problem – given two 2‑D arrays (the reference and the target) we must find the integer pixel offset that best aligns them.  
+A classic way to do this without loops is phase‑correlation: take the Fourier transforms of both images, form the cross‑power spectrum, inverse‑transform back to get a correlation surface and pick its maximum.  
+That gives us a clean O(N log N) algorithm using NumPy’s FFTs (which are already backed by highly optimised BLAS/LAPACK code).  
+To satisfy the brief’s “use SciPy” clause we can smooth the correlation map with `scipy.ndimage.gaussian_filter` before searching for the peak – this is still a single vectorised call and keeps the code short and fast.
+
+Key points while designing:
+
+* **No Python loops** – everything stays in NumPy/SciPy.
+* **Vectorised operations** – FFTs, element‑wise multiplication/division, `argmax`.
+* **Robustness** – guard against division by zero in the cross‑power spectrum (`eps`).
+* **Logging** – import it as required by the brief but keep usage minimal.
+* **Return format** – match what the baseline expects (`{'shift': (dy, dx)}`).
+
+The class structure mirrors the reference (`Shift2D().solve(problem)`), so we keep that signature intact:
+
+```python
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        # Extract images; they must have identical shapes.
+        ref = problem["reference"]
+        tgt = problem["target"]
+        if ref.shape != tgt.shape:
+            raise ValueError("Reference and target must be the same shape")
+
+        # Phase‑correlation via FFTs.
+        f_ref = np.fft.rfft2(ref)
+        f_tgt = np.fft.rfft2(tgt)
+
+        # Cross‑power spectrum – normalise magnitude.
+        product = f_ref * np.conj(f_tgt)
+        eps = 1e-12
+        product /= np.abs(product) + eps
+
+        # Inverse transform back to spatial domain.
+        corr = np.fft.irfft2(product, s=ref.shape)
+
+        # Optional smoothing – keeps SciPy in play.
+        corr_smooth = scipy.ndimage.gaussian_filter(corr, sigma=1)
+
+        # Locate maximum of smoothed correlation.
+        peak_idx = np.unravel_index(np.argmax(corr_smooth), corr_smooth.shape)
+
+        # Compute shift relative to image centre.
+        center_y, center_x = (s // 2 for s in ref.shape)
+        dy = peak_idx[0] - center_y
+        dx = peak_idx[1] - center_x
+
+        return {"shift": (dy, dx)}
+
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+Edge‑case sanity checks:
+
+* If either array contains NaNs the FFT will propagate them – callers should ensure clean data.
+* For even‑sized images the centre index `size//2` points just below the true centre; this convention matches most image‑registration libraries and yields correct integer shifts.
+* The small `eps` prevents division by zero when two spectra have identical magnitude everywhere (unlikely in practice).
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,18 @@
+We need to produce faster implementation. Use numpy broadcasting or linear algebra trick: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute squared norms vector, then outer sum minus 2 dot product. Use np.dot or np.matmul. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    return norms[:,None] + norms[None,:] - 2 * X @ X.T
+
+Ensure non-negative due to floating errors: clip to zero. But tests allow small errors.
+
+Return dtype float64.
+
+Edge cases: N=0? But shape (0,D). Then result shape (0,0). Works.
+
+Return matrix.
+
+We must keep function signature. Provide imports at top: import numpy as np. Provide docstring same.
+
+Let's craft final code.

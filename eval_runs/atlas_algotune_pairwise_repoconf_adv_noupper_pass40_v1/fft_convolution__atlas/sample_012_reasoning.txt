@@ -1,0 +1,28 @@
+We need to replace conv1d body with faster implementation. Use numpy. Need to handle float64. Use np.fft.fft with proper length. We need to compute convolution full: length N+M-1. For real signals we can use rfft. But simpler: use np.fft.fft of length nextpow2 of N+M-1. Then multiply, inverse. Use np.fft.fft. For speed, use np.fft.rfft and irfft. Since inputs real, we can use rfft of size L. L = N+M-1. But rfft expects length. We need to zero pad to L. rfft of length L. But rfft returns length L/2+1. Multiply. Then irfft. That yields length L. That is good.
+
+Implementation:
+
+def conv1d(x,h):
+    N = x.shape[0]; M=h.shape[0]
+    L = N+M-1
+    # compute next power of two? Not necessary but may speed. Use nextpow2(L).
+    def nextpow2(n):
+        return 1<<(n-1).bit_length()
+    size = nextpow2(L)
+    X = np.fft.rfft(x, n=size)
+    H = np.fft.rfft(h, n=size)
+    Y = X*H
+    y = np.fft.irfft(Y, n=size)
+    return y[:L]
+
+Need to import numpy.
+
+Edge cases: empty arrays? Not likely. But handle M=0? Might produce zero length. But conv of empty? In numpy, convolve with empty returns array of shape? In numpy, np.convolve([], [1,2]) returns array([], dtype=float64). We'll mimic: if N==0 or M==0: return np.array([], dtype=np.float64). Implementation: if N==0 or M==0: return np.empty(0, dtype=np.float64).
+
+Also if size==0? nextpow2(0) fails. So handle that.
+
+Thus final file.
+
+Also we might import scipy? But we can rely on numpy.
+
+Ok produce final code.

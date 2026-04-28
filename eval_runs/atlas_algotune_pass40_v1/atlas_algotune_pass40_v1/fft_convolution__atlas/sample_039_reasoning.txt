@@ -1,0 +1,25 @@
+We need to implement fast conv1d using FFT. Use numpy. The input arrays are float64. We'll compute convolution via FFT of length L = next power of 2 >= N+M-1 or use numpy.fft.fft. Use np.fft.fft, multiply, ifft. Ensure real output. Use np.rint or rounding? Should be fine. But we need to maintain numerical closeness. Use np.fft.fft with dtype=np.float64. Use np.fft.rfft for real? We can use rfft to speed. Use rfft of length L, multiply, irfft. This returns real. Ensure dtype float64. Then slice length N+M-1. Implementation:
+
+def conv1d(x,h):
+    N, M = x.shape[0], h.shape[0]
+    L = 1 << (N+M-1-1).bit_length()
+    X = np.fft.rfft(x, L)
+    H = np.fft.rfft(h, L)
+    y = np.fft.irfft(X*H, L)
+    return y[:N+M-1]
+
+Edge cases: if arrays empty? But lengths positive. But might handle zero-length? Possibly. We'll handle if N==0 or M==0: return empty array. But convolution of empty array? Might return array of length N+M-1 = -1? But not needed.
+
+Return dtype float64. Ensure dtype of output: y[:N+M-1] dtype float64.
+
+Test numeric closeness: using np.allclose with default tolerances. Should be fine.
+
+Let's produce final code. Use imports.
+
+Also include if __name__ guard? Not necessary.
+
+Return.
+
+Also we can use np.fft.fft for complex; but rfft is efficient.
+
+Implement.

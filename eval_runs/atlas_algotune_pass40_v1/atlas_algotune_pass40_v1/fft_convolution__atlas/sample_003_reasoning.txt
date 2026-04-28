@@ -1,0 +1,18 @@
+We need to write faster conv1d using FFT. Use numpy. We can use np.fft.fft, but for real arrays we could use rfft. But easiest: compute convolution via FFT of length L = next power of two >= N+M-1. Use np.fft.rfft for speed. Then multiply and inverse. Need to ensure float64. Use np.fft.rfft. Implementation:
+
+def conv1d(x,h):
+    N=len(x);M=len(h)
+    L=1<<((N+M-1-1).bit_length())
+    X=np.fft.rfft(x, L)
+    H=np.fft.rfft(h, L)
+    Y=X*H
+    y=np.fft.irfft(Y, L)
+    return y[:N+M-1]
+
+This returns real numbers. Should be close. Use dtype float64. Use np.fft.fftpack? but np.fft.rfft uses double precision. Good.
+
+Edge cases: zeros? Works.
+
+Return dtype float64. Ensure output shape correct.
+
+Let's produce full file. Import numpy. Provide function. That's all. Ensure no other functions. Done.

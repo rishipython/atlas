@@ -1,0 +1,51 @@
+We need to replace the body with faster implementation. Use scipy.signal.fftconvolve or numpy. But need to ensure same dtype float64, same result. The reference uses full convolution. We can just call np.fft.fft with appropriate size. But we need to ensure same result. Use np.fft.rfft? For real input, we can use rfft for speed but simpler: use np.fft.fft. Use np.fft.ifft. But careful: large arrays may be big, but okay.
+
+We need to import numpy as np. We might also import scipy.signal.fftconvolve. But we can implement ourselves. Let's implement:
+
+def conv1d(x, h):
+    N = len(x); M = len(h)
+    size = N+M-1
+    nfft = 1 << (size-1).bit_length()  # next power of two
+    X = np.fft.rfft(x, n=nfft)
+    H = np.fft.rfft(h, n=nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=nfft)
+    return y[:size]
+
+But we need dtype float64. Use np.float64. Ensure that input arrays are float64. They may not be. But we can cast to float64. But using rfft will produce float64 by default if input dtype float64. But if input dtype float32, we might get float32? Actually rfft returns same dtype as input. So to guarantee float64, cast: x = np.asarray(x, dtype=np.float64). Similarly h.
+
+But we also need to preserve the same shape. So we can cast inside.
+
+Also, we need to consider numeric errors: but rfft/irfft may produce small differences, but np.allclose will pass. So fine.
+
+Alternatively, use scipy.signal.fftconvolve which handles large arrays and uses rfft by default. But we can rely on numpy.
+
+Edge cases: if x or h empty? But they may not be. But handle: if N==0 or M==0: return empty array of length N+M-1 (which is -1?). But not needed.
+
+Also, we might use np.fft.fft for general case. But rfft speeds up. But we need to compute size: nfft = 2**ceil(log2(size)). Use np.fft.next_fast_len.
+
+Better: use np.fft.next_fast_len for speed.
+
+So:
+
+nfft = np.fft.next_fast_len(size)
+
+Compute rfft.
+
+Return y[:size].
+
+Also, we can use np.fft.fft if we want simpler.
+
+Edge: If size==1, nfft=1. rfft returns shape (1). Works.
+
+Let's implement.
+
+Also, we might use np.fft.rfftn? Not needed.
+
+Implement conv1d.
+
+Now produce final code. We'll keep imports: numpy as np.
+
+Also, we might want to avoid using numpy's rfft for small arrays? But it's fine.
+
+Let's produce final code.

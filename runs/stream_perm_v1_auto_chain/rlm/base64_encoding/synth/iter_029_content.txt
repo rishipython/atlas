@@ -1,0 +1,43 @@
+We need to turn the slow reference solver into something that really uses NumPy’s C‑level speed without any Python loops at all.  
+The core of the task is just a standard Base‑64 encoder – turn a stream of bytes into the ASCII representation – but the input comes in a generic “problem” dictionary that the test harness will feed us.  
+
+First thought was just calling `base64.b64encode` on the raw data – that would be trivial but it would still involve a Python call and would not let us play with vectorised tricks that could shave milliseconds off big batches.  
+But the brief explicitly wants us to keep the same function name and signature while making everything NumPy‑driven, so I’ll roll my own encoder instead of delegating back to the stdlib after all.  
+
+The algorithm is straightforward:
+* Group every three input bytes (`b0,b1,b2`) into four six‑bit values:
+```
+c0 = b0 >> 2
+c1 = ((b0 & 3) << 4) | (b1 >> 4)
+c2 = ((b1 & 15) << 2) | (b2 >> 6)
+c3 = b2 & 63
+```
+* Map those six‑bit numbers through the standard alphabet  
+`ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`.  
+* Add `=` padding when the original length isn’t divisible by three – exactly two `=` for one missing byte, one `=` for two missing bytes.
+* Finally decode the resulting bytearray into a normal Python string so the caller sees a regular Base‑64 text block.
+
+All of those bitwise ops can be done on whole NumPy arrays at once, so there’s no loop over every triplet.  
+The only “loop” I’ll have is the tiny slice assignment for the padding characters – it’s constant‑size and won’t hurt performance at all.
+
+Edge cases:
+* Empty input → immediately return `''`.
+* Input length < 3 → still reshape after padding with zeros; the final slice replacement will fix up any spurious characters.
+* Very large inputs are fine – NumPy will do all arithmetic in bulk without creating intermediate Python objects.
+* The dtype must stay `uint8` throughout so that shifts stay within bounds and indexing into the alphabet works correctly.
+* After packing everything I’ll use `np.take` (or simple indexing) on a pre‑built bytearray alphabet – this is just another C loop under the hood and super fast.
+* I’ll make sure any tiny negative values from accidental signed promotion are clipped back to unsigned before indexing – but since I’m explicitly casting everything back to `uint8`, that won’t happen anyway.
+
+With that plan in mind I’ll write a lightweight `Base64Encoding` class that holds no state, just a static method `solve`.  
+The public entry point stays exactly what the harness expects:
+
+```python
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+I’ll import everything that looks useful (`base64`, `hmac`, `typing`, `numpy`) even if some of those imports aren’t directly used – it satisfies the brief’s “imports” requirement without affecting speed.  
+
+That’s essentially it – pure NumPy bit manipulation + a couple of slice assignments gives us an encoder that runs in C time regardless of how big the payload gets, and it respects all edge cases automatically.  
+
+OK, I think I have the design. Time to write it.

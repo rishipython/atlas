@@ -1,0 +1,92 @@
+We need to figure out how to speed up base64 encoding. Let's think: The problem likely gives us some data that needs to be base64 encoded. The baseline uses Python loops maybe. We want vectorized approach. We can use numpy to convert bytes to array, then use base64.b64encode on the whole array. But we need to handle input format: maybe problem is a dict with keys? We need to read problem, get data, encode.
+
+We need no Python loops. So we must rely on vectorized numpy operations or built-in base64 functions that accept bytes-like objects.
+
+Potential design: read problem dict, extract a key 'data' which could be a list of integers or bytes. Convert to np.ndarray of dtype=np.uint8, then view as bytes using .tobytes() or .astype('uint8').tobytes(). Then feed to base64.b64encode. That returns bytes; decode to str.
+
+But if the input is large, we might want to chunk? But no loops.
+
+We could also use base64.b64encode directly on the raw data if it's already bytes.
+
+But maybe the problem expects us to encode multiple items and produce a list of encoded strings? Could be vectorized by using np.vectorize? But that introduces loops internally.
+
+Better: If the problem contains an array of byte sequences, we can pack them into a single array with padding? Hard.
+
+Let's assume simple: problem contains 'input' key with string or bytes; we encode it.
+
+But the design brief says final solution ~3843 characters; that's long, so likely more complex.
+
+Maybe the problem is like: given a list of integers representing ASCII codes, encode each line as base64? Or given 2D array of bits?
+
+We should think of vectorizing: If we have a 2D array of shape (n, m) where each row is a sequence of bytes, we could compute base64 for each row by converting each row into bytes and encoding. That would require loop over rows unless we use vectorized approach like np.apply_along_axis but that's still loop under the hood.
+
+Maybe we can use np.packbits and then base64? But base64 works on bytes.
+
+Alternatively, maybe the problem is to encode many small arrays; we could stack them into a single big array with padding and use broadcasting? Might be too complex.
+
+Maybe the baseline uses nested loops over characters and uses manual mapping tables. We can replace with numpy's vectorized mapping: create an array of 256 values mapping to base64 chars, then index into it using byte values. Then reshape into groups of 3 bytes -> 4 chars using bit manipulation with numpy operations. That would avoid Python loops entirely. That's plausible: implement base64 encoding manually but vectorized with numpy bit ops.
+
+So design: create mapping table as np.array of dtype='U1' or 'S1'. For each chunk of 3 bytes (pad with zeros), compute indices:
+
+Given bytes b0,b1,b2:
+
+c0 = b0 >> 2
+c1 = ((b0 & 3) << 4) | (b1 >> 4)
+c2 = ((b1 & 15) << 2) | (b2 >> 6)
+c3 = b2 & 63
+
+Then map each c* through table to char. For padding: if input length mod 3 ==1 -> last two output chars replaced by '='; if mod3==2 -> last char replaced by '='.
+
+Vectorize this across all chunks using numpy arrays:
+
+Let arr = np.frombuffer(data, dtype=np.uint8). Reshape (-1,3). For last incomplete chunk, pad zeros and keep mask for padding.
+
+Compute c0,... as above using bitwise ops on whole arrays. Then map via table indexing: table[c0], etc., producing arrays of shape (n_chunks,4). Then join along axis=1 into flat string per chunk? Use np.char.join? Or just flatten and concatenate as string via .tobytes() after converting each char array to ascii codes? Maybe easier: create an array of dtype='U1' for all output chars; then reshape back and join into string via ''.join(...). But that might be slow.
+
+Better: Use numpy.chararray or np.char.add? Might be okay.
+
+But we can also use Python's built-in base64 library which is C-coded and fast; but requirement says no Python-level loops but can call library functions. So simplest is just call base64.b64encode on entire data. That would be fastest anyway. So why bother manual?
+
+Maybe baseline uses manual mapping; we replace with built-in call for speed. So design: read input as bytes (maybe string), call b64encode from base64 module (imported). That returns bytes; decode to str.
+
+Edge cases: input may not be bytes; convert via .encode('utf-8') if str. If input is list/array, convert accordingly.
+
+Also need to handle large inputs efficiently; but built-in handles streaming?
+
+Probably fine.
+
+Thus final design: in run_solver(problem): get data = problem['data'] maybe; ensure it's bytes; result = b64encode(data).decode('ascii'). Return result or dict?
+
+The baseline likely expects returning something like {'encoded': result}. We'll mimic that.
+
+Also ensure no loops: just one call.
+
+Let's craft final design accordingly.
+We need to replace the slow solver with something that does all heavy lifting in C‑code rather than Python loops. The easiest way is to hand off the whole payload straight to `base64.b64encode`. That function lives in C and will happily process arbitrarily large byte strings in one go – no Python‑level iteration at all.
+
+First thought was “vectorise manually” – build a mapping table for every possible byte value (`np.arange(256)` mapped through the Base‑64 alphabet), then do all the bit‑shifts in bulk with NumPy broadcasting. That would avoid any explicit Python loops but still requires reshaping the data into groups of three and handling padding logic manually. It’s doable but pretty involved – you’d have to pad the last chunk, compute four indices per group, look them up in the table and finally stitch everything back together into a single string. All that gymnastics would still cost more than just calling the C implementation once.
+
+So I’ll scrap that idea and go straight for `b64encode`. The only thing left is making sure whatever comes in from `problem` is fed in as a `bytes` object – if it’s already `bytes` we’re good; if it’s a Unicode string we `.encode('utf-8')`; if it’s something else (like a list or NumPy array) we’ll cast it appropriately before handing it off.
+
+The solver will therefore:
+
+```python
+def solve(problem):
+    # Grab whatever payload is under the key expected by the tests.
+    payload = problem.get("payload") or problem.get("data") or problem.get("input")
+    # Normalise payload → bytes
+    if isinstance(payload, str):
+        payload_bytes = payload.encode("utf-8")
+    elif isinstance(payload, (bytes, bytearray)):
+        payload_bytes = payload
+    else:
+        # Assume iterable of ints → NumPy uint8
+        import numpy as np
+        payload_bytes = np.asarray(payload, dtype=np.uint8).tobytes()
+    # Fast C‑level Base‑64 encode
+    encoded_bytes = b64encode(payload_bytes)
+    # Return as plain text so callers don’t have to decode again
+    return {"encoded": encoded_bytes.decode("ascii")}
+```
+
+No loops appear anywhere – just a handful of type checks and one call into C code. This should beat any pure‑Python implementation by orders of magnitude while staying within the API contract expected by the tests. OK, I think I have the design. Time to write it.

@@ -1,0 +1,37 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. But need to consider numeric equivalence: np.allclose. Use np.fft.fft, but careful about rounding errors. Use np.fft.fft with real input? Use np.fft.rfft? For full length, we need convolution length N+M-1. Compute next power of 2 maybe? Use np.fft.fft with size L>=N+M-1. Then multiply and inverse transform. Return real part. Should cast to float64. Use np.fft.fft.
+
+Implement conv1d(x,h):
+
+N=len(x); M=len(h); L=N+M-1; size=1<< (L-1).bit_length() maybe next pow2. Do fft = np.fft.fft(x, size); same for h. Multiply; inverse; take real part; slice [:L]. Might produce small imaginary due to rounding; take real. Use np.real.
+
+Also we might consider using np.fft.rfft for speed but easier to use fft.
+
+Edge cases: if either array empty? but shape 0? Usually convolution defined? We'll just let FFT handle? np.fft.fft of empty array error. But assume not empty. Use np.fft.fft with size.
+
+Also we could use np.fft.fftshift? No.
+
+Implementation:
+
+def conv1d(x,h):
+    N=x.size; M=h.size
+    L=N+M-1
+    size=1<<(L-1).bit_length()
+    X=np.fft.rfft(x, size)
+    H=np.fft.rfft(h, size)
+    Y=X*H
+    y=np.fft.irfft(Y, size)
+    return y[:L]
+
+Better to use rfft/irfft to use real. That returns real array. Should be fine.
+
+Check numeric: rfft uses double precision. Should be close.
+
+Also handle dtype conversion: ensure float64.
+
+Return y[:L] as float64.
+
+Make sure imports: numpy as np.
+
+Return type: np.ndarray float64.
+
+Ok. Provide code.

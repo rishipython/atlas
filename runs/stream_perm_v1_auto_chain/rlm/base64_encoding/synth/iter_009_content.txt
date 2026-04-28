@@ -1,0 +1,117 @@
+We need to take the raw input from the `problem` dictionary, figure out whether it’s a string, bytes or a list of integers, and turn it into a flat `bytes` object that we can feed into our vectorised encoder. The first thing that comes to mind is just calling `base64.b64encode`, but the brief says no Python‑level loops and wants us to do everything in NumPy so we can squeeze out the fastest possible speed on large blobs. 
+
+So let’s sketch the flow:
+
+1. **Input normalisation**  
+   ```python
+   data = problem.get('data')
+   if isinstance(data, str):
+       raw = data.encode()          # utf‑8 → bytes
+   elif isinstance(data, bytes):
+       raw = data
+   elif isinstance(data, list):
+       raw = bytes(data)            # assume list of ints <256
+   else:
+       raise TypeError(...)
+   ```
+   That covers the usual shapes we’ll see in the tests – a plain text string that needs UTF‑8 encoding or a pre‑encoded byte sequence coming from a binary file dump.  
+
+2. **Early exit**  
+   If `len(raw) == 0` just return an empty string – no work needed and we avoid allocating any arrays for the zero‑length case.
+
+3. **Padding logic**  
+   Base‑64 works on blocks of three bytes producing four characters.  
+   ```python
+   n = len(raw)
+   pad_len = (3 - n % 3) % 3          # how many zero‑bytes we’ll add
+   padded = np.frombuffer(raw + b'\x00'*pad_len, dtype=np.uint8)
+   ```
+   We’re using `np.frombuffer` so there’s no copy until we reshape it next step.
+
+4. **Reshape into triplets**  
+   ```python
+   triplets = padded.reshape(-1, 3)     # shape (m,3)
+   ```
+   Each row corresponds to one block of three input bytes that will produce four output indices.
+
+5. **Compute the four six‑bit groups per block**  
+   Vectorised bit operations are cheap:
+   ```python
+   a = (triplets[:,0] >> 2) & 0x3F
+   b = ((triplets[:,0] << 4) | (triplets[:,1] >> 4)) & 0x3F
+   c = ((triplets[:,1] << 2) | (triplets[:,2] >> 6)) & 0x3F
+   d = triplets[:,2] & 0x3F
+   ```
+   Each of these is an `uint8` array of length `m`.  
+
+6. **Stack them into a flat index array**  
+   ```python
+   idxs = np.column_stack((a,b,c,d)).ravel()
+   ```
+
+7. **Lookup table**  
+   The standard Base‑64 alphabet is static – we can store it once as a NumPy array of ASCII codes:
+   ```python
+   alphabet = np.frombuffer(
+       b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+       dtype=np.uint8)
+   ```
+   Then map our indices:
+   ```python
+   out_bytes = alphabet[idxs]
+   ```
+
+8. **Apply padding characters**  
+   After the mapping we have an array of ASCII codes for all four characters per block *including* the ones that come from padded zero‑bytes at the end of the original message. According to RFC 4648:
+   
+   * If `pad_len == 1` → replace the last character with `'='`.
+   * If `pad_len == 2` → replace the last two characters with `'='`.
+
+   We can do this in place:
+   ```python
+   if pad_len:
+       out_bytes[-pad_len:] = ord('=')
+       # note: for pad_len==2 this sets both last two positions correctly,
+       # because we overwrite both with '=' in one go.
+       # For pad_len==1 it only changes the final position.
+       # The other positions are already correct because they came from real data.
+       # No need for special handling of c vs d – just blanket overwrite.
+       # This matches how standard libraries do it too.
+       # And since out_bytes is uint8 we’re fine.
+       
+       # But wait—if pad_len==2 we actually need two '=', not one repeated?
+       # Actually yes; replacing both last two entries with '=' works fine.
+       
+       # Edge case check: what about when original length mod 3 == 0?
+       # Then pad_len==0 and we skip this block entirely – correct.
+       
+       # Double-check that replacing both positions doesn’t affect earlier padding logic,
+       # because earlier positions might also have been derived from padded zeros when len%3==1?
+       # No – those earlier positions correspond to real data; only the very last block uses zeros,
+       # so overwriting its last two positions is safe.
+       
+```
+
+9. **Convert back to Python string**  
+   ```python
+   return out_bytes.tobytes().decode()
+   ```
+
+10. **Wrap into `solve` method**  
+    The class `Base64Encoding` will simply expose this logic in its `solve` method; everything else remains unchanged from the reference structure except for replacing its slow loop implementation with this vectorised pipeline.
+
+Some extra sanity checks before finalising:
+
+* Empty input → returns '' correctly because early exit triggers before any NumPy ops.
+* One byte → `pad_len=2`, produces four indices where the last two come from padded zeros; after overwriting them with `'='`, we get something like `'TQ=='`, which matches standard encoding (`b'A'` → `'QQ=='`).
+* Two bytes → similar logic gives `'TWE='`.
+* Large inputs → all operations are linear in number of blocks (`O(n)`), using only a handful of small temporary arrays; no Python loops means maximum throughput on modern CPUs thanks to BLAS‐like vectorisation under the hood in NumPy’s bitwise ops.
+
+Potential pitfalls considered:
+
+* Using `.reshape(-1,3)` assumes length after padding is divisible by three – guaranteed by construction.
+* The lookup table uses ASCII codes so no extra conversion step; `.tobytes()` gives us a proper byte string ready for decoding.
+* Padding overwrite logic was double‑checked against RFC 4648 – replacing the last one or two entries works because those entries were derived from padded zeros anyway.
+* Memory usage stays modest even for gigabyte inputs – each intermediate array is roughly equal size to input plus small overhead for indices (`4/3 * input_size`). That’s acceptable for most test cases here.
+
+With this plan laid out I’m ready to write out the full file following the brief’s constraints—imports only `base64` and `numpy`, no Python loops inside the heavy lifting part, and keeping everything under ~3895 characters total.\n\nOK, I think I have the design. Time to write it.\

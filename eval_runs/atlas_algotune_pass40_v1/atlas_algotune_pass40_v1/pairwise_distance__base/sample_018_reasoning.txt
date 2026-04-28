@@ -1,0 +1,24 @@
+We need to replace triple loops with efficient vectorized operations. Standard formula: squared distance matrix = A + A.T - 2*X*X.T, where A is sum of squares per row. Implementation: compute X @ X.T, compute row sums, then broadcast.
+
+Need to ensure dtype float64. Use np.dot. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # Numerical errors might produce small negative values; clip to zero
+    np.maximum(dist, 0, out=dist)
+    return dist
+
+Return shape (N,N). Should be correct.
+
+Edge cases: N=0? Should handle? If N=0, X shape (0,D). Then sq_norms empty, dist shape (0,0). Works.
+
+Return dtype float64.
+
+Ok.
+
+We need to produce a full file with imports and function definition.
+
+Let's produce.
+

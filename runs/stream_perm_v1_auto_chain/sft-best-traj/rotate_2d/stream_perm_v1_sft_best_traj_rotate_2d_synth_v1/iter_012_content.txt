@@ -1,0 +1,210 @@
+We need to design a fast rotate_2d solver. Let's think. The problem likely involves rotating a 2D image or array by arbitrary angle. The baseline uses Rotate2D class, maybe using scipy.ndimage.rotate or similar but slow. We want vectorized, no loops, use scipy functions.
+
+We need to produce run_solver that takes problem dict and returns solution. Problem format unknown; maybe includes 'image' key with numpy array, 'angle' key float. We'll need to parse.
+
+We should avoid loops; use scipy.ndimage.rotate which is efficient C-coded. But maybe we need to compute something else like rotation matrix and apply via affine_transform? Use scipy.ndimage.affine_transform for generality.
+
+We also want to keep output shape same as input? Might need reshape.
+
+We must consider interpolation order, mode. Use order=1 bilinear.
+
+Edge cases: negative angles, large angles >360. Normalize angle modulo 360.
+
+Also handle dtype: float32 vs float64; use float32 for speed? Might keep as original dtype.
+
+Potential design: parse problem dict: arr = problem['image']; angle = problem.get('angle', 0). Compute rotation matrix: [[cos,-sin],[sin,cos]]. For affine_transform we need inverse matrix and offset center shift.
+
+Compute center = (arr.shape[0]/2, arr.shape[1]/2). For affine_transform we pass matrix as inverse of rotation, offset such that center aligns: offset = center - matrix @ center.
+
+Use scipy.ndimage.affine_transform(arr, matrix, offset=offset, order=1, mode='constant', cval=0.0). That returns rotated image same shape.
+
+Return dict with rotated image maybe under 'rotated'. But baseline might expect just array? Let's assume return array.
+
+But we need to match signature: run_solver(problem) returns solution; maybe the baseline returns Rotate2D().solve(problem) which returns rotated array? Let's inspect typical AlgoTune tasks: they often expect returning a numpy array of same shape.
+
+Thus run_solver should return np.ndarray.
+
+Implement:
+
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem):
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    # normalize
+    angle = angle % 360
+    theta = np.deg2rad(angle)
+    cos_t = np.cos(theta)
+    sin_t = np.sin(theta)
+    matrix = np.array([[cos_t, sin_t], [-sin_t, cos_t]])  # Wait orientation? For affine_transform expects mapping from output to input.
+    # Actually affine_transform applies: output[x] = input[matrix @ x + offset]
+    # We want input coordinates rotated by theta around center.
+    # So we need inverse rotation matrix? Let's derive.
+    # We want for each output pixel (x), find source coordinate by rotating around center.
+    # So src = R^{-1} * (x - c) + c
+    # So matrix = R^{-1} ; offset = c - R^{-1} * c
+    R_inv = np.array([[cos_t, sin_t], [-sin_t, cos_t]])  # that's inverse of rotation
+    center = np.array(img.shape)[::-1] / 2  # note shape order y,x
+    offset = center - R_inv @ center
+    rotated = scipy.ndimage.affine_transform(img, R_inv, offset=offset, order=1, mode='constant', cval=0.0)
+    return rotated
+
+Need to ensure dtype preserved: rotated inherits dtype of img but may cast to float64 if img float32? affine_transform outputs float64 by default; we can cast back if needed: rotated.astype(img.dtype)
+
+Also handle if img is int type: keep same dtype but interpolation may produce floats; cast back with rounding? Maybe baseline expects float.
+
+Better convert to float32 for speed and cast back to original dtype after transform if integer.
+
+Also consider memory: use same shape output.
+
+Edge cases: zero angle -> identity -> could skip transform for speed but not necessary.
+
+Potential alternative designs: use scipy.ndimage.rotate which handles center automatically but might produce larger output unless reshape=False. rotate has option reshape=False and order=1. Simpler:
+
+rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=1)
+
+This uses C code and is vectorized. Might be fastest and simpler. Let's think about performance difference between rotate vs affine_transform. rotate internally uses spline interpolation; might be slower than affine_transform with order=1? Hard to know but rotate is optimized too. We can try both and benchmark later.
+
+But design brief says use scipy functions somewhere; both are fine.
+
+No loops needed; just vectorized operations for computing matrix etc.
+
+Let's decide on using scipy.ndimage.rotate because simpler and likely efficient enough. It handles negative angles too and uses bilinear interpolation by default if order=1 (but default is 3?). Actually rotate default order=3 cubic; we set order=1 for speed.
+
+So final code:
+
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem):
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    # Ensure angle in degrees
+    rotated = scipy.ndimage.rotate(img.astype(np.float32), angle, reshape=False,
+                                   order=1, mode='constant', cval=0.0)
+    # Cast back if original dtype not float32
+    if img.dtype != np.float32:
+        rotated = np.rint(rotated).astype(img.dtype)
+    return rotated
+
+But converting to float32 may lose precision but fine for speed. Use .astype(np.float64) maybe slower but preserve precision. Could skip cast if already float64 or float32; just cast if integer types.
+
+Check dtype handling:
+
+if np.issubdtype(img.dtype, np.integer):
+   target_dtype = img.dtype
+else:
+   target_dtype = img.dtype
+
+After rotation we get float64 by default; cast back with rounding for integer types else keep as float64 or original dtype if already float64/float32? Could just do rotated.astype(img.dtype) always; if original was integer it will round down truncation though might be okay but better round nearest via rint then cast.
+
+Let's implement:
+
+rotated_float = scipy.ndimage.rotate(...)
+
+if np.issubdtype(img.dtype, np.integer):
+   rotated_int = np.rint(rotated_float).astype(img.dtype)
+   return rotated_int
+else:
+   return rotated_float.astype(img.dtype)
+
+Edge case: negative zero etc fine.
+
+Also consider that rotate expects shape (M,N). Works fine.
+
+We also need imports typing Any Dict maybe not used but include per brief? The brief says imports include typing Any Dict though not necessary but okay add unused imports allowed.
+
+Also mention final file size ~5494 characters; our code will be smaller but that's fine since brief just indicates final solution size approximate after implementation details like docstrings etc. But we only produce chain-of-thought not code file length check.
+
+Now think about potential pitfalls:
+
+- If image is multi-channel (e.g., shape (H,W,C)), rotate works channel-wise? It rotates all axes except last? Actually ndimage.rotate rotates along first two axes only; extra dims are treated as separate images stacked along third axis? It will rotate each channel separately because it sees them as separate images along last axis? I think it will treat the array as multi-dimensional and rotate over the first two axes leaving others unchanged (like applying same transform to each channel). That is fine for RGB images too.
+
+- Performance wise: using .astype(np.float32) before rotate may allocate new array copy causing overhead but necessary for speed perhaps; could skip cast if already float32 or float64 but still okay since overhead small relative to transform time.
+
+- If angle is large >360 or negative, rotate handles modulo internally? It rotates accordingly; no issue.
+
+- For zero angle we could skip transform but overhead minimal relative to transform time anyway; maybe small optimization not needed.
+
+- Ensure no loops anywhere else; only vectorized operations inside rotate call plus simple conditional checks.
+
+- Use SciPy's rotate which uses FFT-based algorithm for high-order interpolation maybe slower than affine_transform with bilinear; but still vectorized C code likely fast enough given typical sizes small (<1000x1000). But might be okay given constraints of AlgoTune tasks where speed matters more than absolute runtime on moderate sizes?
+
+We could also use ndimage.affine_transform which is also C-coded and might be faster because no spline interpolation overhead when order=1. But compute matrix each call anyway trivial cost vs transform cost huge so negligible difference.
+
+Maybe choose affine_transform because it's more explicit about rotation matrix and may avoid some overhead in rotate such as computing sin/cos inside loop? But either way it's fine.
+
+Let's weigh:
+
+- Using rotate simpler code.
+- Using affine_transform requires computing matrix and offset each call which is trivial overhead.
+- Which one faster depends on SciPy implementation details; I'd guess affine_transform with order=1 might be slightly faster due to simpler algorithm (just linear interpolation). Rotate uses spline of degree 3 by default requiring more computations per pixel even if we set order=1 maybe still uses spline algorithm but lower complexity though still heavier than linear interpolation in affine_transform? Actually both use linear interpolation when order=1 so similar complexity; difference may be negligible.
+
+Thus choose affine_transform for explicitness and ability to handle arbitrary shapes including multi-channel easily too because it applies transformation across first two axes only as well. So either fine.
+
+Let's decide on affine_transform because we can compute matrix once per call easily and it's straightforward to understand mapping formulas which reduces chance of bug due to orientation misinterpretation in rotate's axis ordering etc. Also easier to control mode/cval etc exactly same as baseline maybe uses similar approach.
+
+Thus final design:
+
+- Import numpy as np
+- import scipy.ndimage
+- import typing Any Dict (unused)
+
+Define run_solver(problem):
+
+img = problem['image']; angle_deg = problem.get('angle',0)
+
+theta rad conversion
+
+Compute cos,sin
+
+R_inv matrix as above
+
+center coords from shape reversed [::-1]/2
+
+offset compute
+
+rotated_float = scipy.ndimage.affine_transform(img.astype(np.float32), R_inv,
+                                                offset=offset,
+                                                order=1,
+                                                mode='constant',
+                                                cval=0.)
+
+Then cast back:
+
+if np.isinteger(img.dtype):
+   out = np.rint(rotated_float).astype(img.dtype)
+else:
+   out = rotated_float.astype(img.dtype)
+
+Return out
+
+Edge case: If image empty or shape <2 dims raise error? Not needed probably not present in tests.
+
+Also ensure no loops used elsewhere except inside SciPy C code obviously allowed since not Python-level loops per requirement "No Python-level loops".
+
+Check no loops in our code except possibly list comprehensions none used. Good.
+
+Now sanity check edge cases:
+
+- Angle zero -> R_inv identity -> offset computed correctly -> output equal input after casting rounding possibly identical.
+- Negative angle handled via cos/sin sign.
+- Large angles >360 handled via cos/sin periodicity automatically.
+- Multi-channel image shape e.g., (H,W,C): our center computed from shape[::] reversed gives [C,H]? Wait shape[::-1] gives reversed dims [C,W,H]? Actually shape[::-1] gives last dimension first e.g., (C,W,H). Dividing by 2 yields wrong center! We need center based on spatial dims only i.e., height and width only regardless of channels dimension at end or beginning depending on channel-first vs channel-last representation! Problem unclear about data layout: typical images are HxW or HxWxC channel-last; some frameworks use CxHxW channel-first. Our current method using shape[::-1] incorrectly picks channels dimension into center calculation leading wrong transformation for multi-channel arrays where channels dimension not part of spatial coordinates. We must detect whether last dimension is channels or part of spatial dims?
+
+Simpler assumption: input image is 2D grayscale only HxW no channels else baseline likely expects that too because task name rotate_2d implies 2D array not color image. So ignore multi-channel case safe assumption for this task's tests probably grayscale images only size NxM floats/ints. So our center calculation correct using shape[::-1]/2 giving [width/2,height/2]? Wait shape[::-1] gives [width,height] correct orientation because original shape is [height,width]. Reversed gives width,height so dividing by 2 yields [width/2,height/2]. Then offset computed accordingly works with mapping from output coordinates x=(x,y)? In affine_transform coordinates are given in terms of output array indices where first axis corresponds to row index y and second axis column index x? Actually SciPy uses coordinate system where first dimension index corresponds to axis 0 (rows y), second axis index corresponds to axis 1 (columns x). So our mapping should treat coordinate vector x=[y,x]. Our R_inv defined as [[cos,sin],[-sin,cos]] operates on vector [y,x]? Let's derive carefully:
+
+We want mapping from output coords y_out,x_out -> input coords y_in,x_in such that input point at distance r from center rotated by theta around center relative to output grid orientation same axes orientation (row downwards positive y direction increasing downward). Standard rotation matrix around origin in Cartesian coordinates where x horizontal rightwards positive rightwards and y vertical upwards positive upwards would be [[cos,-sin],[sin*cos]] etc depending orientation sign conventions with row index increasing downward causing y axis flipped relative to Cartesian upward direction leading sign changes in sin terms etc. This gets messy quickly!
+
+Using SciPy's rotate function would avoid these issues because it handles coordinate system correctly internally based on pixel grid orientation (row-major). Using affine_transform manually requires careful sign handling else rotation direction wrong (clockwise vs counterclockwise). Might cause incorrect results relative baseline expecting standard mathematical rotation counterclockwise when positive angle degrees measured counterclockwise around origin with y pointing downwards? Usually SciPy's rotate interprets positive angles counter-clockwise when viewing image with origin at top-left corner where x rightwards positive and y downwards positive - so clockwise rotation results in negative angles?
+
+Let's check typical SciPy docs: ndimage.rotate(image, angle) rotates counter-clockwise when viewing the array from the top left corner looking downwards i.e., standard orientation with y increasing downwards leads positive angles counter-clockwise relative screen coordinates which actually corresponds clockwise mathematically due to inverted Y axis? This confusion leads potential bug if we implement manual rotation incorrectly sign wise leading mismatch with baseline results causing wrong answer tests fail!
+
+Thus safer approach is simply use ndimage.rotate directly rather than manual affine transform because it handles coordinate conventions correctly behind the scenes without us worrying about signs or offsets etc! So revert back to using ndimage.rotate with reshape=False which keeps same shape and orientation consistent with baseline likely used same function originally perhaps slower due to default parameters like higher-order interpolation or reshape True causing bigger arrays requiring cropping etc leading slower performance compared baseline?
+
+But baseline might have used custom implementation maybe slower due to Python loops over pixels applying transformation individually using trigonometry each pixel - that's what we want replace with built-in efficient function like ndimage.rotate or gaussian_filter etc?
+
+Thus choose ndimage.rotate approach simpler and correct orientation wise automatically handled by library according to its own convention which matches baseline expectations presumably also using same library function originally albeit slower due to additional steps?
+
+But the reference implementation may have used manual loops performing forward/backward mapping incorrectly causing differences in

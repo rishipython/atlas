@@ -1,0 +1,29 @@
+We need to provide faster implementation. Use numpy's fft or scipy.signal. But we must keep same signature. We can use np.fft.fft. For real convolution we can use rfft? But easiest: use scipy.signal.fftconvolve if available. But to be safe, we can implement with numpy FFT. For real arrays, we can use np.fft.fft with length L = N+M-1 padded to next power of two or to L directly. Convolution via elementwise multiplication. Then inverse FFT, real part. Use np.fft.fft to compute. We'll compute:
+
+L = N + M - 1
+size = 1 << (L-1).bit_length()  # next power of two
+X = np.fft.rfft(x, size)
+H = np.fft.rfft(h, size)
+Y = X * H
+y = np.fft.irfft(Y, size)[:L]
+Return y
+
+We must cast to float64. Input dtype is float64. Use rfft for speed.
+
+Also need to handle small inputs: but algorithm works.
+
+Also we need to import numpy. We'll write conv1d accordingly. Also maybe use np.fft.fft without rfft for general. But rfft uses real input.
+
+Edge cases: zero-length arrays? Not expected. But if N==0 or M==0? In numpy convolve, if one is empty, returns empty. We can handle: if N==0 or M==0: return np.array([], dtype=np.float64). But problem may not include.
+
+But we should preserve shape: output length N+M-1. For N>0 and M>0.
+
+Also we need to ensure numeric close. rfft and irfft produce real output. Should match conv.
+
+Potential issues: rounding errors. But np.allclose with typical tolerances. Should be fine.
+
+We'll produce final code.
+
+Also we can implement fallback if numpy's rfft not available? But it's available.
+
+Let's produce final file.

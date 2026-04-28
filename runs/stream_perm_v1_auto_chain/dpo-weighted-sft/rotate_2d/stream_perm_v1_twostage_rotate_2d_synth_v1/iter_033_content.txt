@@ -1,0 +1,44 @@
+We need to take the slow reference implementation of the `Rotate2D` solver and replace it with a fast vectorised routine that still satisfies the same API contract – the entry point must be a function called `run_solver` that accepts a `problem` dictionary and returns the rotated data (the baseline returns whatever `Rotate2D().solve(problem)` produced).
+
+First thought: the reference probably uses nested Python loops or a naïve per‑pixel copy plus trigonometric calculations for each pixel – that’s why it’s slow on large arrays. The obvious way to speed this up is to hand off the heavy lifting to a library that already has highly optimised C/Fortran kernels for geometric transforms – `scipy.ndimage` is a natural fit because it ships with an `affine_transform` routine that can apply any linear transformation (including rotations) in one go without explicit Python loops over pixels.
+
+So I’ll write a small helper that takes an image (a 2‑D NumPy array) and an angle in degrees and returns the rotated image using `scipy.ndimage.affine_transform`. The trick is computing the correct affine matrix and offset so that the rotation happens around the centre of the image and the output keeps the same shape (`reshape=False` behaviour). The affine matrix for a counter‑clockwise rotation by θ is
+
+```
+[[cosθ , -sinθ],
+ [sinθ ,  cosθ]]
+```
+
+The centre of an image of shape `(h,w)` is `(h/2., w/2.)`. After applying the rotation matrix the centre moves; we must shift the output back so that it stays centred in its original frame – that’s just an offset of `center - M @ center`. The `affine_transform` call then looks like:
+
+```python
+scipy.ndimage.affine_transform(
+    img,
+    M,
+    offset=offset,
+    order=1,
+    mode='constant',
+    cval=0.0
+)
+```
+
+Using bilinear interpolation (`order=1`) gives a good trade‑off between quality and speed; higher orders are slower and rarely worth it for this task. The `mode='constant', cval=0.` pads out‑of‑bounds pixels with zero – matching what most reference implementations do when rotating an image without changing its size.
+
+Edge cases:
+- If the angle is essentially zero (`abs(angle) < 1e-8`) we can skip the transform entirely and just return a copy of the input – this saves time on trivial rotations.
+- Negative angles are handled automatically by sin/cos.
+- Angles larger than 360° are fine because sin/cos are periodic.
+- Non‑square images are fine – everything is computed from `h` and `w`.
+- The function should accept only 2‑D arrays; otherwise raise a ValueError – this keeps bugs visible early.
+- We’ll preserve the input dtype by casting back at the end if needed (`result.astype(orig_dtype)`), although most callers will expect float output anyway so this step is optional but harmless.
+- Logging at DEBUG level can help trace any unexpected behaviour without affecting performance when disabled.
+
+The main entry point `run_solver(problem)` will:
+1. Pull out `'data'` (the image) and `'angle'` from the dictionary.
+2. Validate they exist and have correct types.
+3. Call our `_rotate_image` helper.
+4. Return the rotated array directly (the baseline seems to return just the result).
+
+All code stays in pure Python with NumPy/SciPy calls – no explicit loops over pixels or images – satisfying “no Python‑level loops” while staying fully vectorised inside SciPy’s compiled kernels. Logging import gives us optional diagnostics without adding overhead when not used.
+
+This design uses only the imports listed in the brief (`logging`, `typing.Any`, `typing.Dict`, `numpy as np`, `scipy.ndimage`). It keeps everything self‑contained in one file with a single public function `run_solver`. No JAX/Numba required because SciPy already gives us great performance for this particular operation; adding JIT would add complexity without significant extra speedup here because affine_transform is already heavily optimised in C/Fortran under the hood. The code remains simple enough to read while being orders of magnitude faster than a naive nested‑loop implementation on large images.

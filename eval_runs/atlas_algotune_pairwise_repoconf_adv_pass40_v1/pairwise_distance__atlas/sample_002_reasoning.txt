@@ -1,0 +1,41 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. Classic: use broadcasting, or compute Gram matrix: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. For N up to maybe 10k, we can compute with matrix multiplication. Use np.dot or np.matmul. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    return norms[:, None] + norms[None, :] - 2*np.dot(X, X.T)
+
+Need to ensure non-negative due to numerical errors: np.maximum(..., 0). But not necessary for correctness? Could produce small negative values; but np.allclose expects equality? Might not be exactly same as slow algorithm, but difference could be small. Use np.maximum to zero to avoid negative due to rounding. Use float64. Also maybe use np.dot for large arrays; but dot is fine.
+
+Edge cases: X shape (0, D) or (N,0). For N=0, return shape (0,0). For D=0, all zeros.
+
+Also can use np.einsum for dot.
+
+Let's implement accordingly.
+
+Make sure to import numpy as np. Provide function.
+
+Also maybe add type hints.
+
+Return shape (N,N). Use float64.
+
+Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64, order='C')
+    N, D = X.shape
+    if N == 0:
+        return np.empty((0,0), dtype=np.float64)
+    # compute squared norms
+    norms = np.sum(X * X, axis=1)
+    # dot product
+    prod = np.dot(X, X.T)
+    # pairwise squared distances
+    out = norms[:, None] + norms[None, :] - 2*prod
+    # ensure non-negative due to floating point errors
+    out = np.maximum(out, 0.0)
+    return out
+
+Ok.
+
+Let's produce final code.

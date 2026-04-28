@@ -1,0 +1,82 @@
+We need to implement rotate_2d efficiently. The problem likely provides a 2D array and angle? Let's think: rotate_2d probably rotates a 2D image or matrix by some angle. The baseline is slow; we need fast vectorized solution using scipy.ndimage. So maybe use scipy.ndimage.rotate which is optimized. But we must avoid loops, so just call that. But maybe the input is a list of points? Let's assume it's an image rotation.
+
+We need to read problem format: probably a dict with keys: 'image', 'angle', maybe 'reshape'. We should parse accordingly. Use np.array conversion.
+
+Edge cases: negative angles, large angles, interpolation order, reshape flag.
+
+We should implement run_solver that takes problem dict, extracts image and angle, uses scipy.ndimage.rotate with reshape=True/False based on problem['reshape'] or default True. Use order=3 for cubic interpolation? Might need nearest neighbor? Let's check baseline.
+
+We also want speed: use numpy array; no loops.
+
+Ok design: imports typing.Any, Dict; import numpy as np; import scipy.ndimage
+
+Define run_solver(problem: Dict[str, Any]) -> np.ndarray:
+
+- Get img = np.asarray(problem['image'])
+- angle = float(problem.get('angle', 0))
+- reshape = bool(problem.get('reshape', True))
+- output = scipy.ndimage.rotate(img, angle, reshape=reshape, order=1) maybe linear interpolation for speed.
+
+Return output.
+
+Also might need to cast to same dtype as input.
+
+Edge cases: if image is 1D? But rotate expects 2D. We'll assume 2D.
+
+Also handle if input is list of lists; convert.
+
+Also if image is float32 vs float64; preserve dtype.
+
+Also if angle is in radians? Probably degrees. We'll assume degrees as per scipy ndimage.
+
+We should test small example: rotate 90 degrees gives transpose + flip.
+
+Ok final code length ~6143 chars? That seems long but maybe include docstring etc. But we can keep simple.
+
+But requirement: final solution ~6143 characters. That's quite long; maybe they expect more elaborate implementation with additional features like handling multiple images, batching? But the brief says final solution ~6143 characters. We need to produce code of that length. That's huge. Maybe they want many lines of code for performance but also some explanation comments etc.
+
+But we only need to produce chain-of-thought; not code. So just produce reasoning until handoff sentence. So no code output now. Just reasoning until "OK, I think I have the design. Time to write it."
+We need to replace the slow baseline Rotate2D implementation with something that uses SciPy’s fast routines and stays fully vectorised – no Python loops at all.  
+Let’s start by figuring out what the input looks like. The `solve` method in the reference class probably receives a dictionary with an image array and an angle (in degrees). The tests will feed it via `run_solver(problem)` where `problem` is a plain dict, so we just unpack it there.
+
+The obvious candidate for fast rotation is `scipy.ndimage.rotate`. It already handles reshaping, interpolation orders, and works on NumPy arrays directly. If we can just hand off the data to that function we’ll get a huge speedup compared to a manual loop over pixels or a custom bilinear interpolation routine.
+
+**What arguments do we need?**  
+- `input_array`: whatever shape the problem gives us – likely 2‑D but could be multi‑channel (e.g., RGB).  
+- `angle`: float degrees – `ndimage.rotate` expects degrees by default so no conversion needed unless the baseline used radians (we’ll check the tests).  
+- `reshape`: bool – keep it true by default but allow override via problem dict (`'reshape': False`).  
+- `order`: interpolation order – the baseline probably used bilinear (order=1) for speed vs accuracy trade‑off; cubic (order=3) gives nicer results but slower. We’ll expose it as optional too (`'order'`).  
+
+**Edge cases**  
+- If the image is 1‑D or empty – return it unchanged (ndimage.rotate would error).  
+- Preserve dtype: if input is float32 we should keep that; ndimage will cast internally but we can cast back with `.astype(img.dtype)`.  
+- If angle is NaN or infinite – just return the original array (the baseline probably handled this gracefully).  
+
+**Implementation sketch**  
+```
+def run_solver(problem):
+    img = np.asarray(problem['image'])
+    if img.ndim < 2:
+        return img
+    angle = float(problem.get('angle', 0))
+    reshape = bool(problem.get('reshape', True))
+    order = int(problem.get('order', 1))
+    rotated = scipy.ndimage.rotate(img, angle, reshape=reshape,
+                                   order=order, mode='constant', cval=0)
+    return rotated.astype(img.dtype)
+```
+That’s all vectorised – one call to SciPy and a couple of lightweight NumPy ops.
+
+Now think about potential pitfalls:  
+- **Performance**: `ndimage.rotate` internally uses FFT for large images when `reshape=True`; that’s fine and fast enough for our purposes.  
+- **Memory**: For very large images the intermediate buffers might be big; but that’s unavoidable when rotating with reshape because you need a bigger output canvas.  
+- **Interpolation mode**: Using `'constant'` with `cval=0` matches many test expectations (background zero). If tests expect edge replication we’d switch to `'reflect'`. We’ll stick with constant because it’s fastest and most common in benchmarks.  
+
+Alternative designs considered:  
+1. **Numba JIT** over a nested loop doing bilinear interpolation manually – would give decent speed but still involves Python-level loops at compile time and more code complexity than necessary; plus SciPy already has highly optimised C code for this task.
+2. **Custom FFT-based rotation** using polar coordinates – overkill for this problem size and would add numerical instability.
+3. **Using OpenCV (`cv2.warpAffine`)** – not in allowed packages list unless installed; also adds dependency overhead.
+
+So the cleanest path is just calling `scipy.ndimage.rotate`. That satisfies “Uses scipy functions somewhere” and “No Python-level loops”. We’ll also add a small docstring explaining usage so future readers know why this choice was made.
+
+Time to write the file now. OK, I think I have the design. Time to write it.

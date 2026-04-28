@@ -1,0 +1,38 @@
+We need to read the problem dictionary, extract the matrix and rotation parameters, and perform the rotation efficiently without any Python loops. The simplest way is to rely on `scipy.ndimage.rotate`, which is already written in C and does all the heavy lifting in compiled code. To keep it fast we’ll also special‑case rotations that are exact multiples of 90°, because `np.rot90` is a tiny wrapper that does nothing in Python and avoids the overhead of calling into SciPy’s interpolation routine for those trivial cases.
+
+First thought was just calling `scipy.ndimage.rotate` straight away:
+
+```python
+out = scipy.ndimage.rotate(arr, angle_deg,
+                           reshape=reshape,
+                           order=1,
+                           mode='nearest')
+```
+
+That works but still does a full bilinear interpolation even when the user wants a clean quarter‑turn rotation – unnecessary work that hurts speed on many test cases where the angle is exactly ±90°, ±180°, etc. So I’ll add a quick check:
+
+```python
+angle_mod = angle % 360
+if abs(angle_mod) < eps:
+    return arr          # no rotation
+elif abs(angle_mod - 90) < eps or abs(angle_mod -270) < eps:
+    k = int(round(angle_mod/90)) %4
+    return np.rot90(arr, k=k)
+```
+
+`eps` can be something like `1e-6` degrees – good enough to catch floating‑point quirks without misclassifying legitimate small angles as exact multiples of 90°. After this guard I fall back to the SciPy call for all other angles – that covers arbitrary rotations efficiently while keeping the code completely vectorised (no explicit loops).
+
+I considered other routes such as implementing the rotation via FFT shift or writing a custom NumPy kernel with `np.roll` and bilinear resampling, but those would either require complicated indexing logic or re‑implementing what SciPy already does in highly optimised C code – both unnecessary given the performance target and the requirement to stay within pure NumPy/SciPy territory. Using JAX or Numba seemed overkill here because SciPy’s routine already calls BLAS/LAPACK under the hood where appropriate, and adding JIT would just add extra compilation time without measurable benefit for this small operation size typical in these problems.
+
+The input format is expected to be a dictionary containing at least an `'array'` key (or fallback `'matrix'`) with a NumPy‑compatible sequence, an `'angle'` key giving degrees (float), and optionally a `'reshape'` boolean flag controlling whether the output canvas should grow to contain the whole rotated image (the default behaviour of `scipy.ndimage.rotate`). If any key is missing I’ll provide sensible defaults (`angle=0`, `reshape=True`). The output will be a plain NumPy array with the same dtype as the input when possible – SciPy will cast to float during interpolation but I’ll cast back afterwards if the original dtype was integer so that callers don’t see an unexpected type change.
+
+Edge cases I’ve covered:
+* Empty arrays → returned unchanged.
+* Non‑numeric inputs → converted via `np.asarray`, errors propagate naturally.
+* Very large angles → reduced modulo 360 before deciding on special‑case logic.
+* Integer dtypes → cast back after rotation.
+* Negative angles handled correctly through modulo arithmetic.
+* If `reshape=False`, SciPy will clip pixels that fall outside the original bounds – matching typical expectations from image processing libraries.
+* For exact multiples of 90° with `reshape=False`, `np.rot90` already produces the correct shape swap without clipping issues.
+
+All operations are performed through NumPy/SciPy functions – no explicit Python loops – satisfying the vectorisation requirement while keeping the implementation concise and fast enough for repeated calls on moderate‑sized matrices typical in these benchmarks. OK, I think I have the design. Time to write it.

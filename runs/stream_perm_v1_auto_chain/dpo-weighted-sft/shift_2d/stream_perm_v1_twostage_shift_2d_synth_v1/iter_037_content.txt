@@ -1,0 +1,88 @@
+We need to replace the slow reference implementation of `Shift2D.solve` with something that leverages SciPy’s fast array operations and avoids any Python‑level loops.  
+The task is basically a 2‑D image shifting routine – the “problem” dictionary will contain an image (a NumPy array) and a two‑component shift vector (float or int).  
+The most straightforward way to do this in a fully vectorised manner is `scipy.ndimage.shift`. It already handles multi‑dimensional arrays, interpolation orders, boundary modes and constant values without any explicit loops on the host side.  
+We’ll keep the public interface identical (`Shift2D.solve(problem)` returning a NumPy array) so that `run_solver` can stay unchanged (`return Shift2D().solve(problem)`).
+
+**Design decisions**
+
+* **Imports** – keep them minimal but explicit: `numpy`, `scipy.ndimage`, plus typing helpers.
+* **No loops** – everything inside `solve` is a single call to `ndimage.shift`.
+* **Type safety** – use type hints for clarity (`Dict[str, Any]`, `np.ndarray`).
+* **Performance** – rely on SciPy’s C‑backed implementation; no extra copying beyond what SciPy already does.
+* **Edge cases** – preserve the input dtype by converting only if necessary (SciPy already preserves dtype).  
+  We’ll also guard against missing keys by providing defaults.
+* **Logging** – optional debug info (shape, shift) can be logged if needed without affecting speed when disabled.
+* **Return value** – directly the shifted array; no extra processing required.
+
+Below is the concise implementation that satisfies all constraints:
+
+```python
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+log = logging.getLogger(__name__)
+
+
+class Shift2D:
+    """
+    Shift a 2‑D (or N‑D) NumPy array by a given offset using SciPy's ndimage.shift.
+    """
+
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        """
+        Parameters
+        ----------
+        problem : dict
+            Must contain at least:
+                - 'image': np.ndarray of any shape (N-D).
+                - 'shift': sequence of two floats/ints specifying the offset in each axis.
+            Optional keys:
+                - 'order': interpolation order (default 3).
+                - 'mode': boundary mode ('constant', 'nearest', etc.) (default 'constant').
+                - 'cval': constant value used for 'constant' mode (default 0.0).
+
+        Returns
+        -------
+        np.ndarray
+            The shifted array with the same dtype as the input image.
+        """
+        img = problem["image"]
+        shift = tuple(problem["shift"])
+
+        order = problem.get("order", 3)
+        mode = problem.get("mode", "constant")
+        cval = problem.get("cval", 0.0)
+
+        log.debug(
+            "Shifting image of shape %s by %s with order=%s mode=%s cval=%s",
+            img.shape,
+            shift,
+            order,
+            mode,
+            cval,
+        )
+
+        # SciPy's ndimage.shift handles all dimensionalities and performs the operation in C.
+        return scipy.ndimage.shift(
+            img,
+            shift=shift,
+            order=order,
+            mode=mode,
+            cval=cval,
+            prefilter=(order > 1),
+        )
+
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Entry point expected by AlgoTune infrastructure.
+    """
+    return Shift2D().solve(problem)
+```
+
+This implementation keeps the public API unchanged while delegating all heavy lifting to SciPy’s highly optimised routine. No Python loops are present, and we satisfy the requirement to use SciPy functions in the solution.

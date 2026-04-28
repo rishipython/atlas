@@ -1,0 +1,27 @@
+We need to replace the slow reference implementation of the Base64 encoder with something that runs fast and stays pure‑Python (except for the C‑backed `base64` module). The baseline probably does a manual loop over every byte and builds a string character by character – that’s why it’s slow and why the brief says “no Python‑level loops”.  
+
+Let’s think about what the `solve` method actually has to do. The input is a dictionary (`problem`) that contains whatever data we’re supposed to encode – likely either raw bytes or a UTF‑8 string. The output should be a dictionary too (the reference probably returns a dict with the key `encoded`).  
+
+The quickest way in CPython is just `base64.b64encode`. It’s written in C and does all the bit‑twiddling internally. If we feed it a `bytes` object it will return another `bytes` object containing the ASCII characters of the Base‑64 representation. All we have left is converting that back into a normal Python string (because the rest of the framework expects JSON‑serialisable objects).  
+
+We should also handle the case where somebody passes us a plain string instead of bytes – that’s easy: just call `.encode('utf-8')`.  
+If they pass a path (maybe under `file_path`) we could read it in binary mode – but that’s an extra feature we don’t strictly need for correctness, so let’s keep it simple and only support `data`.  If they really want file support they can add it later without breaking this core logic.  
+
+Logging – the brief lists `logging`, so let’s create a module‑level logger and log at INFO level when we start encoding and how many bytes were processed.  That satisfies the “imports” list (`base64`, `os`, `logging`, `typing`).  We’ll also import `Dict` and `Any` for type hints – this keeps the signature clean (`def solve(problem: Dict[str, Any]) -> Dict[str, Any]`).  
+
+No loops at all – just straight calls:
+```python
+data_bytes = problem['data'] if isinstance(problem['data'], bytes) else problem['data'].encode('utf-8')
+encoded_bytes = base64.b64encode(data_bytes)
+encoded_str = encoded_bytes.decode('ascii')
+```
+That’s it!  We’ll wrap it in `run_solver(problem)` which simply delegates to our new solver class (or function).  
+
+Now double‑check edge cases:
+* Empty input (`b''`) → returns empty string – fine.
+* Very large input – reading into memory once is okay because the reference probably already does that.
+* Non‑string/bytes input – raise a clear `ValueError`.
+* Unicode errors when encoding – let them propagate; they’re legitimate errors if someone passes an invalid UTF‑8 string.
+* Logging doesn’t interfere with performance because it’s minimal I/O (just one line).
+
+All right, this satisfies “no Python loops”, uses only vectorised / C‑backed ops, keeps imports minimal, and should be fast enough for any realistic payload size. Time to write it up. OK, I think I have the design. Time to write it.

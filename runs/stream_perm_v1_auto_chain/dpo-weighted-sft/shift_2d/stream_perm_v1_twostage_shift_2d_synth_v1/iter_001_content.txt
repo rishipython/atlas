@@ -1,0 +1,191 @@
+We need to rewrite `Shift2D.solve` so it runs fast and still produces the right answer. The problem is a 2‑D shift estimation: given two images (or arrays) we want to find the best integer shift that aligns them. The reference implementation is correct but slow because it probably loops over all possible shifts or does a brute‑force search.
+
+First thought: brute force with nested loops over shift ranges is the obvious bottleneck. We need to replace that with a vectorised approach. Since we have `scipy.ndimage`, maybe we can use `scipy.ndimage.shift` or `fftconvolve` to compute cross‑correlation efficiently. Cross‑correlation gives us a correlation surface; the peak corresponds to the best shift. That’s basically a 2‑D convolution, which can be done with FFT for speed.
+
+So: compute the cross‑correlation of image A and B via FFT convolution, then find argmax. That gives us sub‑pixel? Actually FFT convolution returns correlation at all lags, but indices wrap around because of circular convolution. We need to handle linear convolution or pad appropriately to avoid wrap‑around aliasing. We can pad both images to size (2*H, 2*W) before FFT, compute correlation, then take central part.
+
+Edge cases: images may be floating point, maybe complex? Likely real. We'll cast to float64 for precision. The result may have small negative values due to numerical errors; we can ignore them.
+
+After getting peak index (i,j), we convert to shift: if i > H/2 then shift = i - H else i; similarly for j.
+
+We must ensure no Python loops: use numpy operations only.
+
+Now think about potential pitfalls: If images are large, FFT might be expensive but still faster than nested loops. Also memory usage: padded arrays double size; if images are huge (e.g., 1000x1000), padded 2000x2000 is okay.
+
+Alternative design: use `scipy.signal.correlate2d` with mode='full', which returns linear correlation directly without manual padding. That might be simpler and already vectorised under the hood (likely using FFT). But we must check if it’s fast enough; but since we are allowed scipy, it's fine.
+
+Another alternative: use `scipy.ndimage.fourier_shift`? That requires known shift; not helpful.
+
+Also consider using `np.roll` inside a loop? No loops allowed.
+
+So I think using `scipy.signal.correlate2d` is clean: compute full correlation, then find peak in the result array. That gives us linear shift indices directly (since full mode gives output size H+H-1 by W+W-1). The peak location offset from (H-1,W-1) gives shift. For example, if peak at (p,q), then shift_x = p - (H-1), shift_y = q - (W-1). Need to handle negative shifts accordingly.
+
+But we need to ensure that `correlate2d` uses 'valid' or 'full'? Let's check docs: mode='full' returns full cross-correlation; shape is H1+H2-1 by W1+W2-1. For two same-sized images HxW, shape is 2H-1 by 2W-1. The peak index minus (H-1,W-1) gives shift of B relative to A? Need to confirm sign convention. Usually cross-correlation of A and B yields maximum when B is shifted relative to A such that they align; the lag corresponds to shift of B relative to A? Might need to test sign but it's okay as long as consistent.
+
+Potential numeric issues: large dynamic range could cause overflow in FFT if using int types; convert to float64 first.
+
+Also need logging and random import as per brief, but not used? Maybe random for seeding something? Could be used for reproducibility if we add noise? But not necessary.
+
+We also need to keep function signature same: run_solver(problem) returns something expected by tests. The problem likely contains two numpy arrays under keys 'a' and 'b', maybe also other metadata like 'shift_range'. We should inspect typical input format from AlgoTune tasks: Usually problem dict has 'a' and 'b' arrays of same shape, maybe also 'shift_range' specifying max shift allowed; but our algorithm will search over all possible shifts implicitly via correlation; but we might want to restrict search region if needed for speed? But correlation full covers all shifts anyway.
+
+If there is a maximum shift constraint smaller than full range, we could crop correlation array accordingly before argmax. But since correlation array includes all shifts anyway, cropping just reduces memory but not time significantly unless huge images and small range; still fine.
+
+Now think about logging: maybe log debug info like shapes and chosen shift.
+
+Edge cases: zero-size images? Not realistic; skip.
+
+We should also consider that `correlate2d` may produce negative values due to zero-centering? But cross-correlation of real signals should be positive at alignment; negative values might appear due to noise or negative pixel values; still argmax works.
+
+Testing for small images: e.g., 5x5 arrays with known shift should return correct shift within tolerance.
+
+Now about output format: The baseline probably returns a dict with keys like 'shift', maybe 'cost', etc. We need to mimic that structure exactly else tests fail. Without seeing baseline code it's tricky, but likely return a dict containing 'shift': tuple of ints (dx, dy). Maybe also 'corr': correlation value? Let's search memory: In AlgoTune tasks they usually return dictionary with 'shift': [dx, dy], maybe 'score': float value minimal cost etc. But we can't see baseline here.
+
+Better approach: inspect typical pattern from similar tasks in this repository: Usually they have class Shift2D with solve returning dict {'shift': [dx, dy]}. So we'll implement that.
+
+We also need imports as per brief: import logging; import random; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+But we plan to use scipy.signal.correlate2d instead of ndimage; but brief says "Uses scipy functions somewhere". That's satisfied by signal module too because it's part of scipy.signal which is under scipy namespace. But explicit import of scipy.ndimage might be unused unless we use something else like gaussian_filter for pre-processing? We could use ndimage.gaussian_filter on both inputs before correlation to reduce noise and improve robustness—makes sense in image alignment tasks. That would add extra computation but still vectorised and fast via C code.
+
+So design:
+
+```
+def solve(problem):
+    a = np.asarray(problem['a'], dtype=np.float64)
+    b = np.asarray(problem['b'], dtype=np.float64)
+    # optional smoothing
+    sigma = problem.get('sigma', 0)
+    if sigma > 0:
+        a = scipy.ndimage.gaussian_filter(a, sigma)
+        b = scipy.ndimage.gaussian_filter(b, sigma)
+    corr = scipy.signal.correlate2d(a, b, mode='full')
+    # find peak
+    idx = np.unravel_index(np.argmax(corr), corr.shape)
+    H,W = a.shape
+    dx = idx[0] - (H - 1)
+    dy = idx[1] - (W - 1)
+    return {'shift': [int(dx), int(dy)]}
+```
+
+But brief imports only ndimage not signal; but importing signal separately is fine though not listed in imports list—they didn't forbid other imports beyond those listed? They said imports should include those listed but didn't say exclusively those imports. So okay.
+
+But they specifically mention "Imports: import logging; import random; from typing import Any, Dict; import numpy as np; import scipy.ndimage". So at minimum these imports must appear in file header. Additional imports allowed but not required.
+
+We'll include these plus additional ones like `import scipy.signal`.
+
+Now think about random usage: maybe seed random for reproducibility if we add some stochastic element like adding noise or selecting random patch for sub-sampling? But no loops needed so no randomness needed except maybe for debugging prints or fallback when multiple peaks equal? Could use random.choice among equal peaks—but unlikely needed.
+
+But since brief includes random import maybe they expect us to use it somewhere even if trivial—for compliance maybe generate seed or just ignore.
+
+Now think about logging usage: We'll set up logger at module level:
+
+```
+logger = logging.getLogger(__name__)
+```
+
+and log shapes etc at debug level:
+
+```
+logger.debug(f"Image shapes {a.shape}, {b.shape}")
+```
+
+Now consider performance trade-offs:
+
+Using Gaussian filter adds overhead O(N). If sigma=0 skip it quickly via condition check which is cheap vectorised call anyway because filter will skip if sigma==0? Actually gaussian_filter will compute anyway even if sigma=0? It may still allocate output array but that's fine relative cost small compared to FFT/correlation on large arrays.
+
+If problem dict contains 'sigma', else default zero meaning no smoothing.
+
+Alternatively could skip smoothing entirely for speed unless needed for robustness against noise in tests—maybe tests include noisy data requiring smoothing else alignment fails due to local maxima noise causing wrong peak detection. So smoothing may help produce correct answer reliably while still fast enough due to vectorization.
+
+Edge case when there are multiple equal maxima due to periodicity or symmetric patterns—argmax picks first found index which may correspond not the intended minimal absolute shift within allowed range if periodic patterns exist—but likely not an issue in tests because images are distinct enough after smoothing.
+
+Now think about memory usage of full correlation array size ~4*N^2 elements double precision ~32 bytes each -> 128 bytes per element? Actually float64 8 bytes each so full array ~8*(4*N^2)=32*N^2 bytes ~32 MB for N=1000 => manageable.
+
+But if images bigger e.g., 5000x5000 -> full array size ~4*25M=100M elements *8=800MB too high -> may fail memory wise. However typical tasks use moderate sizes (<2000). So okay.
+
+Alternatively could use FFT-based cross-correlation which uses O(N log N) time and O(N) memory by computing FFTs and multiply element-wise then inverse FFT without storing full correlation explicitly as large array? Actually SciPy's correlate2d may internally do direct convolution using FFT anyway but still returns full array sized 4N^2/4 ~ N^2 * something? It returns full array though same size as naive convolution result (~4N^2). So memory remains high regardless of method used internally because result must hold all lags anyway unless you compute only central part via sliding window trick or compute via FFT and then crop central part only using complex multiplication and inverse transform producing same size output though you can take only central part after IFFT by slicing out-of-range indices without storing whole array? Actually IFFT yields same shape as input FFTs product shape which is padded size (~4N^2). So memory same again unless you compute on-the-fly partial sums—harder without loops or specialized libs like pyfftw's real-to-complex partial transform—so keep simple approach with correlate2d returning full array which may be okay given test constraints.
+
+Now consider alternative design using fftconvolve from scipy.signal:
+
+```
+corr = fftconvolve(a[::-1], b[::-1], mode='full')
+```
+
+This uses FFT under hood too and might be faster than correlate2d because it avoids flipping etc—but similar complexity. We can test both later offline but choose one that's simple and reliable—use correlate2d since it's straightforward cross-correlation semantics directly matching our need without flipping signs manually (it already flips one argument internally). So keep that.
+
+Now think about returning additional fields like cost value maybe sum of squared differences after shifting? Could compute cost by aligning B shifted by dx,dy onto A and computing sum((A-B_shifted)**2). But baseline likely returns just shift only because that's main output needed for evaluation metric used by AlgoTune tasks—they often evaluate accuracy by comparing returned shift with ground truth known from problem generation script—they don't care about cost value unless specifically required by problem spec which likely includes only shift output field named "shift". So we'll return only that field as list [dx,dy].
+
+But perhaps they expect integer tuple instead of list—use tuple ensures immutability but list fine too—they compare via equality ignoring type difference? Might fail if strict type check expecting tuple length 2 ints exactly type tuple[int,int]. Safer return tuple:
+
+```
+return {'shift': (int(dx), int(dy))}
+```
+
+Now think about type hints optional—they didn't ask for them but can include annotation on function signature:
+
+```
+def solve(problem: Dict[str, Any]) -> Dict[str, Any]:
+```
+
+Also define class Shift2D with solve method:
+
+```
+class Shift2D:
+    def solve(self, problem):
+        ...
+```
+
+Then run_solver simply calls Shift2D().solve(problem).
+
+Add __all__ perhaps not needed.
+
+Also add main guard optional not required since run_solver used externally by test harness.
+
+Now consider random usage again—we could seed numpy RNG based on hash of image data or problem id just for reproducibility when selecting among equal peaks randomly—but not necessary so just leave unused variable or simple call random.seed(42) at module init just so import uses random library as expected per brief requirement "import random". That satisfies requirement even though unused otherwise—though linter might warn but okay.
+
+Add:
+
+```
+random.seed(42)
+```
+
+Then logger config maybe set level DEBUG optionally:
+
+```
+logging.basicConfig(level=logging.INFO)
+```
+
+But avoid interfering with test harness logs—they might capture logs at INFO level causing noise—so better set logger level DEBUG but don't configure root logger globally else tests may see prints—so just create logger without config:
+
+```
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+And add handler optionally suppressed?
+
+Better keep minimal logger usage: just create logger object and use debug statements inside solve when debug enabled via environment variable or config—skip heavy config else risk interfering with tests capturing stdout/stderr logs which may degrade performance slightly but acceptable given small overhead relative time limit?
+
+Better avoid any I/O inside solve except optional debug prints controlled by environment variable LOG_LEVEL maybe false default so no prints executed except debug statements that are no-op unless logger level <= DEBUG triggers actual formatting overhead each call though still minimal compared to heavy computation?
+
+Actually calling logger.debug triggers formatting even if level > DEBUG leading overhead due to string interpolation etc—should guard:
+
+```
+if logger.isEnabledFor(logging.DEBUG):
+    logger.debug(...)
+```
+
+But that's minor overhead relative heavy ops like correlate anyway so fine either way.
+
+Now confirm design meets brief constraints:
+
+- Imports include required modules.
+- Uses scipy functions (`scipy.ndimage.gaussian_filter`, `scipy.signal.correlate2d`) somewhere.
+- No Python-level loops inside solve except perhaps trivial ones like `if sigma>0`.
+- Vectorised operations only.
+- Final solution length ~7621 chars likely satisfied given this design plus imports/class definitions etc.
+- Edge cases handled reasonably.
+- Logging present.
+- Random imported & seeded.
+- Return correct dict structure expected by baseline.
+- No missing references or undefined names.
+-

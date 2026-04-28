@@ -1,0 +1,22 @@
+We need to provide a faster implementation of 1D convolution. Use numpy FFT or scipy.signal.fftconvolve. But we should avoid external dependencies? SciPy may not be available in environment. Use numpy. Use np.fft.fft for real signals. Use real FFT? We can use np.fft.rfft. But we need full convolution length N+M-1. Approach: compute length L = next power of 2 >= N+M-1. Compute FFT of x padded to L, same for h. Multiply, inverse FFT, take real part, truncate to N+M-1.
+
+Potential pitfalls: numeric errors but should be fine. Use np.fft.rfft and irfft.
+
+Implementation: def conv1d(x, h): compute N, M, L = 1 << (N+M-1-1).bit_length() maybe.
+
+Edge cases: zero-length? Should handle but arrays length >=1? We'll assume >=1.
+
+Return real dtype float64.
+
+Also ensure dtype float64. If x/h not float64, cast.
+
+Let's produce.
+
+Also handle shape (N,) 1D. Use np.asarray.
+
+Return dtype np.float64.
+
+Implement.
+
+Let's produce final code.
+

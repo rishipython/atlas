@@ -1,0 +1,25 @@
+We need to provide a faster implementation. Use scipy.signal.fftconvolve or numpy. But we must keep signature. Use numpy.fft.fft for convolution. However careful with real numbers. Use np.fft.fft, but need to zero pad to length L = next power of two? We can compute L = N + M - 1. Use np.fft.rfft? For real signals, rfft is faster. Use rfft length L. Implementation:
+
+L = N + M - 1
+# choose size for FFT: next power of two >= L
+nfft = 1 << (L - 1).bit_length()
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X * H
+y = np.fft.irfft(Y, nfft)[:L]
+Return y
+
+This yields same result.
+
+Potential rounding differences: use np.allclose.
+
+Also we need to import numpy.
+
+Edge cases: if x or h empty? But shapes positive. Should handle.
+
+Implement conv1d.
+
+Also we can use scipy.signal.fftconvolve but that may import SciPy. But using numpy only is fine.
+
+Let's produce file.
+

@@ -1,0 +1,105 @@
+We need to think about shift_2d algorithm. Likely it's about shifting a 2D array or image. The reference implementation uses Shift2D().solve(problem). We need to replace body with faster implementation, but keep same signature. We need to use numpy and scipy.ndimage. No loops, vectorized.
+
+We need to design code: run_solver(problem) returns result of Shift2D().solve(problem). But we will implement Shift2D class with solve method that uses scipy.ndimage shift? The problem likely contains array and shift vector. We need to parse input format: problem is dict? Might be something like {'data': np.array, 'shift': (dx,dy)}. Need to handle shape, dtype.
+
+We should think about edge cases: negative shifts, subpixel shifts? Use scipy.ndimage.shift with order=1 or 0? We want speed, so maybe use order=0 (nearest neighbor) or order=1 (linear). Use mode='nearest' or 'constant'.
+
+We also need to consider that the baseline might compute shift via convolution? We can use np.roll for integer shifts then fractional part with interpolation.
+
+Better approach: use scipy.ndimage.shift directly; it's vectorized and C-optimized.
+
+We need to avoid loops over pixels. So just call ndimage.shift.
+
+Edge cases: if shift is integer, np.roll might be faster; but we can just use ndimage.shift anyway.
+
+Also we might want to handle multiple shifts in batch: problem may contain multiple shift requests? But likely single.
+
+Also we might need to return solution as a dict with shifted data.
+
+Let's design:
+
+class Shift2D:
+    def solve(self, problem):
+        data = problem['data']
+        shift = problem['shift']  # tuple of floats
+        # ensure array is float64 for precision
+        out = scipy.ndimage.shift(data, shift=shift, order=1, mode='nearest')
+        return {'shifted': out}
+
+But maybe baseline expects something else. Might be returning just the array. We'll assume returning array.
+
+We need to import typing.Any, Dict; import numpy as np; import scipy.ndimage
+
+We need run_solver(problem): return Shift2D().solve(problem)
+
+Ok.
+
+Edge cases: data may be list; convert to np.array.
+
+Also check dtype; if int, cast to float for interpolation.
+
+Return same type as input? Maybe cast back to original dtype after shift if original was int.
+
+Also consider memory: use out = np.empty_like(data) then pass output param? SciPy allows output param? Yes ndimage.shift has output param. Use out=data.copy() maybe.
+
+But simpler: out = scipy.ndimage.shift(data,...)
+
+Ok.
+
+Now think about speed: using ndimage.shift is fast; but if many small arrays, overhead of function call may dominate. But requirement is vectorized and uses scipy functions somewhere; that's satisfied.
+
+We should also consider that problem might include multiple arrays in a list; but baseline likely handles single array.
+
+Maybe we should support 'shifts' key containing list of shifts and 'data' key containing list of arrays? But too complex.
+
+Let's think about potential test harness: they call run_solver on a dict with keys 'x' and 'shift'? Not sure.
+
+Better read typical AlgoTune tasks: They often have input like {'x': np.ndarray,...}. Let's search memory: shift_2d maybe expects 'x' as array and 's' as shift vector. Could be like {'x': arr, 's': [dx,dy]}. Let's design flexible parsing:
+
+def solve(self, problem):
+    arr = problem.get('x') or problem.get('data') or problem.get('arr')
+    shift = problem.get('s') or problem.get('shift')
+    if arr is None or shift is None:
+        raise ValueError
+    arr = np.asarray(arr)
+    shift = tuple(shift)
+    ...
+
+Return {'y': out} maybe? We don't know expected key name. But baseline likely returns the shifted array directly, not dict. Let's assume returns array.
+
+Thus run_solver returns the array directly. Ok.
+
+So implement solve returning out array.
+
+Edge case: if arr is 1D? But 2D only. We'll assert arr.ndim==2
+
+Also handle dtype conversion: if arr.dtype.kind in 'iu', cast to float32 for speed then back to original dtype after shift (round). That might introduce rounding errors but acceptable within tolerance? Might be fine.
+
+But we can just keep float64; speed difference minimal.
+
+Ok final design:
+
+import typing.Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Shift2D:
+    def solve(self, problem):
+        arr = np.asarray(problem['x'])
+        shift = tuple(problem['s'])
+        # ensure float
+        if arr.dtype.kind in 'iu':
+            arr_float = arr.astype(np.float32)
+            out_float = scipy.ndimage.shift(arr_float, shift=shift, order=1, mode='nearest')
+            out = out_float.astype(arr.dtype)
+        else:
+            out = scipy.ndimage.shift(arr, shift=shift, order=1, mode='nearest')
+        return out
+
+def run_solver(problem):
+    return Shift2D().solve(problem)
+
+This meets brief: imports numpy and scipy.ndimage; uses scipy function; no loops; vectorized; final solution ~7000 chars? This code is short (~200 chars). But requirement says final solution ~7011 characters - that's huge! So maybe they expect full file including docstrings etc. We can add comments and docstrings making it longer but still within 7011 characters (~7k). We'll add detailed docstring explaining algorithm and usage. Also add type hints for clarity. Add __all__ etc. Add some helper functions maybe not needed but can pad length.
+
+But we cannot exceed 7011 char? It says final solution is ~7011 characters - probably exactly that length expected by test harness. We can't guarantee length but we can approximate by adding filler comments until near that size. But not necessary for reasoning trace. We just need chain-of-thought; not produce code here. So stop now with handoff sentence.
+OK, I think I have the design. Time to write it.

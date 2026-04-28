@@ -1,0 +1,29 @@
+We need to implement conv1d faster. Use scipy.signal.fftconvolve or numpy.fft.fft. Need to support float64. Must return same as np.convolve(x,h,mode='full'). Use np.fft.rfft? Since real. But for simplicity, use scipy.signal.fftconvolve if available. But to be safe, implement using numpy.fft.fft. For 1D, we can compute n = len(x)+len(h)-1, NFFT = 2**np.ceil(np.log2(n)). Use np.fft.rfft for real. But product of rfft? For full convolution, we can use rfft of size NFFT. Then y = irfft(rfft(x,NFFT)*rfft(h,NFFT), NFFT)[:n]. That works. Use np.fft.rfft.
+
+Let's implement:
+
+def conv1d(x,h):
+    N = len(x)
+    M = len(h)
+    n = N+M-1
+    NFFT = 1 << (n-1).bit_length()  # next power of two >= n
+    X = np.fft.rfft(x, NFFT)
+    H = np.fft.rfft(h, NFFT)
+    y = np.fft.irfft(X*H, NFFT)[:n]
+    return y
+
+Ensure dtype float64. Input arrays may be arbitrary dtype; convert to float64.
+
+Edge cases: zero-length? Not expected. But if x or h empty, convolution length = len(x)+len(h)-1 = 0? Actually if one empty, full convolution length is len(x)+len(h)-1 = len(x)+len(h)-1. If both empty, length -1? But np.convolve handles empty arrays? In numpy, convolve of empty arrays returns empty array. But we can handle: if x.size==0 or h.size==0: return np.array([], dtype=np.float64). Implementation: if N==0 or M==0: return np.array([], dtype=np.float64). But not necessary.
+
+But test may include small arrays where power-of-two size may be large but okay.
+
+Also we can use np.fft.fft if not rfft. rfft is efficient.
+
+Let's implement.
+
+Also note: rfft returns length NFFT//2+1. Works.
+
+Return y as float64.
+
+Let's produce final file.

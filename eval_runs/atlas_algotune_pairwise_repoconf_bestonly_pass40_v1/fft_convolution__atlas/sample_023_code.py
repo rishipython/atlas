@@ -1,0 +1,22 @@
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return the full linear convolution of x and h using FFT for speed."""
+    # Ensure inputs are float64 arrays
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+
+    N = x.shape[0]
+    M = h.shape[0]
+    out_len = N + M - 1
+
+    # Use the next power of two for efficient FFT (optional but usually faster)
+    L = 1 << (out_len - 1).bit_length()
+
+    # Perform convolution via FFT (real-to-complex and back)
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = np.fft.irfft(X * H, n=L)
+
+    # Trim to the exact output length
+    return Y[:out_len]

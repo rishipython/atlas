@@ -1,0 +1,122 @@
+We need to speed up affine_transform_2d. The baseline uses scipy.ndimage.affine_transform which is already C-optimized, but maybe overhead from Python call and building matrix. But we can try to reduce interpolation order, maybe 1. But spec says cubic spline order=3. But maybe we can still use order=3 but use numba to precompute coordinates and do manual interpolation? That would be heavy.
+
+Better: Use scipy's affine_transform but maybe use numba to precompute the inverse matrix and coordinate grid, then call a numba JIT function that samples using linear interpolation? But we want cubic.
+
+Alternatively, we could use scipy.ndimage.map_coordinates with order=3 and precompute coordinates array using vectorized operations. That might be faster because map_coordinates can handle entire array at once.
+
+But the main overhead is computing coordinates for each pixel: we can compute a meshgrid of shape (n,n) for output coordinates, then apply inverse transform to get source coordinates, then call map_coordinates. That's vectorized and BLAS-backed for matrix multiplication of shape (2,n*n). That would be fast.
+
+We also need numba: maybe we can JIT the coordinate computation or interpolation? But map_coordinates is already C-optimized.
+
+However, we can implement a custom cubic interpolation via numba that uses local 4x4 neighborhoods. That might be slower.
+
+Maybe we can use scipy's affine_transform directly but set prefilter=False? The default prefilter=True for order>1 which does extra filtering. We could set prefilter=False to skip that step, but may affect quality but still acceptable? The spec says uses cubic spline interpolation; prefilter is part of that. But if we skip it, might degrade accuracy but maybe within tolerance.
+
+We can also use scipy's ndimage.affine_transform with order=3 and mode='constant', but pass prefilter=False to speed up.
+
+Alternatively, use scipy.ndimage.affine_transform with order=3 but supply output_shape same as input. That's fine.
+
+But the problem expects same shape output. So just call affine_transform with same parameters. That's already fast.
+
+But the brief wants us to use numba JIT compilation and matrix multiplication (BLAS-backed). So we need to incorporate those explicitly.
+
+Idea: Compute coordinate grid using np.meshgrid (fast). Then compute inverse matrix multiplication using np.dot (BLAS). Then feed into scipy.ndimage.map_coordinates with order=3, mode='constant', cval=0.0. That will do the interpolation in C. We can wrap the coordinate computation in a numba jit function that returns flattened arrays of coordinates; but np.dot is already efficient.
+
+But why numba? We could write a small jit function that does per-pixel mapping and interpolation manually, but that's heavy.
+
+Maybe we can use numba to accelerate the creation of coordinate arrays: e.g., generate arrays of indices using np.arange and broadcasting; that's pure numpy anyway.
+
+Alternatively, we could write a numba function that loops over output pixels and calls scipy.ndimage.map_coordinates on each? Not good.
+
+Perhaps we can combine: Use numba to compute transformed coordinates quickly in a single loop over flattened array; then pass arrays to map_coordinates vectorized.
+
+But map_coordinates expects array of coordinates shape (ndim, N). So we need 2xN array of source coords. We can compute that with numba loops or vectorized dot.
+
+Actually computing inverse matrix times grid coordinates: if grid_x and grid_y are 1D arrays of length N = n*n, then we need to compute:
+
+src_x = inv_mat[0,0]*grid_x + inv_mat[0,1]*grid_y + inv_mat[0,2]
+src_y = inv_mat[1,0]*grid_x + inv_mat[1,1]*grid_y + inv_mat[1,2]
+
+This is just two dot products plus bias; vectorized by numpy is fine. No need for numba.
+
+So maybe the design wants us to implement custom bilinear interpolation via numba? But spec says cubic spline interpolation (order=3). That requires 4x4 neighborhood per pixel; implementing that manually in numba might be doable but heavy.
+
+Alternatively, we could call scipy.ndimage.affine_transform with order=3 and mode='constant', but set prefilter=False and pass output_shape same as input. That is simple and likely fast enough; no loops needed; no numba needed though.
+
+But brief requires using numba JIT compilation somewhere. So maybe they expect us to wrap the entire solve method in @numba.njit? But that would not work because it calls scipy functions which are not supported by numba JIT compiled code unless they are annotated as externals? Actually you can't call arbitrary Python functions inside njit unless they are supported by Numba's nopython mode; scipy functions are not supported.
+
+Thus maybe we will write a small helper function decorated with @numba.njit that performs the coordinate transformation using dot product manually via loops on flattened arrays; this will be used inside solve which otherwise uses numpy/scipy for interpolation.
+
+So design: In solve(), get image as numpy array (float32 perhaps), get matrix as np.array float32. Compute inverse matrix using np.linalg.inv (C-coded). Then create index grids using np.arange(n) etc. Flatten them into 1D arrays grid_x_flat = np.repeat(np.arange(n), n) or use np.tile? Actually tile along rows: tile(range(n), n) gives repeated rows? Let's think: For an n x n image, coordinate (i,j) where i row index 0..n-1 vertical axis y? Usually affine_transform expects coordinates in shape (ndim,) mapping from output to input: For each output voxel at coords x_out = [i,j], source coords x_in = dot(matrix[:,:2], x_out) + matrix[:,2]. So our grid should be shape (n*n,) for each dimension separately: x_out_y = np.arange(n).repeat(n) gives y coordinate repeated for each row? Wait:
+
+We want two arrays Y and X such that Y[i,j] = i (row), X[i,j] = j (col). Flatten them row-major: Y_flat = np.repeat(np.arange(n), n) gives [0..n-1 repeated each n times], which corresponds to row indices repeated across columns; X_flat = np.tile(np.arange(n), n) gives [0..n-1 repeated for each row]. Good.
+
+Then compute src_coords = inv_matrix @ [Y_flat,X_flat] + offset? Actually inverse matrix is 2x3: first two columns transform output coords to input coords; third column is translation applied after transformation? Wait original matrix is 2x3 mapping input coords to output coords: out = M * in + t . For affine_transform, it expects transformation from output coordinates back to input coordinates via the inverse transform of M^T? Let's recall: scipy.ndimage.affine_transform(image, matrix, offset=None,...). It applies linear transformation defined by matrix and offset on input coordinates mapping from output space back into input space: For each point in output array at position y_out, it computes y_in = dot(matrix.T,y_out)+offset . Actually check docs: "matrix" is a transformation matrix from output space into input space." So if we want to apply given 2x3 matrix M mapping input->output, we need its inverse transpose? Wait typical usage: If you want rotation etc., you give matrix as rotation etc., but you need offset such that mapping from output coords back into input coords yields correct sampling. For simplicity, let's just use scipy's affine_transform directly with provided matrix assuming it's intended as mapping from input->output; but I think that's wrong; but baseline uses it directly so it's fine.
+
+Thus easiest path: just call scipy.ndimage.affine_transform(image,matrix,...). That's baseline slow due to overhead maybe small though. But design wants us to use BLAS multiplication etc., so better implement custom mapping ourselves then use map_coordinates which also uses BLAS internally for interpolation? Not sure.
+
+Let's think about performance difference between calling affine_transform vs our own approach with map_coordinates after computing source coords via dot product once per pixel. The cost of affine_transform includes building an affine transformation kernel etc., plus possibly filtering steps for higher-order interpolation which may involve convolution across entire image multiple times (prefiltering). map_coordinates also does filtering but may skip some steps if prefilter=False?
+
+Actually map_coordinates has similar performance characteristics as affine_transform when used with order>1 because it also does filtering per dimension separately; it's basically performing spline interpolation by evaluating basis functions at fractional positions; this involves computing coefficients via convolution along axes sequentially - similar cost.
+
+Thus difference may be small; but computing full source coordinates once may reduce overhead compared to repeated calculations inside affine_transform's internal loops?
+
+Maybe not significant.
+
+Nevertheless design requires us to show usage of BLAS multiplication via numpy dot or matmul on large arrays - that's fine even if not strictly necessary for speed improvement because it's part of design brief requirement.
+
+Also must use numba JIT compilation somewhere - maybe wrap the entire solve method in @numba.njit(parallel=True)? But calling numpy functions inside njit isn't allowed unless they are supported by Numba's "numpy" subset - many functions like np.dot are supported under nopython mode if arguments are typed correctly. We could write solve() as pure numpy operations inside njit and then call scipy's ndimage.map_coordinates via external function flagged as "external"? Actually Numba allows calling external C functions if decorated with @numba.cfunc or @numba.extending.register_jitable? Not trivial.
+
+Alternate approach: Write a small helper function decorated @numba.njit(parallel=True) that takes image array and source_coords array and returns interpolated values by calling SciPy's spline evaluation via local code? Could implement cubic spline evaluation manually using precomputed coefficients from image padded boundaries etc., all inside jit loop - heavy but possible?
+
+Better simpler: Use numba only for generating source coordinate arrays efficiently in parallel loop over pixels - e.g., compute src_x_flat[i] = ... ; src_y_flat[i] = ... . This is simple arithmetic so parallelizable easily with Numba's prange. Then feed those arrays into map_coordinates vectorized outside jit context. That satisfies requirement of using numba JIT compilation somewhere (the helper function). Also uses BLAS multiplication implicitly if we compute dot product per pixel individually though that's not BLAS; but requirement says "Makes use of matrix multiplication (BLAS-backed)" - so maybe inside jit loop we can't rely on BLAS anyway; better compute whole arrays via numpy dot which uses BLAS anyway - that's fine too even if not inside jit function.
+
+Thus final design:
+
+- In solve():
+   - Convert image to float32
+   - Convert matrix to float32
+   - Compute inverse transform needed for mapping from output->input:
+        inv_matrix = np.linalg.inv(np.vstack([matrix[:,:2], [0,0,1]]))[:2,:]
+   - Generate flattened index grids via helper _generate_coords(num_pixels,n)
+   - Use @numba.njit(parallel=True) function _compute_source_coords(inv_matrix,x_grid,y_grid) returning src_x_flat, src_y_flat
+   - Then stack into coords array shape (2,N)
+   - Call scipy.ndimage.map_coordinates(image_padded?, coords,... order=3 mode='constant', cval=0)
+      Note need padding? map_coordinates handles boundaries via mode 'constant' automatically.
+   - Reshape result back to (n,n)
+   - Return dict
+
+Edge cases: small images (<4?) cubic spline may fail due to insufficient neighbors; but SciPy handles by padding or reflecting etc.; constant mode will pad zeros outside boundaries so fine.
+Also ensure dtype consistency float32 vs float64 differences; choose float32 for speed.
+Set rtol/atol when verifying solution perhaps not needed here because solver only returns result; verification done elsewhere by reference baseline; our solution must match within tolerance else fail test.
+So must ensure numeric accuracy comparable to baseline's result within tolerance ~1e-5 relative/abs 1e-7 etc.
+Using float32 may lose precision relative baseline float64; so better keep float64 throughout or cast back after interpolation.
+But speed difference between float32/float64 may be moderate on CPU vs GPU... On CPU double precision might be slightly slower than single precision on some architectures due to SIMD width difference. But many CPUs have SSE/AVX double precision too; difference minimal.
+Given requirement doesn't forbid float64 except mention float32 suffices sometimes; but accuracy requirement may demand double precision for cubic spline result close enough. Might still pass within tolerance if errors <1e-5 relative since values up to 255 => absolute error < ~0.0025 maybe fine even with float32 rounding errors (~1e-7 relative?). Should be okay.
+But safer keep double precision like baseline does by default when reading image floats from list -> dtype float64 by default in numpy.fromiter or list conversion -> yes baseline returns float64 result likely.
+Thus keep double precision throughout except maybe intermediate computations optional cast down/up? We'll keep double precision all along for simplicity and accuracy guarantee while still fast enough since no heavy loops aside from coordinate generation via jit which will operate on int indices anyway independent of dtype floats.
+
+Now about generating coordinates efficiently:
+We could avoid generating full grid arrays explicitly by computing src_x_flat[i] = inv_mat[0]*i_row + inv_mat[1]*i_col + inv_mat[2], etc., where i_row = i//n ; i_col = i % n . This avoids storing two large grids before flattening them; memory efficient too.
+So _compute_source_coords(i,j,n,matrix) loops over flattened index i from 0..N-1:
+    row = i // n
+    col = i % n
+    src_y[i] = m00*row + m01*col + m02
+    src_x[i] = m10*row + m11*col + m12
+
+This uses integer division/mod operations inside loop which may be slower than vectorized operations but still okay given N <= maybe few thousand^2 ~ millions -> loop might be heavy though Numba parallelization helps somewhat.
+But generating two separate grids via vectorized operations might actually be faster than looping due to optimized broadcasting.
+Let's compare:
+
+Option A: vectorized:
+    rows = np.repeat(np.arange(n), n)
+    cols = np.tile(np.arange(n), n)
+    src_y = m00*rows + m01*cols + m02
+    src_x = m10*rows + m11*cols + m12
+
+This uses broadcasting operations across large arrays -> relies on NumPy's efficient implementation likely using SIMD loops internally -> fast without Python overhead.
+Thus no need for Numba at all! But requirement says must use numba JIT somewhere else perhaps unrelated heavy part like performing convolution filtering manually? Might not need though brief says "Uses **numba** JIT compilation." So include at least one function decorated with @numba.njit somewhere else even if trivial like identity function or converting list->array?
+
+Could define a tiny helper _to_numpy_array(arr) decorated with njit returning arr.astype(np.float64)? But converting Python list inside njit not allowed either because lists aren't supported types unless typed lists defined earlier... Harder.
+
+Alternate approach: Use numba just for generating index grids using parallel loops as earlier idea – that'll satisfy requirement albeit sub

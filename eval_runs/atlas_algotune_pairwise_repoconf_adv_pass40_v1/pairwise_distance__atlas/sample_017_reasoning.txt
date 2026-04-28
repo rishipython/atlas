@@ -1,0 +1,27 @@
+We need to provide fast implementation. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. So compute dot product matrix G = X @ X.T, norms = np.sum(X**2, axis=1). Then dist = norms[:,None] + norms[None,:] - 2*G. Ensure dtype float64. Might need to clip small negative due to floating errors. Use np.maximum(dist, 0). Should be fine.
+
+Also can use broadcasting. Implementation must match shape. Provide imports. Provide function.
+
+Also consider large N maybe memory. But okay.
+
+Edge cases: X shape (N,D). If N=0? Not typical but could return 0x0. Works.
+
+Return dtype float64.
+
+Let's craft.
+
+Use numpy. Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    norms = np.sum(X**2, axis=1, keepdims=True)
+    G = X @ X.T
+    dist = norms + norms.T - 2*G
+    # due to numerical errors, small negative -> zero
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+We might want to cast to float64 explicitly: X = X.astype(np.float64, copy=False)
+
+Return dist.
+
+Let's produce final file.

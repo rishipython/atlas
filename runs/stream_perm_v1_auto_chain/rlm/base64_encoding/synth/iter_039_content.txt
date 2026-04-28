@@ -1,0 +1,101 @@
+We need to parse the problem: base64_encoding. Likely input is a dictionary with some data? Let's think. The reference baseline likely uses Python's base64 library. We want to speed up encoding of many strings? Probably we need to vectorize over a list of byte strings.
+
+We cannot use loops. Use numpy vectorization? But base64 encoding is string-based. Maybe we can use multiprocessing? But no loops.
+
+Maybe the input format: problem is dict with 'data': list of bytes or str. We need to encode each using base64.b64encode, maybe with HMAC for authenticity? The brief mentions imports: base64, hmac, os, typing.Any, Dict. So likely we need to compute HMAC of encoded data.
+
+So design: read problem dict containing 'message': bytes or str, maybe 'key': bytes? Compute HMAC-SHA256 of message, then base64 encode both message and HMAC, combine.
+
+Vectorization: if multiple messages, use numpy array of bytes? Might be overkill.
+
+But requirement: No Python-level loops. That means we cannot iterate over list of messages. But we could use list comprehension? That's still loop. So maybe input is a single string; vectorization not needed.
+
+Maybe they want to use numpy's vectorized operations on byte arrays: e.g., np.frombuffer to create uint8 array, then use np.packbits? But base64 algorithm uses 6-bit groups; we could implement using numpy bitwise ops.
+
+But easier: use built-in base64.b64encode which is C-level fast. That may be enough.
+
+But requirement "No Python-level loops" may refer to not writing explicit for loops; but using built-in functions is okay.
+
+So design: run_solver(problem) returns dict with encoded message and signature.
+
+Let's assume problem dict contains 'data': bytes and 'key': bytes. We'll compute hmac.new(key, data).digest() then base64 encode both data and digest, return as strings.
+
+Edge cases: data may be str; convert to bytes via .encode().
+
+Also maybe optional 'salt' or 'nonce' from os. But brief imports os for generating random nonces?
+
+Maybe we need to generate a random salt per message and include it in output.
+
+Simplify: Use os.urandom(16) as nonce; compute HMAC over nonce + data; encode nonce + data + hmac all together separated by dots?
+
+But spec unclear.
+
+Let's assume output should be a single string: base64-encoded concatenation of data and its HMAC.
+
+Implement:
+
+def solve(problem):
+    data = problem.get('data')
+    key = problem.get('key', os.urandom(32))
+    if isinstance(data,str): data = data.encode()
+    mac = hmac.new(key, data, hashlib.sha256).digest()
+    combined = data + mac
+    return {'encoded': base64.b64encode(combined).decode()}
+
+But need hashlib import.
+
+Vectorization not used but okay.
+
+However requirement "No Python-level loops" satisfied as no loops.
+
+Edge cases: large data might exceed memory but fine.
+
+Return type: maybe just string not dict? But baseline probably returns string. Let's check typical tasks: They often return string result. So just return encoded string.
+
+Thus run_solver returns Base64Encoding().solve(problem). So Base64Encoding class with solve method returning string.
+
+Implement Base64Encoding class with __init__ maybe nothing.
+
+Ok final design ready.
+We need to read the problem dictionary and produce a base‑64 representation that also includes an HMAC tag so that the result can be verified later.  
+The imports that will be handy are `base64`, `hmac`, `os` (for a random key if none is supplied) and the typing helpers from `typing`.  
+The baseline code probably did something like:
+
+```python
+def solve(problem):
+    msg = problem['msg'].encode()
+    key = problem.get('key', os.urandom(32))
+    tag = hmac.new(key, msg, hashlib.sha256).digest()
+    return base64.b64encode(msg + tag).decode()
+```
+
+That works but it calls a few Python functions in a loop if the input contains many messages – though the example only shows one message, the test harness might feed many at once via a list inside the dictionary.  
+The brief says *no Python‑level loops* and *vectorised work*.  In practice that means we should avoid any explicit `for` statements or comprehensions that iterate over an input collection; everything must be handled by C‑level routines or NumPy vectorisation where possible.
+
+Because the standard library’s `base64.b64encode` is already written in C and very fast for arbitrary‑size byte buffers, there isn’t much benefit in re‑implementing the encoding algorithm in NumPy – that would actually add overhead for small inputs and would still involve converting back and forth between Python objects anyway.  So the cleanest approach is:
+
+1. Grab the raw bytes (`msg`).  
+2. Ensure a key exists – if `problem` supplies one use it; otherwise generate a fresh 32‑byte key with `os.urandom`.  
+3. Compute the HMAC tag using SHA‑256 (`hmac.new(key, msg, hashlib.sha256).digest()`).  
+4. Concatenate `msg` and the tag (`msg + tag`).  
+5. Encode that whole blob with `base64.b64encode`.  
+6. Return the ASCII string (`decode()`).
+
+All of those steps are single function calls – no looping – so we satisfy the “no Python‑level loops” rule while keeping everything at C speed.
+
+Edge cases:
+- If `msg` comes in as a Unicode string we must encode it first.
+- The key might be supplied as a hex string; we’ll accept either bytes or hex by checking its type.
+- If the message is empty we still produce an HMAC (which will be deterministic) and encode it – this matches typical cryptographic expectations.
+- For very large messages the concatenation could double memory usage temporarily but that’s unavoidable if we want to embed the tag inline; an alternative would be to stream but that would require looping or generators which are disallowed by the brief.
+
+With these points settled I’ll write a small helper class `Base64Encoding` with a single method `solve`.  The public entry point will be:
+
+```python
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+This keeps the signature identical to what the test harness expects while delivering a concise, fast implementation that respects all constraints from the brief.  
+
+OK, I think I have the design. Time to write it.

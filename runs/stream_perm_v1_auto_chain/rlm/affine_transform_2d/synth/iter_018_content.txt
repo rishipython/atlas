@@ -1,0 +1,144 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have an image array and a 2x3 affine matrix. scipy.ndimage.affine_transform is already pretty fast, but maybe we can use a faster routine like scipy.ndimage.map_coordinates with precomputed grid? Or use skimage.transform.warp? But we want to keep using scipy.
+
+We can try to reduce interpolation order from 3 to 1 or 0 for speed. But the problem expects cubic? The spec says cubic spline interpolation order=3. But maybe the baseline uses that. We could keep order=3 but maybe use float32 instead of float64 to speed up memory and operations. But scipy.ndimage.affine_transform likely uses float64 by default. We could cast image to float32 before calling, but that might not help much.
+
+Alternatively, we can implement our own affine transform using bilinear interpolation manually vectorized. That might be faster if we avoid overhead of scipy's generic implementation.
+
+But we need to preserve correctness within tolerance. The is_solution uses np.allclose with rtol=1e-5, atol=1e-7. So we need high precision.
+
+Maybe we can use numba to JIT the manual transform. That could be faster for large images.
+
+But the design brief says no Python-level loops; all work vectorised. So numba loops are not allowed? It says no Python-level loops, but numba loops are compiled; but still they are loops at runtime but not Python-level. Might be okay.
+
+But maybe simpler: Use scipy.ndimage.affine_transform but set order=1 for speed? That would change output though; but maybe acceptable? But is_solution will compare with reference computed by same solver (which uses order=3). So if we change order, our output will differ and fail verification.
+
+Thus we must keep same behavior as reference: cubic interpolation, constant mode, same shape.
+
+So we can't change order.
+
+Thus we need to speed up the same operation.
+
+Perhaps we can use SciPy's ndimage.affine_transform with precomputed matrix and output shape, which is already vectorized in C. The overhead might be from Python call and conversion of input lists to arrays each time. We can avoid that by ensuring input is numpy array already.
+
+Also the problem dict contains lists; converting to numpy array each call is overhead. We can convert once and keep dtype float32 or float64.
+
+Also the matrix is list of lists; convert to numpy array.
+
+Also we can set output_shape explicitly: image.shape (n,n). That's default anyway.
+
+Maybe the slow part is memory allocation for output array each time; but that's necessary.
+
+Could use numba's jit on a custom implementation that uses bilinear? But cubic requires more complex kernel; implementing cubic interpolation manually might be slower than SciPy's compiled code.
+
+Alternatively, use OpenCV's warpAffine which might be faster, but not allowed? We don't have cv2 library listed; only numpy, scipy, etc. So cannot use OpenCV.
+
+Could use SciPy's ndimage.affine_transform with precomputed inverse matrix and use "prefilter=False"? There's a prefilter argument that does spline prefiltering; if True (default), it does a spline filter on input before transformation which adds overhead. For cubic interpolation (order>=1), prefilter=True by default applies spline filter of order 3 which is expensive. If we set prefilter=False, it will skip that step and assume input is already filtered appropriately; but results may differ slightly. However maybe acceptable within tolerance? The reference uses default prefilter=True I think (since they didn't specify). So if we set prefilter=False, results may differ beyond tolerance because input not filtered. Might fail verification.
+
+But maybe we can perform our own spline filtering once per image before transformation then set prefilter=False for subsequent transforms? But only one transform per image here; so no benefit.
+
+Another idea: Use SciPy's ndimage.affine_transform but supply an integer matrix? No.
+
+Maybe use JAX jit: JAX has jax.image.affine_transform? Not sure.
+
+Alternatively, use SciPy's ndimage.map_coordinates with grid coordinates computed via np.meshgrid and then apply transformation mapping manually vectorized: compute coordinates in source space for each target pixel using inverse matrix and then call map_coordinates with order=3 across entire grid in one call. That may be similar performance but maybe slightly faster because map_coordinates does coordinate mapping once vs affine_transform doing it internally? Not sure.
+
+Let's consider implementing:
+
+- Compute inverse affine matrix (including translation).
+- For each pixel coordinate (i,j) in target image shape, compute source coordinate (x_src,y_src) = inv_affine * [i,j,1].
+- Flatten coordinates into arrays of shape (n*n,) for x_src and y_src.
+- Call scipy.ndimage.map_coordinates(image, [y_src_flat,x_src_flat], order=3, mode='constant', cval=0) -> returns flattened result.
+- Reshape back to (n,n).
+
+This avoids the overhead of constructing the full transformation matrix inside affine_transform? But affine_transform internally does similar steps: it multiplies coordinates by inverse matrix and then interpolates. So performance should be similar.
+
+However map_coordinates may have less overhead because it takes coordinates directly rather than matrix multiplication for each pixel? But still requires computing coordinates anyway via matrix multiplication on arrays of size n*n each dimension: that's vectorized dot product of shape (2x3) with (n*n x 3). That could be heavy memory wise but still vectorized C code in numpy or BLAS?
+
+Actually computing coordinates via np.dot(inv_matrix[:2,:], coords) where coords shape (2,n*n) yields shape (2,n*n). This uses BLAS-like operations which are fast in C/Fortran.
+
+Then map_coordinates will do interpolation over flattened arrays which may also be efficient in C loops over points; probably similar speed as affine_transform which also does coordinate mapping inside C loops but may compute per-pixel mapping on the fly without storing all coordinates first.
+
+So not clear improvement.
+
+But perhaps using map_coordinates with a single call might reduce Python overhead compared to calling affine_transform which also calls internal functions etc.
+
+But overall difference likely small relative to heavy cubic interpolation cost anyway (~O(n^2) per pixel times kernel size 4x4?). Might not matter much.
+
+Maybe better: Use SciPy's ndimage.affine_transform but pass "prefilter=False" after performing our own spline filter using scipy.ndimage.spline_filter once on image before transformation, then transform with prefilter=False. This would avoid expensive filter inside transform each time because it's done once separately; but since only one transform per image, no benefit unless filter cost is high relative to transform cost? For cubic interpolation order=3, prefiltering involves convolution with B-spline kernel of size ~5x5 or more; that's O(n^2*25). Transform cost also O(n^2*16). So filter cost comparable to transform cost; doing separately might add overhead anyway.
+
+Better approach: Use JAX JIT compiled function performing transformation manually using jax.numpy operations and jax.scipy.ndimage.map_coordinates or custom interpolation? JAX has jax.scipy.ndimage.map_coordinates? It has jax.scipy.ndimage.map_coordinates indeed. We can write a function that computes coordinates and calls map_coordinates via JIT compile; this could accelerate due to XLA compilation especially for large images. However JAX requires installing jax library which is available per list above: yes jax available! So we could implement solve using JAX functions compiled with jit for speedup over SciPy's C code maybe slower due to Python overhead for large arrays? Not sure; XLA may produce highly optimized kernels possibly faster than SciPy's compiled code especially on GPU or CPU vectorization? On CPU XLA uses MKL or OpenBLAS as well though. Might be comparable or slower due to overhead of launching JIT compile first time though subsequent calls reused?
+
+Given this is one-time solve per problem instance maybe compile overhead matters less relative to computation time for moderate sizes (~512x512?). Might still be okay though compile time adds few ms vs compute time maybe tens ms?
+
+But design brief says final solution ~4887 characters - quite long code - maybe includes many imports etc including fallback logic etc?
+
+Also they mention no Python-level loops - so JAX solution would satisfy that as it compiles loops into XLA graph automatically when using jnp operations over arrays without explicit loops in Python except for constructing coordinate grid perhaps using jnp.indices which returns an array without explicit loop in Python - good.
+
+Thus final solution could use JAX JIT compiled function performing map_coordinates manually or using jax.scipy.ndimage.map_coordinates directly after computing coordinates grid via jnp.arange etc.
+
+Let's outline:
+
+- Import logging
+- from typing import Dict
+- import numpy as np
+- import scipy.ndimage
+- import jax.numpy as jnp
+- from jax import jit
+
+Define solve:
+
+```
+def solve(problem):
+    img = np.asarray(problem["image"], dtype=np.float32)
+    mat = np.asarray(problem["matrix"], dtype=np.float32)
+    # compute inverse affine matrix
+    M = mat.copy()
+    # create 3x3 homogeneous
+    H = np.eye(3)
+    H[:2,:] = M
+    invH = np.linalg.inv(H)
+    # create grid indices
+    n = img.shape[0]
+    y_coords = jnp.arange(n)
+    x_coords = jnp.arange(n)
+    # create meshgrid flattened
+    yy, xx = jnp.meshgrid(y_coords, x_coords, indexing='ij')
+    ones = jnp.ones_like(yy)
+    src_coords = invH @ jnp.stack([xx.ravel(), yy.ravel(), ones.ravel()], axis=0)
+    src_x = src_coords[0]
+    src_y = src_coords[1]
+    # interpolate using jax.scipy.ndimage.map_coordinates
+    from jax.scipy.ndimage import map_coordinates
+    out_flat = map_coordinates(img.astype(jnp.float32), [src_y, src_x], order=3,
+                               mode='constant', cval=0.)
+    out = out_flat.reshape((n,n))
+    return {"transformed_image": np.array(out)}
+```
+
+But this uses JAX functions inside solve; need jit compile separate function:
+
+```
+@jit
+def _transform(img,jac_mat):
+   ...
+```
+
+But note: img is numpy array passed from python into JAX function; need convert inside function via jnp.array perhaps slower each call but fine because only one call per problem instance; overhead minimal relative to compute time for large images?
+
+Better convert outside: img_jnp=jnp.array(img). Then pass into jit function along with invH as constant array of dtype float32 shape (3x3).
+
+But passing large array into jit function may cause copying overhead at compile time? Actually jit will trace function once converting inputs into DeviceArray lazily; copying occurs when transferring data from host memory to device memory if device used like GPU else CPU memory copy minimal?
+
+Assuming CPU backend XLA uses host memory so no copy? Not sure but likely small overhead relative to computation time for large images >512^2 ~262k elements *4 bytes ~1MB copy trivial vs compute time tens ms?
+
+Thus okay.
+
+Need also fallback if JAX not available or fails: fallback to scipy implementation as original baseline - ensure correctness if JAX fails due to environment issues e.g., missing XLA dependencies or GPU not available etc. Provide try/except around importing jax modules and executing _transform else fallback path returning empty list or error as baseline did earlier?
+
+But design brief didn't mention fallback logic though it's fine if included as robust code length wise maybe >4887 char though still okay.
+
+Also must ensure solution matches expected format: dictionary key "transformed_image" containing list of lists floats perhaps convert back via .tolist() before returning because original expected list-of-lists output format according to examples? In run_solver they just return whatever solver returns; tests probably compare numeric arrays via is_solution which converts proposed_list into np.asarray(proposed_list). So returning numpy array directly should work too because .tolist() conversion occurs later only if it's list else remains numpy array accepted by np.asarray conversion in is_solution at line `proposed_array = np.asarray(proposed_list,dtype=float)` . Actually they check `if isinstance(proposed_list,np.ndarray): ...` earlier they convert empty case etc else convert list-of-lists -> array again at end `proposed_array=np.asarray(proposed_list,dtype=float)` . So returning numpy array fine.
+
+Thus return {"transformed_image": out} where out is numpy array dtype float32 perhaps cast back to float64 for consistency with original baseline expecting float64 range 0-255 . But difference small within tolerance rtol=1e-5 so fine either way. But better cast back to float64 before returning so comparision uses same dtype as baseline computed by SciPy default float64 -> difference < tol likely still holds due rounding differences <1e-5 relative error ~1e-5*255~0.0025 difference absolute <0.0025 which likely within atol 1e-7?? Wait atol=1e-7 absolute tolerance extremely small! That means differences must be <1e-7 absolute! That's very strict! They also allow rtol 1e-5 relative error which multiplies by magnitude (~100) gives ~0.001 relative tolerance absolute <=0.001 ; combined tolerance min(rtol*abs(ref),atol)? Actually allclose uses max(rtol*abs(a)+atol,...). With atol tiny 1e-7 negligible compared to rtol*abs(a) unless abs(a)<~0.00001 . So difference due to dtype conversion small (<~1e-7?) Actually converting between float32 and float64 may introduce rounding error up to ~1e-7 relative error times magnitude ~255 => absolute error ~2e-5 > atol 1e-7 but within rtol*abs(ref)=1e-5*255~0.00255 >> error so passes allclose check because rtol dominates for typical values >~10^-6 . For near-zero values <~10^-6 absolute error <~10^-6 still bigger than atol 1e-7 though rtol*abs(a)=<10^-11 negligible so fails! But near-zero values may appear due constant padding zeros etc ; these zeros must match exactly zero else fail due atol small! Our transformation may produce tiny negative numbers due rounding errors near zero boundaries causing failure! We must clip negative values close to zero or round small values exactly zero before returning? In baseline implementation using scipy.ndimage.affine_transform mode 'constant' returns zeros exactly at boundaries maybe some tiny negative due rounding too but baseline passes verification so those errors are within tolerance probably because they are zero exactly due algorithm ensures zeros exactly by setting cval=0 constant mode implemented in C ensures zero value exactly at out-of-bounds coordinates when sampling outside domain returns cval exactly without rounding error because it's just assignment of constant value after checking bounds? In our manual map_coordinates approach with mode='constant', cval=0 should also produce exactly zero when source coordinate outside bounds because map_coordinates checks bounds and returns cval directly without interpolation when outside any support region maybe still computed via linear combination of neighbor points including cval contributions leading slight non-zero values when near boundary due fractional distances... Actually map_coordinates

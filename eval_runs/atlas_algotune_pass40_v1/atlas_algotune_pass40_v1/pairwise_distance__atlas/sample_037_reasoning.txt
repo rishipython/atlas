@@ -1,0 +1,30 @@
+We need to replace the triple loop with efficient vectorized or broadcasting approach.
+
+The standard formula: pairwise squared distance matrix D = A + A.T - 2 * X @ X.T, where A is vector of squared norms per row: a = np.sum(X**2, axis=1). Then D = a[:,None] + a[None,:] - 2 * X @ X.T. Ensure non-negative due to floating errors; we can clip at 0. Use np.maximum(D, 0). Keep dtype float64.
+
+Edge cases: if X has dtype float32? Problem says dtype float64. So fine.
+
+Also ensure symmetry and zeros on diagonal.
+
+Return np.float64.
+
+Let's implement.
+
+We also consider memory: for large N, X @ X.T requires O(N^2) memory anyway, but same as output. So fine.
+
+We'll implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    D = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    np.maximum(D, 0, out=D)
+    return D
+
+Potential negative small values due to numeric errors.
+
+Also ensure shape (N,N). Works.
+
+Return dtype float64.
+
+Let's produce file.

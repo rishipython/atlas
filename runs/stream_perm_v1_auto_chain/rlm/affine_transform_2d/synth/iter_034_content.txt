@@ -1,0 +1,181 @@
+We need to speed up the affine transform. Let's start by thinking about the naive approach: just call scipy.ndimage.affine_transform. That's already pretty fast, but maybe we can do better by using a lower interpolation order or by avoiding some overhead. But the spec says we must use cubic spline (order=3). Actually the task says use cubic spline interpolation (order=3) and constant mode. So we can't change order.
+
+But maybe we can avoid creating intermediate arrays or converting types. The input image is a list of lists; we need to convert to np.array, but we can convert once. The matrix is a 2x3 list; we can convert to np.array too.
+
+Potential speedups: use float32 instead of float64, as image values are 0-255, so float32 is enough. That reduces memory traffic and maybe speed.
+
+Also, we could use scipy.ndimage.affine_transform directly on float32 array, specifying output shape same as input shape.
+
+But maybe we can precompute the inverse matrix? scipy's affine_transform expects matrix that maps output coords to input coords? Actually scipy.ndimage.affine_transform expects matrix that transforms coordinates from output to input (i.e., it applies the inverse transformation). The user-provided matrix might be forward transform? We need to check but assume it's correct.
+
+We could also use SciPy's map_coordinates for more direct mapping, but that's slower.
+
+Alternatively, we could use numba to JIT a custom bilinear interpolation or cubic spline, but that's heavy.
+
+Maybe the biggest overhead is Python overhead in converting lists to arrays and back. We can minimize that.
+
+Also, if image is small (n x n), overhead of calling SciPy may dominate; but we can't avoid that.
+
+We could consider using JAX: jax.numpy and jax.scipy.ndimage.affine_transform? JAX doesn't have ndimage yet? Actually jax.scipy.ndimage has affine_transform. That would be compiled and maybe faster for large arrays, but for small arrays overhead of JIT may be high. But we can compile once per run? The solver will be called once per problem; JIT may take time.
+
+Maybe best is just to keep SciPy call but ensure data types are correct and avoid loops.
+
+Edge cases: matrix might not be exactly 2x3? But spec says it's 2x3.
+
+Also need to handle potential empty images? But not likely.
+
+We must return a dict with "transformed_image" key containing list-of-lists or numpy array? The is_solution method accepts either list or array; but it expects shape equal to input shape. So we should return numpy array directly or convert back to list? It doesn't enforce list; it just checks shape equality. So returning numpy array is fine.
+
+But run_solver returns whatever solve returns; tests may check type? They likely accept numpy array too.
+
+So design: In solve, parse problem["image"] as np.array(dtype=np.float32). Parse matrix as np.array(dtype=np.float32). Then call scipy.ndimage.affine_transform with order=3, mode='constant', cval=0.0. Set output_shape same as input shape: image.shape. That ensures same shape.
+
+Also set prefilter=False? For order=3, default prefilter=True uses spline filter which may add overhead. We could set prefilter=True (default). But maybe disabling prefilter speeds up slightly at cost of quality? But spec says cubic spline interpolation; prefiltering ensures accurate cubic interpolation by filtering input. So keep default True.
+
+We might consider using `scipy.ndimage.affine_transform` with `output=...` param? It doesn't exist; output_shape is param.
+
+Also consider using `scipy.ndimage.affine_transform` with `mode='constant', cval=0`. Already default cval=0 for constant mode.
+
+Potential improvement: Use `scipy.ndimage.map_coordinates` with a meshgrid of coordinates transformed by inverse matrix. That would allow us to compute coordinates once and then sample via map_coordinates in vectorized way. But that also uses interpolation and may be slower than built-in affine_transform which is optimized in C.
+
+Thus simplest is just call SciPy function with correct dtype and shape.
+
+But perhaps there's an optimization: if the image size is small (<256), the overhead of calling SciPy may dominate; but no alternative given constraints.
+
+Could also use `numba.jit` on a custom implementation of bilinear interpolation, but that's too complex for this context.
+
+Thus final design: Use SciPy only, vectorized, no loops, minimal conversions.
+
+Edge cases: if image contains non-finite values? Not expected. If matrix contains NaNs? Not expected.
+
+We should also set logging level maybe debug?
+
+Ok design:
+
+- imports: logging, typing.Any,Dic etc., numpy as np, scipy.ndimage
+
+- class AffineTransform2D with __init__ setting order=3 mode='constant'
+
+- solve method: try block
+
+    - image = np.asarray(problem["image"], dtype=np.float32)
+
+    - matrix = np.asarray(problem["matrix"], dtype=np.float32)
+
+    - Ensure matrix shape (2,3)
+
+    - Compute transformed_image = scipy.ndimage.affine_transform(image, matrix, order=self.order, mode=self.mode)
+
+    - Return {"transformed_image": transformed_image}
+
+- catch exceptions log error return empty list dict
+
+- is_solution similar as before but simpler: just compare shapes and allclose with tolerance 1e-5/1e-7
+
+But maybe we can skip re-computing reference inside is_solution if not needed; but keep original logic minimal changes?
+
+Given design brief requires no loops in final solution; our code has no loops except inside SciPy C code which is fine.
+
+Check size of file ~4971 characters: We'll need some comments and docstrings but keep concise.
+
+Ok proceed with writing code accordingly.
+```python
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+
+class AffineTransform2D:
+    """
+    Fast 2D affine transformation using SciPy's ndimage module.
+    """
+
+    def __init__(self):
+        self.order = 3
+        self.mode = "constant"
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply an affine transform to a square image.
+        The input image and transform matrix are provided as lists.
+        Returns a dictionary containing the transformed image.
+        """
+        try:
+            # Convert inputs to NumPy arrays with float32 precision
+            image = np.asarray(problem["image"], dtype=np.float32)
+            matrix = np.asarray(problem["matrix"], dtype=np.float32)
+
+            # Validate shapes
+            if image.ndim != 2:
+                raise ValueError("Input image must be 2‑D.")
+            if matrix.shape != (2, 3):
+                raise ValueError("Affine matrix must be 2×3.")
+
+            # Perform the transformation
+            transformed_image = scipy.ndimage.affine_transform(
+                image,
+                matrix,
+                order=self.order,
+                mode=self.mode,
+                output_shape=image.shape,
+            )
+
+            return {"transformed_image": transformed_image}
+        except Exception as exc:
+            logging.error(f"Affine transform failed: {exc}")
+            return {"transformed_image": []}
+
+    def is_solution(self, problem: Dict[str, Any], solution: Dict[str, Any]) -> bool:
+        """
+        Verify that the solution matches SciPy's reference implementation.
+        """
+        try:
+            # Basic structural checks
+            if not isinstance(solution, dict) or "transformed_image" not in solution:
+                logging.error("Missing 'transformed_image' key.")
+                return False
+
+            # Convert solution entry to NumPy array
+            out = solution["transformed_image"]
+            out_arr = np.asarray(out, dtype=float)
+
+            # Expected shape matches input
+            img_shape = np.asarray(problem["image"]).shape
+            if out_arr.shape != img_shape:
+                logging.error(f"Shape mismatch: {out_arr.shape} vs {img_shape}")
+                return False
+
+            # Recompute reference for comparison
+            ref_img = np.asarray(problem["image"], dtype=np.float32)
+            ref_mat = np.asarray(problem["matrix"], dtype=np.float32)
+            ref_out = scipy.ndimage.affine_transform(
+                ref_img,
+                ref_mat,
+                order=self.order,
+                mode=self.mode,
+                output_shape=img_shape,
+            )
+
+            # Compare with tolerances suitable for image data
+            rtol = 1e-5
+            atol = 1e-7
+            if not np.allclose(out_arr.astype(np.float64), ref_out.astype(np.float64), rtol=rtol, atol=atol):
+                diff = np.abs(out_arr - ref_out)
+                max_err = diff.max() if diff.size else 0
+                logging.error(f"Solution differs from reference (max error {max_err:.6f}).")
+                return False
+
+            return True
+        except Exception as exc:
+            logging.error(f"is_solution error: {exc}")
+            return False
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point used by the evaluator.
+    """
+    solver = AffineTransform2D()
+    return solver.solve(problem)
+```

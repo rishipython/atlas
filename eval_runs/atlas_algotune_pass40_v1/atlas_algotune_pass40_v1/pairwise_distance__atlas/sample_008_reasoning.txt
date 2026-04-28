@@ -1,0 +1,33 @@
+We need to implement faster pairwise squared Euclidean distances. Standard approach: use broadcasting or matrix operations: D = (X^2).sum(axis=1)[:, None] + (X^2).sum(axis=1)[None, :] - 2 * X.dot(X.T). Ensure dtype float64. Should match exactly as double precision.
+
+Edge cases: negative values, etc. Use np.dot. Also need to ensure symmetrical and zero diagonal.
+
+Implementation: def pairwise_sq_dist(X): compute sums = np.sum(X**2, axis=1). Then D = sums[:,None] + sums[None,:] - 2 * X.dot(X.T). Then clip small negative due to numerical errors: np.maximum(D, 0). But allclose test may allow small negative. But to be safe, we can use np.maximum(D, 0). Might produce zeros on diagonal exactly.
+
+Return D.
+
+Edge: shape (0, D) maybe? But likely N>=1. But handle N=0: return zeros shape (0,0). sums will be empty, dot returns empty. D will be shape (0,0). Works.
+
+Make sure dtype is float64. Input dtype is float64 per doc, but we can cast.
+
+Implement using np.asarray.
+
+Return D as float64.
+
+Thus produce file:
+
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sum_sq = np.sum(X**2, axis=1)
+    D = sum_sq[:,None] + sum_sq[None,:] - 2 * X.dot(X.T)
+    # due to floating point errors, some negatives may appear
+    D = np.maximum(D, 0.0)
+    return D
+
+That is efficient. Use np.dot which is BLAS.
+
+Alternatively use np.linalg.norm but slower.
+
+Thus final.

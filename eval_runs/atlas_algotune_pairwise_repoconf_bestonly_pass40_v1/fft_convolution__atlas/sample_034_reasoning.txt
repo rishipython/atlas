@@ -1,0 +1,41 @@
+We need to provide a faster implementation of conv1d, using FFT convolution. We need to keep signature: conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray. Use numpy. We can use np.fft.fft for 1D. But we must ensure we return same numeric result as np.convolve(x,h,mode='full'). Use np.fft.fft, multiply, ifft. For real inputs, we can use rfft, irfft. But easier: use np.fft.fft. Use size L = next power of two >= N+M-1? For speed we can use next pow2. But not necessary. Use np.fft.rfft.
+
+Implementation: L = N+M-1. size = 1 << (L-1).bit_length() maybe. Then X = np.fft.rfft(x, size); H = np.fft.rfft(h, size); Y = X*H; y = np.fft.irfft(Y, size)[:L]. Use dtype float64.
+
+Edge cases: if x or h empty? But they are 1D float64 arrays. Convolution of empty arrays returns array of length 0? np.convolve([],[],mode='full') returns array([], dtype=float64). We'll handle.
+
+Also handle small sizes: we can fallback to direct algorithm for small arrays to avoid overhead. For N+M-1 < 64 maybe. But not necessary.
+
+Let's implement conv1d:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N=x.shape[0]; M=h.shape[0]
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L=N+M-1
+    size = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, size)
+    H = np.fft.rfft(h, size)
+    Y = X*H
+    y = np.fft.irfft(Y, size, dtype=np.float64)[:L]
+    return y
+
+Check numeric equality: use np.allclose with rtol=1e-12 maybe. Should be fine.
+
+Need imports: numpy as np.
+
+Return array dtype float64.
+
+Edge: if x or h not contiguous? np.asarray will copy.
+
+We also can use np.fft.fft with complex numbers; but rfft is fine.
+
+Let's produce final code.
+
+Also ensure we import numpy.
+
+Make sure to define conv1d exactly as required. Provide file.
+
+Let's produce final answer.

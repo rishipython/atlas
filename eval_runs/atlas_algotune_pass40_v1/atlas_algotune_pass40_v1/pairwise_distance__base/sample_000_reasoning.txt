@@ -1,0 +1,34 @@
+We need to replace the triple loop with efficient vectorized computation. The standard formula: pairwise squared Euclidean distances can be computed via broadcasting: D = sum(X^2, axis=1)[:, None] + sum(X^2, axis=1)[None, :] - 2*X.dot(X.T). Use np.dot.
+
+We must ensure dtype float64. Input X dtype float64. The result will be float64. Need to avoid negative small values due to floating error: set negative small to zero via np.maximum(0, D). But not necessary if using float64.
+
+But for numeric closeness, we can compute as above.
+
+Also maybe use np.linalg.norm? But dot product approach is fastest.
+
+Edge cases: N=0? maybe empty array. But shape (0, D). Should return (0,0). Let's handle.
+
+Also ensure that if X is not 2D? but spec says 2D. We'll just compute.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    N, D = X.shape
+    if N == 0:
+        return np.empty((0,0), dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    Dmat = sq_norms[:, None] + sq_norms[None, :] - 2.0 * X.dot(X.T)
+    # Numerical errors may produce tiny negative values
+    Dmat = np.maximum(Dmat, 0.0)
+    return Dmat
+
+We need to import numpy.
+
+Return.
+
+We need to produce a single file with function. Let's include docstring.
+
+Ok.
+
+Let's craft final code.

@@ -1,0 +1,25 @@
+We need to produce a faster implementation. We can use numpy's FFT or scipy's fftconvolve. But ensure same output shape and dtype float64. The input arrays may be any shape? 1D. Should handle arbitrary lengths. Use numpy.fft. rfft? Use np.fft.fft. Compute size L = N+M-1. Use next power of two for speed. Use np.fft.fft(x, n=L) etc. Then multiply, inverse FFT, real part, round to nearest? But we need numerically close results. Use np.fft.ifft. Use np.real. Ensure dtype float64.
+
+Edge cases: zero length? Maybe not. But could handle.
+
+Implement conv1d(x,h). Use np.fft.fft. For large arrays, use np.fft.fft. Use next power of two: n = 1 << (N+M-1-1).bit_length().
+
+Return real part truncated to length L. Convert to float64.
+
+Also consider if x or h not float64? Convert to float64. Use np.asarray.
+
+Return out[:L]. Ensure dtype float64.
+
+Let's produce code.
+
+Also maybe use scipy.signal.fftconvolve if available. But we can use numpy.
+
+Let's implement.
+
+Test: random arrays. Should match np.convolve.
+
+We'll produce file.
+
+Make sure to import numpy as np.
+
+Ok.

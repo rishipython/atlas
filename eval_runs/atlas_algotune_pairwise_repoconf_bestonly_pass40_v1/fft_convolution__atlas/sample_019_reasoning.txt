@@ -1,0 +1,40 @@
+We need to write fast convolution. Use numpy. Use np.fft.fft to compute convolution via multiplication in frequency domain. Use np.fft.fft(x, n) with length L = next power of two or at least N+M-1. But for numerical equality, we should match np.convolve output. Use rfft? We can use np.fft.fft and ifft. For real inputs, we can use real FFT for speed. But implement straightforward: L = N + M - 1; choose next power of two? But we can just use L. For speed, use np.fft.fft with n=L, multiply, ifft. Use np.real of ifft result. Because inputs real, output real. Use np.fft.fft(x, n=L) etc.
+
+Return dtype float64. Ensure rounding.
+
+Let's implement conv1d(x,h). Ensure inputs are 1-D arrays of dtype float64; but we can just cast to float64.
+
+Edge cases: zero-length? Not needed.
+
+Implement:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    L = N + M - 1
+    # Choose fft length next power of two for speed
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X * H, nfft)
+    return y[:L]
+
+Alternatively use np.fft.fft for complex.
+
+But rfft is faster. Use np.fft.irfft.
+
+Let's produce file with imports. Provide conv1d function.
+
+Also include __all__ maybe. Not needed.
+
+Return type: np.ndarray dtype float64. Should match.
+
+Let's write.
+
+Also ensure that if input arrays are not 1-D, raise error? Not necessary.
+
+We'll implement.
+
+Let's produce final code.

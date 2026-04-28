@@ -1,0 +1,24 @@
+We need to replace the body of pairwise_sq_dist with efficient implementation. Classic approach: use broadcasting or linear algebra: D = A + A^T - 2 X X^T where A = sum(X^2, axis=1). Actually D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+
+Compute row_norms = np.sum(X**2, axis=1). Then D = row_norms[:, None] + row_norms[None, :] - 2 * X @ X.T. Ensure dtype float64.
+
+Edge cases: negative due to numerical errors: we can set negative small values to zero: D = np.maximum(D, 0). But test may expect exact values for integer input? For integer coordinates, no negative.
+
+But due to floating point, might get small negative like -1e-15; allclose will handle.
+
+Return D.
+
+We must keep same signature. So implement.
+
+Also we can use np.dot or @.
+
+We might consider memory: X @ X.T produce (N,N) matrix; fine.
+
+Return D.
+
+Let's produce final code.
+
+Also we can add type hints.
+
+Let's produce final file.
+

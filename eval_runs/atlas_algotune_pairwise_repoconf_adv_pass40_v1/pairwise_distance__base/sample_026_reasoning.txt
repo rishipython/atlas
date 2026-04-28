@@ -1,0 +1,20 @@
+We need to implement faster pairwise squared Euclidean distance matrix. Standard formula: D_ij = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Use broadcasting or matrix multiplication.
+
+Implementation: compute norms squared: sum over axis=1 of X**2 -> shape (N,). Then compute cross term: X @ X.T -> shape (N,N). Then D = norms[:,None] + norms[None,:] - 2 * cross. Ensure dtype float64.
+
+Also ensure small negative due to numeric errors set to 0: np.maximum(D, 0.0). Could also use np.square(np.linalg.norm?). But simple.
+
+Return array dtype float64.
+
+Edge cases: empty array? But N >=1.
+
+Also maybe use np.dot for speed.
+
+Let's craft code.
+
+Also import numpy. Provide function.
+
+Return np.maximum(D, 0.0). Ensure shape.
+
+Ok produce file.
+

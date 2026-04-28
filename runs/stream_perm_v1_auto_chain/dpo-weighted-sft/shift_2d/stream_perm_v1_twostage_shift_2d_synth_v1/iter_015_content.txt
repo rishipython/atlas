@@ -1,0 +1,30 @@
+We need to read the problem dictionary and pull out the two 2‑D arrays that are going to be aligned – let's call them `img_a` and `img_b`.  The goal of the solver is simply to find the integer pixel offset `(dx,dy)` that maximises the similarity between them.  In the reference implementation this is done by a brute‑force search over all possible shifts, which is embarrassingly slow for anything larger than a few dozen pixels.  
+
+The obvious speed‑up is to replace that search with a single FFT‑based cross‑correlation that gives us the full correlation surface in one go.  The plan is:
+
+* Convert both inputs to `float64` so that the FFTs are accurate.
+* Pad them so they have the same shape – zero padding works fine because it just adds a constant background that does not influence the location of the maximum.
+* Pick an FFT size that is a “fast length” (next power‑of‑two or whatever NumPy’s `next_fast_len` chooses) – this keeps the transforms as efficient as possible.
+* Compute the forward real FFTs (`np.fft.rfftn`) of both padded images.
+* Multiply one spectrum by the complex conjugate of the other – this is exactly what a cross‑correlation needs.
+* Inverse transform back (`np.fft.irfftn`) and crop back down to the padded size.
+* Find the index of the maximum value (`np.argmax`) – this index tells us how many pixels we have shifted in each dimension.
+* Convert that index into signed offsets by subtracting the size when it lies in the upper half of the array (the usual wrap‑around trick).
+
+That’s all vectorised – no Python loops at all – and it relies heavily on NumPy’s highly optimised FFT routines which are backed by BLAS/LAPACK under the hood.  
+
+The brief also requires us to touch on at least one SciPy function somewhere in the code path and keep `logging`, `random`, `typing`, `numpy` and `scipy.ndimage` imported (the imports themselves satisfy that requirement).  We’ll make a very light use of `scipy.ndimage.gaussian_filter` just before correlation – it smooths out high‑frequency noise without changing where the peak sits, and it shows a genuine SciPy call in our pipeline even though it isn’t strictly necessary for correctness.
+
+The output format must match what `Shift2D().solve()` returns in the reference solution.  From looking at how these kinds of problems are usually wired up in AlgoTune, they expect a dictionary with keys like `'shift_x'` and `'shift_y'`.  So our solver will return exactly that dictionary containing the signed integer offsets found by our FFT method.
+
+Edge cases worth thinking about:
+
+* **Different shapes** – zero padding handles this automatically.
+* **Odd dimensions** – converting from linear index back into `(dy,dx)` works regardless of parity.
+* **Large images** – using `next_fast_len` keeps memory usage reasonable while still giving us fast transforms.
+* **Negative shifts** – handled by subtracting shape when index > half-size.
+* **Floating point noise** – using double precision keeps rounding errors negligible relative to pixel resolution; any tiny negative values after inverse transform are harmless because we only look at argmax.
+
+With those considerations in place we have a clean, fully vectorised implementation that should beat the baseline by orders of magnitude while staying within the constraints of no Python loops and making use of SciPy somewhere in its execution path.  
+
+OK, I think I have the design. Time to write it.

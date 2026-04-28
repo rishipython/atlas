@@ -1,0 +1,139 @@
+We need to write a fast rotate_2d solver. The problem likely involves rotating a 2D array or image by arbitrary angle. The reference baseline is slow; we need to replace with faster implementation using scipy, numpy, no loops. Let's think about the input format: problem likely contains an array and an angle. We need to produce rotated array. Use scipy.ndimage.rotate which is fast and vectorised. But maybe we need to handle batch of images? Let's consider.
+
+We need to import logging, typing.Any, Dict, numpy as np, scipy.ndimage. Use scipy functions somewhere. No Python loops.
+
+Goal: produce a file with run_solver function that calls Rotate2D().solve(problem). So we need a class Rotate2D with solve method that uses vectorised ops.
+
+We must consider shape of problem dict: maybe contains 'image', 'angle', 'reshape', 'mode', etc. Let's assume typical: problem['array'] is 2D np.ndarray, problem['angle'] float degrees. We'll rotate around center, no cropping? Use reshape=True? Use order=1? Provide output shape same as input? Might need to preserve shape.
+
+Let's design solve: extract arr, angle = problem['array'], problem['angle']. Use scipy.ndimage.rotate(arr, angle, reshape=False, order=3, mode='constant', cval=0.0). That returns rotated array same shape.
+
+But we must avoid loops: just call function.
+
+Edge cases: negative angles, large angles >360? rotate handles mod 360 internally? It might; but we can mod 360 to reduce.
+
+Also if arr is multi-channel (3D), rotate each channel separately? We could use axis argument.
+
+scipy.ndimage.rotate can handle n-D arrays; for 3D with shape (H,W,C) we might want to rotate only first two axes. We can pass axes=(0,1) and keep third unchanged by iterating over channels? But loops not allowed. We can reshape arr into (H*W*C,) but not good.
+
+Better: if arr.ndim==3 and last dimension channels, we can apply rotate on each channel via vectorization using np.moveaxis to bring channels first then stack? Actually we can use scipy.ndimage.rotate on each channel by specifying axes=(1,2) if shape (C,H,W). But typical image shape is (H,W,C). We can transpose to (C,H,W), apply rotate with reshape=False along axes=(1,2), then transpose back.
+
+But still that requires loop over channels? Actually scipy.ndimage.rotate can take multi-dimensional array and rotate specified axes; but if you give 3D array and axes=(0,1) it rotates all slices along those axes independently? Let's check docs: For ndimage.rotate input array and output array are same shape if reshape=False; rotation applied to each slice along the remaining axis? I think it rotates each subarray defined by the other axes independently. So for shape (H,W,C), rotating axes=(0,1) will rotate each channel separately automatically because the third axis is not part of rotation; so it should work fine without loops! Good.
+
+Thus we can just call rotate(arr, angle, reshape=False). That will handle multi-channel too.
+
+Need to set order maybe 3 for high quality or 1 for speed.
+
+Also maybe we need to preserve dtype; rotate returns float64 by default; we may cast back to original dtype if needed.
+
+Edge cases: small arrays maybe less than 2x2; rotation may produce zeros; fine.
+
+We also want logging maybe for debug.
+
+Now design file:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+class Rotate2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        arr = problem.get('array')
+        angle = problem.get('angle', 0.0)
+        # ensure angle in degrees
+        angle = float(angle)
+        # mod 360
+        angle %= 360.0
+        # use scipy.ndimage.rotate
+        rotated = scipy.ndimage.rotate(arr,
+                                       angle,
+                                       reshape=False,
+                                       order=3,
+                                       mode='constant',
+                                       cval=0.0)
+        # cast back dtype
+        if rotated.dtype != arr.dtype:
+            try:
+                rotated = rotated.astype(arr.dtype)
+            except Exception as e:
+                self.logger.warning(f"Could not cast rotated array to original dtype {arr.dtype}: {e}")
+        return rotated
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+
+That's it.
+
+Check edge cases: arr may be list or tuple; convert to np.array first. Add check:
+
+if not isinstance(arr, np.ndarray):
+    arr = np.asarray(arr)
+
+Also handle None or missing keys gracefully.
+
+Add optional parameters in problem like 'reshape' bool or 'order' int etc; but not necessary.
+
+Now confirm no loops used except internal library loops; that's fine.
+
+Ensure imports match brief: logging, typing.Any,Dictionay ; numpy ; scipy.ndimage . Good.
+
+We should also set logger level maybe in main but not needed.
+
+Return type matches expected solution shape same as input if reshape=False else bigger if True but baseline likely expects same shape? We'll keep False for speed and consistency.
+
+Now finalize design.
+We need a fast `Rotate2D` solver that replaces the slow baseline but still behaves the same from the caller’s perspective. The caller will do
+
+```python
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+So our job is just to implement `Rotate2D.solve`.  
+The input `problem` is expected to be a dictionary – at minimum it will contain an `'array'` key holding a NumPy‑compatible image or matrix and an `'angle'` key giving the rotation in degrees.  
+Because the reference implementation is slow but correct, we’ll lean on a highly optimised routine from SciPy rather than writing any loops ourselves.  
+
+**Why SciPy’s `ndimage.rotate`?**  
+- It’s written in C/Fortran and uses BLAS/LAPACK under the hood where possible.
+- It accepts an arbitrary N‑dimensional array and rotates only the specified axes; for a typical `(H,W)` image or `(H,W,C)` image this means each channel is rotated independently without any Python‑level looping.
+- It has options for interpolation order (`order`) and padding (`mode`, `cval`) that let us trade quality vs speed.
+- It already handles edge cases such as negative angles or angles larger than 360° internally – but we’ll normalise just in case so the caller sees consistent behaviour.
+- It keeps the output shape identical when `reshape=False`, which matches most use‑cases of “rotate in place”.
+
+**Design decisions**
+
+1. **Input handling**  
+   - Pull out `arr = problem.get('array')`. If it isn’t already a NumPy array convert with `np.asarray`.  
+   - Pull out `angle = float(problem.get('angle', 0))`. Normalise with `angle %= 360`.
+
+2. **Rotation**  
+   - Call `scipy.ndimage.rotate(arr,
+                                 angle,
+                                 reshape=False,
+                                 order=3,
+                                 mode='constant',
+                                 cval=0.0)`.  
+   - Use cubic interpolation (`order=3`) for good visual quality while still being reasonably fast; this matches many image‑processing defaults and keeps the code simple.
+   - Set `mode='constant'` with zero padding so that areas outside the original bounds become black – this mirrors what many users expect from a “rotate” operation when no other behaviour is specified.
+   - Keep `reshape=False` so that output has the same dimensions as input – this avoids needing any additional cropping logic after rotation.
+
+3. **Output dtype**  
+   - SciPy’s rotate returns a floating‑point array (`float64`). If the input was integer or another dtype we’ll cast back with `astype`. Wrap in a try/except so that if casting fails (e.g., due to overflow) we log a warning but still return the float result instead of crashing.
+   - Logging comes from Python’s standard library – useful for debugging during development but harmless otherwise.
+
+4. **No explicit Python loops** – everything is delegated to SciPy/Numpy internals.
+5. **Imports** – exactly what the brief demands: `logging`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`.
+
+**Edge cases & sanity checks**
+
+- If `'array'` is missing or None → raise a clear error.
+- If `'angle'` is missing → default to 0°, i.e., return the original array unchanged.
+- Very small arrays (e.g., 1×1) are handled naturally by SciPy – no special casing needed.
+- Multi‑channel images are automatically handled because SciPy rotates across all slices along non‑rotated axes.
+- The function returns an object of type `np.ndarray`; callers expecting a plain list will still get an ndarray which behaves like one thanks to NumPy’s interface.
+
+With these pieces in place we have a compact, fully vectorised implementation that should run orders of magnitude faster than any pure‑Python loop based approach while staying faithful to the reference behaviour. OK, I think I have the design. Time to write it.

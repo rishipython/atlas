@@ -1,0 +1,151 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a problem dict with "image" 2D array and "matrix" 2x3. We want to output transformed image same shape. The reference uses scipy.ndimage.affine_transform which is pretty fast but maybe not fastest for large images? We can use scipy.ndimage.map_coordinates or direct interpolation. But we want to keep same signature.
+
+We want no Python loops, vectorised, use BLAS. We can use scipy's affine_transform which internally uses map_coordinates, but we could implement our own mapping: compute coordinates grid, apply inverse transform, then sample with map_coordinates.
+
+But we can also use skimage.transform.warp or cv2.warpAffine? But only allowed imports: numpy, scipy, logging, typing. So cannot import cv2 or skimage.
+
+So we should rely on scipy.ndimage.map_coordinates for interpolation. That is vectorised and uses C code. We can compute the grid of output coordinates: for each pixel (i,j) in output shape (n,n), we compute input coordinates by applying inverse transform: [x', y'] = M_inv @ [i, j, 1] where M_inv is inverse of 3x3 matrix from 2x3 affine matrix extended with last row [0,0,1]. Then sample input image at those coordinates using map_coordinates with order=3 and mode='constant', cval=0. That yields output array.
+
+This approach is similar to what scipy.ndimage.affine_transform does but we can manually compute coordinate arrays and pass to map_coordinates. Might be faster because we avoid some overhead? But likely similar.
+
+But maybe we can use SciPy's affine_transform directly but set order=1 or 0 for speed? But the spec says cubic spline interpolation order=3. But optimization opportunities mention lower-order might be okay but not required. However baseline expects correct result; we must match reference within tolerance. So keep order=3.
+
+Maybe we can use numba to JIT a custom interpolation? That might be slower than SciPy's compiled code.
+
+Better: Use SciPy's affine_transform but with precomputed inverse matrix and maybe pass output_shape explicitly? The overhead might be small.
+
+Alternatively, use SciPy's generic_filter? No.
+
+Let's think about vectorization: We can generate coordinate arrays using np.indices((n,n)), flatten them, stack into homogeneous coords, multiply by inverse matrix (using np.dot), then reshape back to grid shape. Then feed to map_coordinates which expects coordinates as array of shape (ndim, *output_shape). Actually map_coordinates expects coordinates as an array of shape (ndim, *output_shape). So we need to create coords array of shape (2,n,n) where first dimension is axis index of input image (y,x). For each output pixel location (i,j), the coordinate in input image is [y_coord, x_coord] = M_inv @ [i,j,1]. So coords[0,i,j] = y_coord; coords[1,i,j] = x_coord.
+
+We can compute using broadcasting: create arrays i and j via np.meshgrid(np.arange(n), np.arange(n), indexing='ij'). Then coords_y = M_inv[0,:] dot [i,j,1], etc.
+
+But more efficient: compute i_flat = np.arange(n); j_flat = np.arange(n); use broadcasting to compute coordinates via outer addition? Actually we need 2D grid anyway.
+
+Simpler: Use np.mgrid[0:n,0:n] -> gives two arrays Y,X shape (n,n). Then compute newY = M_inv[0,0]*Y + M_inv[0,1]*X + M_inv[0,2]; newX = M_inv[1,0]*Y + M_inv[1,1]*X + M_inv[1,2]. This uses broadcasting and vectorized operations; no loops.
+
+Then call map_coordinates(image,newcoords,...). newcoords should be array([newY,newX]) shape (2,n,n). That will produce output shape (n,n). Good.
+
+Now performance: map_coordinates will handle interpolation order=3 and mode='constant', cval=0 by default? Actually default mode='constant', cval=0. So fine.
+
+Thus our solve method will:
+
+- Get image as numpy array dtype float64 maybe.
+- Compute n from image.shape.
+- Build inverse affine matrix: extend matrix to 3x3 by adding [0 0 1] row.
+- Compute inverse via np.linalg.inv.
+- Compute Y,X via np.mgrid.
+- Compute newY,newX via linear combination.
+- coords = np.array([newY,newX]).
+- transformed_image = scipy.ndimage.map_coordinates(image,coords,order=self.order,mode=self.mode).
+Return dict {"transformed_image": transformed_image}.
+
+Check shape matches input shape.
+
+Edge cases: If image empty or matrix singular? But likely not in tests. Could handle singular by returning empty list like baseline did. But maybe not needed.
+
+Now about performance: Using mgrid might allocate large arrays; but that's necessary anyway for vectorized mapping. Could also use np.linspace or range with broadcasting; but mgrid is fine.
+
+We should ensure dtype float32 vs float64? Baseline uses float64; we could cast to float32 for speed but risk precision difference > tolerance? Maybe okay if tolerance high enough. We'll keep float64 for safety.
+
+Also ensure that matrix multiplication uses BLAS: our operations are simple elementwise multiplies and sums; no explicit BLAS call needed; but that's okay as they are vectorized in C/Fortran under the hood.
+
+Now let's consider alternative designs:
+
+Option A: Use scipy.ndimage.affine_transform directly with order=3. That's simplest and probably fastest due to internal optimizations. But we might want to precompute inverse matrix for speed? But affine_transform already does that internally anyway; overhead minimal.
+
+Option B: Use our manual mapping with map_coordinates; similar speed maybe slightly slower due to extra array creation but still fine.
+
+Option C: Use numba JIT on custom bilinear interpolation; slower than SciPy's compiled code likely.
+
+Thus choose Option A or B. Which one gives better speed? I suspect affine_transform is optimized in C and uses efficient memory layout; manual mapping may add overhead of creating Y,X arrays but still minimal relative to interpolation cost. However map_coordinates may be slower than affine_transform because it has additional overhead for coordinate handling? Not sure.
+
+Given the design brief says "Uses scipy functions somewhere" - both options satisfy that. "Makes use of matrix multiplication (BLAS-backed)" - our manual mapping uses elementwise multiplication not BLAS; but computing inverse uses np.linalg.inv which calls LAPACK BLAS internally - good enough maybe. But if we use affine_transform directly it also calls LAPACK inside for computing transform parameters?
+
+Actually affine_transform passes the matrix directly; it internally constructs a transformation matrix and calls _affine_transform in C code that probably does the mapping via internal loops and interpolation; it might call _nd_image._affine_transform which uses libndimage functions that may do BLAS-like operations? Might not explicitly call BLAS though.
+
+But requirement "makes use of matrix multiplication" could refer to computing inverse or applying transform which involves dot product between matrix and coordinate vectors; both options do that implicitly inside C code or manually via numpy dot which calls BLAS if large enough? Dot of small vectors may not use BLAS because size too small; but it's okay maybe considered "matrix multiplication".
+
+Thus either approach okay.
+
+But design brief also says final solution ~9398 characters - long file including imports etc. We'll produce full file accordingly.
+
+Now consider potential pitfalls:
+
+- Need to cast problem["image"] from list-of-lists into numpy array quickly: np.array(problem["image"], dtype=np.float64).
+- Need to ensure matrix is numpy array shape (2,3).
+- Inverse of extended matrix: create 3x3 array `affine_full = np.vstack([matrix,np.array([0.,0.,1.]])])`. Compute inv via `np.linalg.inv(affine_full)`.
+- Use `M_inv[:2,:]` for first two rows.
+- Use `np.mgrid[0:n,0:n]` yields Y,X arrays each shape (n,n). Actually mgrid gives Y first dimension index then X second dimension; so Y[i,j] = i etc.
+- Compute new_coords_y = inv[0,0]*Y + inv[0,1]*X + inv[0,2]; new_coords_x similarly.
+- Compose coords as `[new_coords_y,new_coords_x]`.
+- Call `scipy.ndimage.map_coordinates(image_array,new_coords_array,... )`. Ensure `order=self.order`, `mode=self.mode`.
+
+Edge case: If image empty or n==0 return empty list like baseline? We could handle that by checking if image.size==0 return {"transformed_image": []}. But baseline returns empty list only on failure; not typical test case likely not needed but safe.
+
+Also need proper logging usage similar to baseline? Not required but good practice.
+
+Now confirm correctness tolerance: We will compare with baseline using is_solution method which recomputes reference using same algorithm; if our algorithm matches exactly then passes within tolerance rtol=1e-5 atol=1e-7 likely fine due to same algorithm albeit different implementation may produce slightly different rounding errors but within tolerance probably fine because both use same underlying library functions except coordinate generation differences may produce rounding differences up to machine epsilon ~1e-16 relative error times some factor <10^4 maybe still < tolerance 1e-5 relative so fine.
+
+Now decide final design:
+
+We'll implement solve method using manual mapping with map_coordinates as described above because it's explicit and easy to reason about numeric differences relative to baseline using same underlying interpolation function but coordinates computed slightly differently might produce differences due to rounding errors from inverse calculation vs internal algorithm used by affine_transform. Might cause mismatch > tolerance if difference big? But difference likely small (< machine epsilon). Should be okay though risk exists if baseline uses different rounding when computing coordinates due to different path through C code vs ours generating coordinates separately then sampling at those points exactly same as what affine_transform would do if given those coordinates directly. So should match exactly because map_coordinates interpolates at those coordinates exactly same as what would happen if you applied transform manually using same coordinates computed from inverse transform formula used by affine_transform internally too? Not guaranteed they compute exactly same coordinates due to internal rounding differences when computing inverse or mapping formulas. But difference likely negligible within tolerance rtol=1e-5 at worst values ~255 => absolute error ~255*1e-5=~0.00255 < atol 1e-7?? Wait atol smaller than rtol*max(abs(ref)) so rtol dominates ~255*1e-5 ~ 0.00255 > atol so okay.
+
+Thus acceptable.
+
+Alternatively just call scipy.ndimage.affine_transform directly - simpler and matches reference exactly because it's same function used in baseline verification too! That would guarantee identical results within floating point errors identical across calls because calling same function again yields same result deterministically given same inputs (except potential nondeterminism due to parallelism?). But still safe. So maybe better just call that function directly - no need manual mapping at all! That ensures identical outputs exactly except maybe ordering of operations due to caching etc but should be deterministic across runs on CPU only environment used by evaluation environment presumably deterministic because SciPy's libndimage uses deterministic algorithm across threads if environment variable set or default single-threaded? Usually SciPy's ndimage functions are deterministic across runs on single-threaded CPU due to consistent floating point operations order though parallelism may cause nondeterministic order leading slight differences between runs but within tolerance likely fine too. And since baseline also uses the same function inside is_solution verification each time separately it will produce consistent results per run too - but there may be slight differences between runs causing failing tests if they compare across runs? Usually they compare per run only once so fine.
+
+Thus simplest solution: just call scipy.ndimage.affine_transform(image,matrix,...). That's what baseline already does! Wait baseline solve method already does exactly that! The task says "Reference (correct but slow) implementation — replace its body with a faster implementation". So baseline solve already uses affine_transform which is presumably slow compared to alternatives like direct coordinate mapping + map_coordinates perhaps faster due to less overhead computing inverse each time inside ndimage.affine_transform?
+
+But difference may be minimal though perhaps large images benefit from manual mapping because ndimage.affine_transform has overhead building transformation kernel etc?
+
+I think manual mapping might reduce overhead by avoiding repeated computation of inverse inside ndimage.affine_transform loop over output pixels? Actually ndimage.affine_transform does its own loop over output pixels anyway performing interpolation inside C loop; it also computes the transformation each pixel implicitly via precomputed coefficients in an internal loop over output indices computing input indices per pixel using precomputed offsets arrays derived from transformation matrix; so overhead similar either way perhaps slightly less in manual mapping because you precompute entire grid once then call map_coordinates once which handles all points at once using vectorized operations implemented in C too - might be faster especially for large images because you avoid per-pixel loop in Python entirely anyway both are C loops though?
+
+Map_coordinates also loops over all points inside C code too though vectorized across whole grid simultaneously maybe more efficient memory access pattern than nested loops in ndimage.affine_transform?
+
+Given this uncertainty I'll choose manual mapping approach as it's straightforward and ensures no Python loops while still using SciPy functions for interpolation and linear algebra inversion which uses BLAS/LAPACK behind scenes giving performance boost on large matrices though trivial here size 3x3 but still okay.
+
+Now implement solve accordingly:
+
+```
+def solve(self, problem):
+    try:
+        image = np.asarray(problem["image"], dtype=np.float64)
+        n_rows,n_cols = image.shape
+        # assume square
+        n=n_rows
+        matrix=np.asarray(problem["matrix"],dtype=np.float64)
+        # extend
+        aff_full=np.vstack([matrix,np.array([0.,0.,1.]])]
+        inv_aff=np.linalg.inv(aff_full)
+        # create grid
+        Y,X=np.mgrid[0:n,0:n]
+        # compute input coords
+        y_in=inv_aff[0,0]*Y + inv_aff[0,1]*X + inv_aff[0,2]
+        x_in=inv_aff[1,0]*Y + inv_aff[1,1]*X + inv_aff[1,2]
+        coords=np.array([y_in,x_in])
+        transformed_image=scipy.ndimage.map_coordinates(image,
+            coords,
+            order=self.order,
+            mode=self.mode,
+            cval=0)
+        return {"transformed_image": transformed_image}
+    except Exception as e:
+         logging.error(...)
+         return {"transformed_image": []}
+```
+
+Need import logging at top etc.
+
+Also handle case n==0 return empty list quickly:
+
+```
+if image.size==0:
+   return {"transformed_image":[]}
+```
+
+Also ensure dtype conversion consistent else map_coordinates expects float64 typically good enough else cast input array accordingly earlier done via dtype=float64 ensures double precision used inside SciPy functions expecting float64 typically for performance too good on modern CPUs compared to float32 due to SIMD width etc actually float32 often faster on GPUs but CPU may prefer float64 for memory bandwidth tradeoff?
+
+We'll keep float64 as baseline did implicitly converting list->array default dtype=float

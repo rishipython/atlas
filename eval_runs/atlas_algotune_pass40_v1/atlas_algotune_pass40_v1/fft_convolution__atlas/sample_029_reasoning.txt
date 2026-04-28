@@ -1,0 +1,56 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. For arbitrary lengths, we can use numpy.fft.fft with appropriate length: next power of 2 or simply N+M-1. Use np.fft.fft for complex. Use real FFT? Use np.fft.rfft? But easier: use np.fft.fft. Then multiply, inverse, take real part. Ensure dtype float64. Use np.fft.fft(x, n) where n = N+M-1. But need to pad both to length n. Use np.fft.ifft to get complex result, take real part, round small imaginary. Might need to use np.fft.irfft if using rfft. Simpler: use np.fft.fft and ifft.
+
+Edge cases: zero-length? Problem likely not. But handle empty arrays? If x or h empty, convolution should be empty? np.convolve returns array of length N+M-1 which if any empty gives 0 length? Let's check: np.convolve([], [1,2]) returns array([]). So N=0 => length 0. Our implementation should handle that. If N==0 or M==0: return np.array([], dtype=np.float64).
+
+Also ensure dtype float64. Use np.asarray(x, dtype=np.float64). Use np.fft.fft.
+
+Implementation:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    n = N + M - 1
+    # next power of 2? Not necessary, but faster maybe. Use n
+    X = np.fft.fft(x, n=n)
+    H = np.fft.fft(h, n=n)
+    y = np.fft.ifft(X * H).real
+    # rounding small imaginary due to numerical errors
+    return y
+```
+
+Test with np.allclose to np.convolve.
+
+Edge: if n is large, using full FFT length n may be fine. For very large arrays, next power of 2 might be faster, but not necessary.
+
+Return dtype float64. The ifft returns float64 by default if inputs are float64. Real part will be float64.
+
+Add imports: numpy as np.
+
+Should we use np.fft.rfft? For real inputs, rfft yields real output. But we need full convolution. We can use rfft of length n, multiply, irfft. That's efficient. Implementation:
+
+```
+X = np.fft.rfft(x, n=n)
+H = np.fft.rfft(h, n=n)
+y = np.fft.irfft(X * H, n=n)
+```
+
+That returns float64 array length n. That is probably more efficient. We'll use rfft.
+
+Return y.
+
+Let's implement.
+
+Also ensure that if x or h is not 1D, we flatten? Problem states 1-D arrays. So fine.
+
+Return y.
+
+Ok.
+
+Now produce code file with function conv1d. Add docstring. Use numpy. Provide __all__ maybe.
+
+Let's write final code.

@@ -1,0 +1,24 @@
+We need to produce faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to import. Let's use scipy.signal.fftconvolve. That returns float64. Accept arrays shape 1D. Should match exactly. But to ensure same numerical result, we can use fftconvolve. However, there may be differences due to FFT rounding. But np.allclose with rtol/atol should be fine. Use np.fft.fft. But easiest: scipy.signal.fftconvolve.
+
+We need to ensure compatibility if scipy not installed? Usually SciPy available. But we can implement with numpy. Use np.fft.fft. Use next power of two for speed. Implementation:
+
+def conv1d(x,h):
+    N = len(x); M=len(h)
+    size = N+M-1
+    nfft = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)[:size]
+    return y
+
+This uses real FFT. Should be fine. Need dtype float64. Use np.asarray(x,dtype=float). Use rfft.
+
+Edge cases: empty arrays? In conv, empty? Probably not. But handle.
+
+Return dtype float64. Good.
+
+Let's produce file with imports and function.
+
+Also we can alias np.
+
+Let's produce final code.

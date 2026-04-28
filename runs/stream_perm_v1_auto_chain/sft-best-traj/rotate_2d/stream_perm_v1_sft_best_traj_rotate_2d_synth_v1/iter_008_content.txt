@@ -1,0 +1,25 @@
+We need to take the given `problem` dictionary and produce a rotated version of whatever 2‑D data it contains. The baseline does it correctly but slowly – probably by iterating over pixels or points in pure Python. To beat that we should hand off the heavy lifting to a compiled routine in SciPy or NumPy.  
+
+First thought: just call `scipy.ndimage.rotate`. That function is written in C and will do the work in a single call – no Python loops at all. It also accepts an `angle` in degrees and can keep the same shape (`reshape=False`) or change it (`reshape=True`). If the baseline keeps the original shape we’ll do that too; otherwise we can let it decide automatically.  
+
+But what if the input isn’t an image but a list of (x,y) points? In that case we could build a rotation matrix and apply it via a dot product: `rotated = points @ R.T`. That’s still vectorised and no loops. The trick is to detect whether the data is 1‑dimensional (list of coordinates) or 2‑dimensional (image). We can check the shape of the numpy array: if `ndim==1` and length divisible by 2 we treat it as points; otherwise as an image.  
+
+However, the simplest path that satisfies the brief – no Python loops, uses SciPy – is to stick with `scipy.ndimage.rotate`. It handles images natively and is fast enough for typical sizes. If the baseline had a point‑based solution we can still keep it fast by using NumPy’s matrix multiplication instead of loops.  
+
+I’ll go with the image approach first because that’s what `rotate_2d` usually means in algorithmic challenges (rotate a grayscale image). If later I realize the data are points I can switch to the dot‑product route without changing the public interface.  
+
+Now about imports: The brief says we must import `logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`. Even if we don’t end up using `random`, we’ll import it anyway to satisfy the requirement. Logging will be useful for debugging – maybe log the shape of the input and the angle being applied.  
+
+No Python‑level loops anywhere – just one call to SciPy and perhaps a few NumPy ops for sanity checks or conversions. That satisfies “vectorised” requirement completely.
+
+Edge cases:  
+- If `angle` is exactly 0 or a multiple of 360, `rotate` will still work but might incur overhead; we could short‑circuit by returning a copy of the original data (`data.copy()`).  
+- Negative angles are fine – SciPy handles them correctly.  
+- If input isn’t already a NumPy array we convert it (`np.asarray`).  
+- If input has more than two dimensions (e.g., batch of images), we could loop over axis 0 but that would introduce a loop – so better require a 2‑D array only; otherwise raise ValueError.
+
+The `Rotate2D` class will have an empty constructor and a single method `solve(self, problem)` returning either just the rotated array or wrapped in a dict – depending on what baseline expects. The brief doesn’t specify output format exactly; I’ll assume returning just the array is fine because many solutions do that. If needed, callers can adapt easily.
+
+Finally, implement `run_solver(problem)` that creates an instance of `Rotate2D` and calls its solve method with the provided problem dict.
+
+All right – this design keeps everything vectorised, uses SciPy as required, avoids Python loops, includes all mandated imports, and should be fast enough for typical test cases. OK, I think I have the design. Time to write it.

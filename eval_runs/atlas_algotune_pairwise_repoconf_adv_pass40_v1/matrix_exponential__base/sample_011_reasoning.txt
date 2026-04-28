@@ -1,0 +1,38 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm or use expm via expm2 from SciPy or use matrix exponent via scaling and squaring with Pade approximants. But we can simply import scipy.linalg.expm and call it. But we need to keep same signature and return numpy array. That would be fast and accurate. But is it allowed to import scipy? Yes. Problem says we can import numpy, scipy, numba, or any package from standard scientific-Python distribution. So simplest: use scipy.linalg.expm. But maybe we need to avoid heavy overhead? But it's fine.
+
+However the reference implementation returns float64. SciPy's expm returns float64. So we can implement:
+
+```
+from scipy.linalg import expm
+def expm_fast(A):
+    return expm(A)
+```
+
+But we must ensure that we handle shape and dtype. SciPy's expm expects 2D array. Good.
+
+But maybe they expect not to just delegate to SciPy? But it's allowed. However maybe the evaluation environment might not have SciPy? But the problem statement includes "scipy" as allowed. So we can use SciPy.
+
+Alternatively implement using expm from scipy.linalg.
+
+Alternatively implement scaling and squaring with Pade approximant ourselves for fun. But simpler to use SciPy.
+
+Let's implement:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return expm(A)
+```
+
+Return shape same.
+
+Edge: If input not square, SciPy's expm will raise error. That's fine.
+
+We also need to ensure we don't modify A. SciPy doesn't modify.
+
+We need to produce file with imports and function. Also maybe add __all__? Not required.
+
+Ok produce final code.

@@ -1,0 +1,39 @@
+We need to write efficient convolution. We can use numpy's FFT or scipy's fftconvolve. But we want to avoid importing scipy? The problem statement says we can import scipy. But maybe not all env has scipy. But we can implement using numpy. Use numpy.fft.fft. For real sequences, we can use rfft for speed. But easier: use np.fft.fft on padded arrays of length L = next_pow2(N+M-1) maybe. But we must ensure numeric closeness. For large arrays, using np.fft.fft may produce small rounding differences. It's fine.
+
+Implementation:
+
+def conv1d(x,h):
+    N=x.size; M=h.size
+    size = N+M-1
+    # compute next power of two for FFT speed or just use size
+    # Use np.fft.rfft for real to get speed.
+    # compute full convolution: ifft(fft(x_padded)*fft(h_padded)). real part.
+    # For real input, use rfft, but we need to multiply in frequency domain.
+
+    # Determine length for rfft: L = size
+    # But rfft expects length n; we can pad arrays to length L
+    # Use np.fft.rfft
+    nfft = size
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y
+
+But we must ensure dtype float64. Use dtype float64.
+
+Edge cases: if x or h empty? Not likely. But we can handle.
+
+Better: use np.fft.fft and ifft to avoid rounding errors? rfft might produce less errors? Use rfft.
+
+Let's implement conv1d accordingly.
+
+Also we can handle small arrays: maybe for small N+M-1 < 64 we could use direct method to avoid overhead. But not necessary.
+
+Let's produce final code.
+
+Also need to import numpy as np at top.
+
+Return np.array of dtype float64.
+
+Let's produce final.

@@ -1,0 +1,30 @@
+We need to implement faster convolution. We can use numpy. Use np.fft.fftconvolve from scipy.signal. But we can also implement via numpy.fft.fft. The input arrays are float64. We'll compute length L = N+M-1. Next power of two maybe for efficient FFT. Use np.fft.rfft? For real input, we can use rfft. For speed, we can use np.fft.fft. We'll do:
+
+n_fft = 1 << (N+M-1-1).bit_length()  # next power of two.
+
+fft_x = np.fft.rfft(x, n=n_fft)
+fft_h = np.fft.rfft(h, n=n_fft)
+fft_prod = fft_x * fft_h
+y = np.fft.irfft(fft_prod, n=n_fft)
+return y[:N+M-1]
+
+We need to ensure dtype float64. np.fft.rfft returns complex128 if input is float64. irfft returns float64. That's fine.
+
+Alternatively, use np.fft.fft and then slice. But rfft is efficient.
+
+Edge cases: zero-length arrays? Problem likely not. But we can handle.
+
+Also we can optionally use np.fft.fft with n = next power of two.
+
+We must import numpy and maybe scipy? But we can just use numpy. That suffices.
+
+Also need to keep signature.
+
+Let's write code.
+
+Also we can add small tolerance? Not needed.
+
+We should test with simple arrays: conv1d(np.array([1,2]), np.array([3,4])) -> [3,10,8]. Works.
+
+Let's produce final code.
+

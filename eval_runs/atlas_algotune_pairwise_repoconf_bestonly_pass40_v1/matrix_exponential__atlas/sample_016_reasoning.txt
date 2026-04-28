@@ -1,0 +1,45 @@
+We need to replace reference with fast implementation. Use scipy.linalg.expm or np.linalg.matrix_power? But we need speed and accuracy. The easiest: use scipy.linalg.expm. But we might be allowed to import scipy. The problem states can import scipy. So we can just do:
+
+import scipy.linalg
+
+def expm_fast(A):
+    return scipy.linalg.expm(A)
+
+But we need to ensure same signature. That should be fine. But might need to handle dtype float64. SciPy's expm returns float64. Should be fine.
+
+However maybe they expect a manual implementation like Pade approximant with scaling and squaring. But SciPy's implementation is efficient. Use it.
+
+But maybe the evaluation environment may not have scipy? It says we may import scipy. Should be okay.
+
+Alternatively, use scipy.linalg.expm directly. That would be fastest.
+
+But maybe they want to use numpy only. But we can use SciPy.
+
+Given that we just need to produce faster implementation that matches SciPy's output. So we can just call SciPy. That is trivial.
+
+But maybe they purposely want to test that we implement Pade approximant. But the requirement: "Your solution must define same top-level function name and signature as the reference." So we can.
+
+Let's produce file:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    return scipy.linalg.expm(A)
+
+But we need to ensure shape of A. Could raise error if not square. But not necessary.
+
+Better to cast to float64: A = np.asarray(A, dtype=np.float64). But SciPy expects float64. So we can do that.
+
+Let's implement:
+
+def expm_fast(A):
+    A = np.asarray(A, dtype=np.float64)
+    return scipy.linalg.expm(A)
+
+But we need to import numpy as np, scipy.linalg.
+
+Ok.
+
+Let's produce final answer.

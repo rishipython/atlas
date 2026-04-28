@@ -1,0 +1,31 @@
+We need to replace the triple loop with efficient vectorized computation. Classic formula: pairwise squared distance matrix = (X^2 sum over columns) + (X^2 sum over columns).T - 2*X X^T. Use broadcasting.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sum_X = np.sum(X**2, axis=1)
+    D = sum_X[:, None] + sum_X[None, :] - 2 * X @ X.T
+    # numerical errors might produce negative small values
+    D = np.maximum(D, 0.0)
+    return D
+
+Should be fine. Must preserve dtype float64. Use np.float64.
+
+Edge cases: N=0? shape (0,D). sum_X shape (0,). sum_X[:,None] shape (0,1). X @ X.T shape (0,0). Should produce (0,0) array.
+
+Return as float64.
+
+Also ensure that we use np.dot or @.
+
+Potential memory: if N large, matrix of shape N,N may be huge. But expected.
+
+Let's produce final file with imports and function.
+
+Also we might want to cast X to float64: X = X.astype(np.float64, copy=False). That ensures dtype.
+
+Add __all__ maybe.
+
+Return.
+
+Let's produce code.

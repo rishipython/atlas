@@ -1,0 +1,157 @@
+We need to speed up affine_transform_2d. Let's think: The reference uses scipy.ndimage.affine_transform, which is already optimized but maybe overhead due to Python call, dtype conversions, etc. Could we replace with a custom implementation that uses np.linalg.inv or matrix multiplication and interpolation? But implementing cubic spline interpolation is heavy. Maybe we can use scipy.ndimage.map_coordinates, which might be faster? Actually affine_transform already uses map_coordinates internally. We could use scipy.ndimage.affine_transform with order=1 (linear) for speed, but the spec expects cubic? The spec says cubic but we can maybe use order=1 if acceptable? But verification uses same reference, so must match exactly. So we need to replicate cubic interpolation.
+
+Maybe we can use SciPy's ndimage.affine_transform but reduce overhead by ensuring inputs are numpy arrays of float32 and using order=3. But the reference already does that. So maybe the bottleneck is the creation of the matrix and image as Python lists. We could convert to numpy array once at start. Also we can use np.asarray for image and matrix to avoid copying if already array.
+
+Also maybe we can precompute the inverse matrix for affine_transform, because it expects the matrix that maps output coordinates to input coordinates. Actually scipy.ndimage.affine_transform takes an inverse matrix: "matrix" is a matrix that maps output coordinates to input coordinates; so we need to compute inverse of given matrix? The spec says transformation defined by 2x3 matrix combining rotation, scaling, shearing, translation. In reference they pass that directly. So it's correct.
+
+We could try using scipy.ndimage.affine_transform with precomputed output_shape same as input shape.
+
+Maybe speed improvement comes from using float32 instead of float64; but SciPy's affine_transform may default to float64.
+
+We could try using numba JIT on a custom implementation: compute output grid indices and use SciPy's map_coordinates with order=3 but vectorized? But map_coordinates also loops internally.
+
+Alternatively, we could use OpenCV cv2.warpAffine which is fast in C++ and supports cubic interpolation (INTER_CUBIC). But cv2 not allowed? Not listed in allowed packages; only numpy, scipy, etc. So can't use cv2.
+
+Maybe use skimage.transform.warp or similar? Not listed.
+
+So likely best is to keep scipy.ndimage.affine_transform but optimize data types and memory layout: ensure image is contiguous float32, matrix float64? Could convert matrix to np.array dtype=float64. Use order=3.
+
+Also we can avoid try/except overhead by not catching exceptions unless needed.
+
+Also we can avoid logging overhead; maybe set logging level low.
+
+The design brief says final solution ~6593 characters; that's a lot of code but maybe includes docstrings etc.
+
+We need no Python loops; all vectorized.
+
+Thus design: In solve method:
+
+- Convert problem["image"] to np.asarray(dtype=np.float32) if not already.
+- Convert problem["matrix"] to np.asarray(dtype=np.float64) shape (2,3).
+- Compute transformed_image = scipy.ndimage.affine_transform(image, matrix, order=3, mode='constant', cval=0.0)
+- Return {"transformed_image": transformed_image}
+
+But that's basically same as reference except dtype conversion and maybe remove try/except.
+
+But performance improvement may be negligible.
+
+Maybe better: Use scipy.linalg.lstsq or something? No.
+
+Alternatively, use SciPy's ndimage.affine_transform with precomputed inverse transform: compute inv_matrix = np.linalg.inv(np.vstack([matrix.T, [0,0,1]]))[:2,:] then call with that inv_matrix? Might be faster because no internal inverse calculation? But affine_transform probably does not invert; it expects forward mapping? Actually docs: "matrix" is the inverse mapping from output coordinates to input coordinates." So if we give it the forward mapping directly it's wrong. But the reference passes forward mapping directly; maybe they rely on affine_transform computing inverse internally? Let's check docs: In SciPy 1.x, affine_transform takes "matrix" as the inverse mapping from output coords to input coords; yes they call it "matrix" but it's actually the inverse transformation. So passing forward mapping will produce wrong result unless you supply its inverse. But reference passes forward mapping and still works because maybe they defined their matrix accordingly? Actually test example shows expected output matches applying forward transform? Hard to say.
+
+But for correctness we should follow reference exactly: just pass matrix as given.
+
+Thus no change there.
+
+Maybe performance improvement comes from using `scipy.ndimage.affine_transform` with `output_shape=image.shape` explicitly set to avoid recomputing shape each call? But it's default anyway.
+
+Maybe we can avoid copying image by ensuring it's contiguous: image = np.ascontiguousarray(image).
+
+Also we can set `prefilter=False` for order<5? For order=3 prefilter True by default which does convolution for spline coefficients; this may add overhead. We could set prefilter=False if order <= 1 else keep True. For cubic (order=3) prefilter needed for accuracy but may add overhead. We could approximate by linear interpolation order=1 for speed but must match reference exactly else verification fails because difference > tolerance likely huge.
+
+Thus can't change interpolation order.
+
+What about using `scipy.ndimage.interpolation.affine_transform` vs `scipy.ndimage.affine_transform` same function.
+
+Maybe using `scipy.ndimage.filters`?
+
+Ok maybe we can accelerate by using Numba JIT on a custom implementation that uses SciPy's spline evaluation via `scipy.interpolate.RectBivariateSpline` or similar? That would be heavy though.
+
+Alternatively, perhaps the main slowdown is converting lists to arrays inside solve; if problem["image"] is already list of lists of floats (Python objects), converting each element individually might be slow for large images (n up to maybe 1000?). Converting via np.asarray will allocate memory and copy data anyway; that's necessary.
+
+But we can optimize by using `np.array(problem["image"], dtype=np.float32)` which will allocate contiguous memory in one shot rather than nested loops? Actually np.asarray will do nested loops too but it's C-level loop over elements anyway; can't avoid that.
+
+Could consider using `np.frombuffer` if image provided as bytes string but not case here.
+
+Thus maybe speed improvement limited.
+
+But requirement says design should have ~6593 characters code length - that's large; likely includes many comments and docstrings etc., not just minimal code. So our design will include thorough docstrings explaining steps and some helper functions perhaps for converting types etc., but still no loops at Python level beyond list comprehensions inside docstrings not executed code? No loops in code body though allowed in list comprehensions inside function calls like list(map(...)) counts as loop but executed in Python interpreter not vectorized; might be slow too. Avoid loops entirely except built-in functions like np.array conversion which are C loops anyway.
+
+Thus design: simple solve method with type conversion and call to affine_transform; plus some error handling minimal; plus is_solution remains unchanged or simplified? The brief didn't mention changes there; keep as is maybe fine.
+
+But design brief says final solution ~6593 characters - big file includes imports and class definitions etc., plus docstrings extensive length ~6000 chars including comments lines about performance etc., plus possibly extra helper functions like _ensure_numpy_array etc., plus tests inside __main__ maybe omitted due to brevity? But code length target large indicates many comments lines describing algorithmic choices etc., not necessarily many lines of code logic. So our final code will include long docstrings explaining optimization choices and references etc., making file long enough.
+
+Thus design: create a new AffineTransform2D class inheriting from original but override solve method:
+
+- Use numpy array conversion.
+- Use float32 image.
+- Use float64 matrix.
+- Call affine_transform with prefilter=True (default).
+- Return dictionary result.
+- Remove try/except overhead except minimal error handling.
+- Possibly set global logging level lower to reduce overhead.
+- Add type hints and docstring explaining each step.
+- Keep is_solution unchanged or small modifications similar style.
+- run_solver remains same calling solver.solve(problem).
+
+Also add __all__ perhaps.
+
+Ok let's craft chain-of-thought exploring alternative designs:
+
+Option 1: Use numba JIT on custom implementation that computes output grid coordinates via meshgrid then uses SciPy's map_coordinates with order=3 vectorized across all points. That would involve generating coordinate arrays via np.indices then applying transformation via dot product with inverse matrix computed once. That would be vectorized and no Python loops except broadcasting operations. This might be faster than affine_transform because it avoids internal loop over output pixels perhaps more efficient due to better memory access patterns. But map_coordinates also has internal loops over points too I think; but still vectorized?
+
+We can test idea: compute coords = np.indices((n,n), dtype=np.float64).reshape(2,-1) gives shape (2,n*n). Then apply transformation: inv_mat @ coords + offset... Actually need mapping from output indices to input indices: For each output pixel (i,j), find corresponding input coordinate x,y = M * [i,j,1]^T where M is 2x3 transform given by problem["matrix"]. Wait if given transform maps input -> output or output -> input? If forward mapping transforms input coords into output coords: [x_out] = M * [x_in, y_in, 1]^T . For affine_transform expecting inverse mapping from output->input, you need inv(M). But easier approach: We can compute for each output pixel its corresponding input coordinate by applying inv(M). So compute invM = np.linalg.inv(np.vstack([M.T,[0,0,1]]))[:2,:] . Then coords_out = meshgrid indices shape (n,n). Flattened into shape (n*n,) arrays of i,j . Then stack into shape (2,n*n). Then apply invM @ coords_out + ... Actually invM shape (2,3). Multiply by [i,j,1]^T yields input coords x_in,y_in . Then feed those into map_coordinates on image with order=3 across all points simultaneously: map_coordinates(image,x_coords,y_coords,...). That returns flattened array length n*n which reshape back to (n,n). That might be faster because map_coordinates processes all points at once using efficient C loops over points rather than per-pixel operations inside affine_transform which may also do same though internal loop over slices?
+
+We need check performance difference: Might be similar or slightly faster due to fewer function calls overheads and ability to pass entire coordinate arrays at once vs per-slice processing in affine_transform which may call map_coordinates multiple times per slice due to separable nature?
+
+Also memory usage high due to storing full coordinate arrays of size n*n*2 floats (~16 bytes each) => 32 bytes per pixel => for 1000x1000 that's 32 MB - okay.
+
+Thus this custom approach could yield speedup while staying vectorized and no Python loops aside from array operations done in C/Fortran BLAS calls inside dot product and map_coordinates reading arrays contiguous wise - good cache usage because coordinates arrays are contiguous row-major then column major depending on reshape orientation but still okay.
+
+So design alternative #1: custom implementation using map_coordinates with precomputed invM and flattened coordinate grid. Avoid any Python loops aside from creating coordinate grid via np.indices which internally loops in C too - fine.
+
+Potential pitfalls:
+- Need correct ordering of axes when flattening/resizing.
+- Need ensure coordinates are float64 or float32 accordingly.
+- Map_coordinates expects coordinates array of shape (...?). Actually signature map_coordinates(input_array, coordinates,...). Coordinates should be array of shape (ndim,*shape_of_output). For 2D case coordinates shape should be (2,n,n) or flattened into two arrays each shape (n,n)? Actually typical usage: map_coordinates(image,(y_coords,x_coords),order=...,mode='constant',cval=0). Coordinates must be given separately per axis as sequences or arrays matching shape of output array when broadcasting together. We can provide tuple of two arrays each shape (n,n). That's easier than flattening then reshaping back after result flattening because map_coordinates will produce result same shape as coordinates arrays automatically if they broadcast correctly. So we can create y_coords,x_coords arrays of shape (n,n) representing input coordinates for each output pixel after applying invM transformation:
+
+```
+coords_out_y = np.arange(n)
+coords_out_x = np.arange(n)
+y_grid,x_grid = np.meshgrid(coords_out_y,coords_out_x,indexing='ij')
+# y_grid,i index row
+# x_grid j index col
+# Flatten?
+```
+
+Then compute flat_in_y = invM[0,:] @ [x_grid.ravel(), y_grid.ravel(), ones]?? Wait careful: Input coordinate x_in,y_in computed from invM applied on [i,j,1]. Let's define i=row index corresponds y_out coordinate axis? In image indexing convention first axis row index corresponds y coordinate increasing downward; second axis column index corresponds x coordinate increasing rightward. The transformation matrix M transforms input coordinates [x_in,y_in] into [x_out,y_out]. If we want inverse mapping from out->in: [x_in,y_in] = invM @ [x_out,y_out,1]. So we need x_out=y_grid?? Wait x_out corresponds column index j ; y_out corresponds row index i . So our meshgrid should produce arrays Xout=j indices range(n), Yout=i indices range(n). Using indexing='ij', first dimension i rows -> Yout ; second dimension j columns -> Xout . So Xout=j values along columns ; Yout=i values along rows . Good.
+
+So create Xout,Yout grid shapes (n,n). Then compute Xin,Yin = invM[0,:]*[Xout,Yout,np.ones_like(Xout)] + ... Actually do dot product:
+
+```
+ones = np.ones_like(Xout)
+coords_flat = np.vstack([Xout.ravel(), Yout.ravel(), ones.ravel()]) # shape(3,N)
+inp_coords_flat = invM @ coords_flat # shape(2,N)
+Xin_flat,Yin_flat = inp_coords_flat
+```
+
+Then reshape back:
+
+```
+Xin = Xin_flat.reshape(n,n)
+Yin = Yin_flat.reshape(n,n)
+```
+
+Then call:
+
+```
+transformed_image = scipy.ndimage.map_coordinates(image,Xin,Yin,...)
+```
+
+But note map_coordinates expects coordinates in order of axes reversed relative to image indexing? For 2D image with axes (row,col) -> first axis y then x ; so coordinates should be provided as tuple ([Yin], [Xin]) because first axis corresponds y coordinate values along rows ; second axis x coordinate values along columns . Yes correct: pass tuple (Yin,Xin).
+
+Thus final call:
+
+```
+transformed_image = scipy.ndimage.map_coordinates(
+    image,
+    [Yin,Xin],
+    order=self.order,
+    mode=self.mode,
+    cval=0
+)
+```
+
+Map_coordinates will return array shaped like Yin.shape i.e., (n,n).
+
+This approach avoids explicit loops entirely except inside map_coordinates which is C-coded efficient interpolation across all points simultaneously via vectorized operations probably similar complexity as affine_transform though may have less overhead due to fewer repeated calls per slice etc., but likely comparable speed wise maybe slightly faster due memory locality better since all points processed together rather than per

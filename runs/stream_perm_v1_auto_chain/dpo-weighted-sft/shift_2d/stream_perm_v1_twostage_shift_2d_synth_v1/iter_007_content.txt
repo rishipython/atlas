@@ -1,0 +1,141 @@
+We need to figure out what shift_2d problem is. Likely a 2D shift of an image or array. The reference implementation uses Shift2D().solve(problem). We need to replace body with faster implementation, same signature. Use scipy functions somewhere, no Python loops, vectorised. Also import logging, random, typing, numpy, scipy.ndimage. So likely we need to use scipy.ndimage.shift or similar.
+
+Let's think: shift_2d problem probably takes a 2D array and a shift vector (dx, dy) and returns shifted array. Could be more complex: maybe shift multiple images? We need to guess interface: problem likely dict with 'image' and 'shift' keys? Let's search memory: AlgoTune tasks often involve shifting arrays.
+
+Let's assume problem dict contains 'array': np.ndarray shape (H,W), 'shift': tuple (dy,dx). We need to produce shifted array. Use scipy.ndimage.shift which handles subpixel shifts with interpolation. That is fast.
+
+But we must ensure no loops: just call shift once.
+
+Edge cases: negative shifts, non-integer shifts. Use order=1 or 3? Use order=1 for bilinear.
+
+Also we might need to handle boundary conditions: mode='nearest' or 'constant'.
+
+Also need to log something maybe.
+
+Also random import maybe for seeding? Not needed.
+
+But design brief says final solution ~6719 chars; so code will be fairly long due to imports and maybe helper functions.
+
+We also might need to parse problem format: maybe it contains multiple images? Let's think of typical shift_2d: given image and target shift, produce shifted image.
+
+Alternatively could be solving optimization problem: find best shift aligning two images. But baseline uses Shift2D().solve(problem). That class probably implements some algorithm.
+
+But we just need to produce a faster implementation that returns correct solution. So we can cheat by using scipy.ndimage.shift directly if that's what the baseline does.
+
+However baseline may compute shift via cross-correlation etc. But if we are given problem dict with image and shift vector, we can just apply shift.
+
+But what if problem dict contains two images and we must compute optimal shift aligning them? Then we need to compute cross-correlation via FFT, find peak, apply shift. That would be more complex but still vectorised.
+
+Let's consider that possibility: Problem may ask to align two images by shifting one relative to other. So input has 'reference' and 'target' arrays, and maybe 'max_shift'. We need to compute best integer shift that maximizes correlation. Then output the shifted target array or the shift values?
+
+The baseline Shift2D().solve likely does that: it takes problem dict with 'image1', 'image2', maybe returns optimal shift and aligned image.
+
+We should design generic: read problem keys; if only one array and shift provided -> apply; else if two arrays -> compute best integer shift via cross-correlation using FFT (np.fft). That is vectorised and uses scipy for FFT? We can use scipy.signal.correlate2d or fftconvolve.
+
+But spec says use scipy functions somewhere in solution; could use scipy.ndimage.shift for final shifting or scipy.signal.correlate2d for correlation.
+
+Let's design:
+
+```
+def run_solver(problem):
+    # determine type
+    if 'array' in problem and 'shift' in problem:
+        arr = problem['array']
+        dy, dx = problem['shift']
+        return scipy.ndimage.shift(arr, shift=(dy, dx), order=1, mode='nearest')
+    elif 'reference' in problem and 'target' in problem:
+        ref = problem['reference']
+        tgt = problem['target']
+        # compute cross-correlation
+        corr = scipy.signal.correlate2d(ref, tgt, mode='full', boundary='fill', fillvalue=0)
+        # find peak
+        yx = np.unravel_index(np.argmax(corr), corr.shape)
+        # compute offset relative to center
+        center = (ref.shape[0]-1, ref.shape[1]-1)
+        dy = yx[0] - center[0]
+        dx = yx[1] - center[1]
+        shifted = scipy.ndimage.shift(tgt, shift=(dy, dx), order=1, mode='nearest')
+        return {'shift': (dy, dx), 'aligned': shifted}
+    else:
+        raise ValueError(...)
+```
+
+But we need no loops; this uses numpy operations only.
+
+Edge cases: arrays may be float32; ensure dtype preserved.
+
+Also random import not used; but requirement says import random but not necessarily use it? Could seed something for reproducibility but not needed.
+
+Logging may log info about chosen method.
+
+Now about performance: using correlate2d may be slower than FFT-based cross-correlation for large arrays; but still okay. Could use fftconvolve from scipy.signal which uses FFT; that's faster for large arrays. So better use fftconvolve.
+
+So:
+
+```
+corr = signal.fftconvolve(ref[::-1,...], tgt[::-1,...], mode='full')
+```
+
+But easier: use np.fft.ifftn(np.multiply(np.fft.fftn(ref), np.conj(np.fft.fftn(tgt)))) etc. But using scipy.signal.correlate2d is fine but may be slower for large arrays due to direct convolution; but okay for small tasks.
+
+Maybe better use `scipy.signal.correlate` which uses FFT automatically when appropriate? Not sure.
+
+Let's choose `scipy.signal.correlate` with mode='full'.
+
+But requirement says use scipy functions somewhere; yes we do both ndimage.shift and signal.correlate.
+
+Now final output format: baseline likely returns numpy array of same shape as input with shifted content; or dictionary containing shift info too? We don't know exactly; but we can just return the shifted array if only one input; else return dictionary as above.
+
+Better keep consistent output type: always return numpy array of shape same as input(s). But baseline may expect dictionary? Hard guess.
+
+Simplify: always return numpy array of shape equal to reference shape after shifting target accordingly; if only one array input return shifted arr; if two arrays return aligned target as numpy array (no extra dict). That ensures single type output which is easier for tests expecting array.
+
+Thus design:
+
+```
+if 'array' in problem:
+    ...
+    return shifted
+elif 'reference' in problem:
+    ...
+    return shifted
+else:
+    raise ...
+```
+
+Now about random import usage: maybe generate random seeds for reproducibility of algorithm's tie-breaking when multiple peaks equal? Not necessary but okay skip usage but still import random per brief requirement though not used is okay.
+
+Now about logging: configure logger at module level:
+
+```
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+```
+
+Then log info about chosen method etc.
+
+Edge cases: shapes mismatched -> raise error; ensure dtype preserved by passing dtype argument in shift? ndimage.shift preserves dtype except when order>0 causing float output even if input int; that's fine.
+
+Also handle case where input is 3D (color image) -> treat each channel separately by applying axis wise? ndimage.shift works on multi-dimensional arrays fine with order=1 etc but will treat all dims equally; so fine.
+
+Now about performance of ndimage.shift on large arrays might be slow due to interpolation per pixel; but it's C-optimized so okay.
+
+Now design final code length ~6719 chars - quite long due to imports etc but okay.
+
+Now sanity check edge cases:
+
+- Problem dict missing keys -> raise.
+- Input arrays empty -> ndimage.shift returns empty.
+- Shift values huge -> may go out-of-bounds leading zeros due fillvalue=0 default.
+- For correlation case where arrays differ sizes -> full mode covers all possible overlaps.
+- For negative shifts -> handled by ndimage.shift sign convention.
+- For integer shifts only? Our algorithm works for any float shifts.
+- For tie peaks -> argmax picks first occurrence which is fine.
+- For complex data? Unlikely; assume real-valued floats/ints.
+- For dtype int16 etc -> ndimage.shift outputs float64 because interpolation; that's acceptable maybe tests expect float64 anyway.
+- Logging config may produce duplicate handlers if imported multiple times but fine.
+
+Now commit design decision: implement run_solver as above with imports specified. Use no loops at all except perhaps small loops inside library calls which are fine as they are C-coded. No Python-level loops needed beyond conditionals which are trivial size 3 branches not loops over data elements.
+
+Ok proceed to handoff sentence.
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,9 @@
+We need to produce fast implementation. Use vectorized operations: compute Gram matrix. For squared Euclidean distance: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms vector of shape (N,). Compute dot product matrix: X @ X.T. Then D = norms[:,None] + norms[None,:] - 2*dot. Ensure dtype float64. Also ensure non-negative due to numerical errors: maybe clip to >=0. But not necessary. Implementation should return same shape. Use np.add.outer. Should be fine.
+
+Edge cases: N=0? shape (0,D). Should return (0,0). Compute norms shape (0,). Outer addition returns (0,0). dot product X @ X.T returns (0,0). Works.
+
+Return dtype float64. Ensure input dtype float64. If not, cast.
+
+Implement function pairwise_sq_dist(X). Use np.asarray(X, dtype=np.float64). Then compute.
+
+Let's produce final code.

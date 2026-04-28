@@ -1,0 +1,142 @@
+```python
+#!/usr/bin/env python3
+"""
+FFT Convolution Task – optimized implementation
+
+This file implements the `FFTConvolution.solve` method using
+NumPy's FFT routines (rfft/irfft) for fast real‑valued convolution.
+For very small inputs a direct convolution is used to avoid FFT overhead.
+
+Author: OpenAI ChatGPT
+"""
+
+import logging
+import numpy as np
+from typing import Dict, Any
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _next_pow_two(n: int) -> int:
+    """Return the next power of two >= n."""
+    return 1 << (n - 1).bit_length()
+
+
+def _convolve_full(signal_x: np.ndarray, signal_y: np.ndarray) -> np.ndarray:
+    """Compute full linear convolution via FFT (real signals)."""
+    n = len(signal_x) + len(signal_y) - 1
+    n_fft = _next_pow_two(n)
+    # rfft returns length n_fft//2+1
+    fx = np.fft.rfft(signal_x, n=n_fft)
+    fy = np.fft.rfft(signal_y, n=n_fft)
+    prod = fx * fy
+    conv = np.fft.irfft(prod, n=n_fft)
+    return conv[:n]  # truncate to true linear length
+
+
+def _slice_mode(conv_full: np.ndarray, mode: str,
+                len_x: int, len_y: int) -> np.ndarray:
+    """Slice full convolution according to mode."""
+    n_full = len(conv_full)
+    if mode == "full":
+        return conv_full
+    elif mode == "same":
+        # desired length is max(len_x, len_y)
+        out_len = max(len_x, len_y)
+        # center the output
+        start = (n_full - out_len) // 2
+        return conv_full[start:start + out_len]
+    elif mode == "valid":
+        # Only overlapping part
+        if len_x >= len_y:
+            out_len = len_x - len_y + 1
+            start = len_y - 1
+        else:
+            out_len = 0
+            start = 0
+        return conv_full[start:start + out_len] if out_len > 0 else np.array([], dtype=conv_full.dtype)
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
+
+
+# --------------------------------------------------------------------------- #
+# Main solver class
+# --------------------------------------------------------------------------- #
+
+class FFTConvolution:
+    """
+    Optimized FFT convolution solver.
+    """
+
+    def __init__(self):
+        pass
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute convolution of two real signals using FFT.
+
+        Parameters
+        ----------
+        problem : dict
+            Dictionary containing:
+            - "signal_x": list of numbers
+            - "signal_y": list of numbers
+            - "mode": "full" | "same" | "valid" (default "full")
+
+        Returns
+        -------
+        dict
+            {"convolution": [float, ...]}
+        """
+        try:
+            # Extract data
+            signal_x = np.asarray(problem.get("signal_x", []), dtype=np.float64)
+            signal_y = np.asarray(problem.get("signal_y", []), dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Handle empty inputs
+            if signal_x.size == 0 or signal_y.size == 0:
+                return {"convolution": []}
+
+            len_x, len_y = signal_x.size, signal_y.size
+
+            # For very small inputs, avoid FFT overhead
+            SMALL_THRESHOLD = 5000  # adjust if needed
+            if len_x * len_y <= SMALL_THRESHOLD:
+                conv_full = np.convolve(signal_x, signal_y, mode="full")
+            else:
+                conv_full = _convolve_full(signal_x, signal_y)
+
+            # Slice according to mode
+            result = _slice_mode(conv_full, mode, len_x, len_y)
+
+            # Convert to Python list
+            return {"convolution": result.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve method: {e}")
+            raise
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Main function to run the solver.
+
+    Parameters
+    ----------
+    problem : dict
+        Problem specification dictionary.
+
+    Returns
+    -------
+    dict
+        Solver output dictionary.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)
+```

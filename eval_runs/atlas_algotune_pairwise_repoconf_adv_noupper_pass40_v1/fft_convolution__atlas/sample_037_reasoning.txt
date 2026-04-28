@@ -1,0 +1,23 @@
+We need to replace the slow double loop with efficient FFT-based convolution. Use numpy. Use np.fft.fft. For real arrays, we can use np.fft.rfft. But simpler: use np.fft.fft with length L = next power of 2 >= N+M-1. Compute FFT of x padded to L, h padded to L. Multiply elementwise, inverse FFT, take real part, truncate to length N+M-1. Use np.fft.rfft to reduce size: L_rfft = N+M-1. Actually rfft length is n/2+1, but we need length N+M-1. We can use rfft with n = N+M-1. The product of rfft gives same result as full convolution. But we must ensure rounding errors small. Use np.fft.fft with length L. For speed, rfft may be faster. Let's implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    L = N+M-1
+    # rfft length L
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y
+
+Return dtype float64. That should match np.convolve. For small arrays, rfft may be slower but fine.
+
+Edge cases: empty arrays? Not likely. But if x or h length zero? np.fft.rfft on length 0? Might error. But we can handle: if N==0 or M==0: return empty array of length N+M-1=0. So handle.
+
+Return as float64. irfft returns float64.
+
+Test with np.allclose to np.convolve(x,h,'full').
+
+Ok. Provide imports. Provide function. Provide main guard? Not required. Just define function.
+
+Let's produce final code.

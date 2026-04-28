@@ -1,0 +1,34 @@
+We need to implement conv1d using FFT or numpy's FFT convolution. Need to ensure same result as np.convolve(x,h,mode='full') for float64 arrays. Use numpy.fft.fft. Approach: compute length L = next power of two >= N+M-1. Use np.fft.rfft for real signals to reduce memory. But easiest: use np.fft.fft for complex. Compute y = np.fft.ifft(np.fft.fft(x, L) * np.fft.fft(h, L)). Take real part, round? The numeric difference might be small; np.allclose will handle. Must cast to float64.
+
+Edge cases: if N or M zero? But arrays lengths likely >0. We'll handle.
+
+Return np.real(y[:N+M-1]) . Ensure dtype float64.
+
+Implement conv1d accordingly.
+
+Also maybe use scipy.signal.fftconvolve if available. But we can implement ourselves.
+
+We need to import numpy. Provide function conv1d. That's all.
+
+Let's produce final code.
+
+Also we might consider using np.fft.rfft for speed: compute rfft of real input, multiply, irfft. rfft length L. rfft of length L returns L//2+1 elements. Compute product. Then irfft to length L. Then slice.
+
+Let's implement:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = 1 << (N+M-1-1).bit_length()
+    X = np.fft.rfft(x, L)
+    H = np.fft.rfft(h, L)
+    y = np.fft.irfft(X * H, L)
+    return y[:N+M-1].copy()
+
+copy to ensure contiguous.
+
+Return dtype float64.
+
+Edge: if N+M-1 <= 0? Not possible.
+
+Ok. Provide file.

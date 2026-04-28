@@ -1,0 +1,41 @@
+We need to produce a fast implementation of 1D convolution that returns same result as numpy.convolve with mode='full'. Using FFT. Need to handle real double arrays. Use numpy.fft.fft with real? Use np.fft.rfft? But simplest: use np.fft.fft, pad to next power-of-two of length N+M-1, compute product, inverse FFT, round? Ensure real output.
+
+Edge cases: if arrays are empty? Possibly N=0 or M=0? Convolution of empty arrays? But typical input likely non-empty. We'll handle generic.
+
+Implementation: compute size L = N+M-1. Next power-of-two > L maybe to speed. Use np.fft.fft of size L? Actually fft length must be at least L. Use np.fft.rfft for real arrays, product length L. Then irfft to get L. But need to pad to L. rfft returns length L//2+1. We'll compute rfft of padded arrays length L. Then multiply, irfft to L. Return first L elements.
+
+Better: use np.fft.fft of length L. Complexity fine.
+
+Implementation:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    L = N+M-1
+    # compute next power of two for speed
+    L_fft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, n=L_fft)
+    H = np.fft.rfft(h, n=L_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L_fft)
+    return y[:L]
+
+Ensure dtype float64. Works.
+
+Edge: if L_fft < L? bit_length ensures >= L. Good.
+
+Return dtype float64.
+
+Need to import numpy. Use np.fft.rfft. That returns float64.
+
+We also might consider if N or M zero? If L=0? But convolution of zero-length arrays returns empty array. Our code: L=0, bit_length error. So handle: if L==0: return np.array([], dtype=np.float64). Add check.
+
+Also if arrays not 1-D? We'll assume 1-D.
+
+Let's produce final code.
+
+Also we could use scipy.signal.fftconvolve but we want minimal dependencies. Using numpy is fine.
+
+Return y.
+
+Let's produce final file.
+

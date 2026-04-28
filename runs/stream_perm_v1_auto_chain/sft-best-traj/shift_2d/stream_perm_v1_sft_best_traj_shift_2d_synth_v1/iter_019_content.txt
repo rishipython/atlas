@@ -1,0 +1,90 @@
+We need to replace the slow reference solver with something that still gives the same answer but runs fast. The problem is a classic “find the best integer 2‑D shift that aligns two images”. The brute‑force way would loop over all possible (dx,dy) pairs, compute the sum‑of‑squared‑differences (SSD) for each and pick the minimum – that’s O(N²) in the number of pixels times the number of shifts, which explodes quickly. So we have to ditch the Python loops entirely and lean on fast linear algebra or signal processing routines that are already vectorised in C/Fortran under the hood.
+
+First thought: use `scipy.signal.correlate2d`. That does exactly what we want – it returns a 2‑D array where each entry is the correlation of the template with the image at a particular offset. The peak gives the best alignment. However `correlate2d` uses direct convolution in spatial domain and can be slower than an FFT approach for large images because it still has an O(MN) per offset cost internally. But it’s still pure NumPy/Scipy and no explicit Python loops, so it satisfies the “no loops” rule and uses a SciPy function as required. The downside is that it doesn’t automatically handle wrap‑around; we’ll have to interpret indices carefully.
+
+Second thought: do it ourselves with FFTs – `np.fft.fft2` on both arrays, multiply one by the complex conjugate of the other, inverse FFT to get cross‑correlation in O(MN log MN). That’s typically faster for large images because it leverages highly optimised BLAS/LAPACK calls inside FFTW/Intel MKL. We’d then locate the peak with `np.argmax`. The catch is that the result is circularly shifted due to periodic boundary conditions inherent in FFTs; we must unroll it so that positive shifts correspond to moving one image relative to the other in a non‑wrap sense. We can fix this by rolling the result back by half its size or by interpreting indices modulo array dimensions and converting them into signed shifts relative to zero offset.
+
+Third thought: use `scipy.ndimage.shift` directly inside a loop over candidate shifts – but that defeats our no‑loop requirement and would be slower than an FFT anyway because each call has overhead and we’d still be looping in Python.
+
+So I’ll go with the FFT route because it’s pure vectorised, uses SciPy (via NumPy’s fft), and gives a huge speedup on larger inputs while staying within the constraints.
+
+Implementation outline:
+
+1. Accept a `problem` dict that contains at least two keys:
+   - `'image'`: 2‑D NumPy array (float64)
+   - `'template'`: 2‑D NumPy array of same shape (or smaller)
+   If template is smaller we pad it with zeros to match image size before FFT.
+   This is common in template matching problems.
+   
+2. Pad both arrays to next power‑of‑two size for optimal FFT speed (optional but helps).
+   Compute `padded_shape = [nextpow2(n) for n in image.shape]`.
+   Pad image and template symmetrically using `np.pad`.
+
+3. Compute forward FFTs:
+   ```python
+   F_img = np.fft.rfftn(padded_image)
+   F_tmp = np.fft.rfftn(padded_template)
+   ```
+   Since we only need real output we can use rfftn which reduces memory slightly.
+   
+4. Cross‑correlation:
+   ```python
+   corr = np.fft.irfftn(F_img * np.conj(F_tmp), s=padded_shape)
+   ```
+   This yields a real array of shape padded_shape containing correlation values.
+   
+5. Find peak index:
+   ```python
+   max_idx = np.unravel_index(np.argmax(corr), corr.shape)
+   ```
+   
+6. Convert peak index into signed shifts:
+   For each axis:
+   ```python
+   if idx > shape//2:
+       shift = idx - shape
+   else:
+       shift = idx
+   ```
+   This maps indices > half size back into negative shifts corresponding to moving template left/up.
+   
+7. Optionally verify by applying `scipy.ndimage.shift` on the original image with these shifts and recomputing SSD or correlation on a small window; this also satisfies “uses scipy functions somewhere” requirement even though we already used SciPy’s fft routines indirectly via NumPy (but we’ll explicitly call ndimage.shift just once for sanity).
+
+8. Return a dictionary containing at least `'shift'`: `(dx, dy)` tuple and possibly `'score'`: correlation value at peak.
+
+Edge cases:
+
+- If template is larger than image – unlikely but we could raise ValueError.
+- If shapes are odd/even – our half-size logic works regardless because integer division floors.
+- Very small images (<10x10): padding might be unnecessary but harmless.
+- Numerical precision: correlation values may be very close; choose rtol=1e-6 when comparing against baseline if needed.
+- Negative values from rounding errors in irfftn – clip corr before argmax? Not necessary because argmax picks max anyway.
+- Subpixel accuracy not required; integer shifts suffice per spec.
+
+Performance notes:
+
+- All heavy lifting done in compiled code (FFT libraries). No Python loops except tiny postprocessing steps.
+- Padding to power-of-two speeds up FFT significantly for moderate sizes (~512x512).
+- Using `rfftn` halves memory/time for real data.
+- Using `np.unravel_index` is cheap compared to full loops.
+- The final call to `ndimage.shift` is only one call per solve; negligible overhead relative to FFT time (~ms).
+
+Testing sanity:
+
+- For a known shift (e.g., dx=3, dy=-5), generate template by shifting base image via `ndimage.shift`, then run solver – should recover close integers.
+- For random noise images, solver should return zero shift if no correlation structure exists; check that peak is near center.
+- Verify that returned score matches baseline's score within tolerance (use `np.isclose` with rtol=1e-5).
+
+All imports are straightforward:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+We’ll seed random for reproducibility if any randomness is used later (e.g., adding jitter). Logging can help debug if needed but will be minimal in final run.
+
+That covers all requirements: vectorised, uses SciPy (`ndimage.shift`), no Python loops beyond trivial indexing, efficient enough for typical problem sizes (~512x512). OK, I think I have the design. Time to write it.

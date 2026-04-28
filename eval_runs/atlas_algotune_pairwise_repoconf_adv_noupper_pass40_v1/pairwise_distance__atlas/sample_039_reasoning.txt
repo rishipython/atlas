@@ -1,0 +1,35 @@
+We need to provide a faster implementation. Use vectorized operations. Compute squared distance matrix as:
+
+dist = np.sum(X**2, axis=1)[:,None] + np.sum(X**2, axis=1)[None,:] - 2 * X @ X.T
+
+Return float64. Ensure shape (N,N). Use np.dot.
+
+Edge cases: X may not be float64? But dtype float64.
+
+We should maintain numeric closeness. This formula gives exact same result.
+
+We also need to handle potential negative small numbers due to floating errors; set to zero if negative? But np.allclose will accept small differences. The formula might produce negative values close to zero due to rounding. But we can clip at zero.
+
+Thus:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    dist = sq_norm[:,None] + sq_norm[None,:] - 2*np.dot(X, X.T)
+    # numeric errors
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+This is fast.
+
+Now produce full file with imports.
+
+Add optional: if N==0 return empty array.
+
+Edge: If X is 1D? But shape (N,D). We can handle.
+
+Return dtype float64.
+
+Ok.
+
+Let's output final code.

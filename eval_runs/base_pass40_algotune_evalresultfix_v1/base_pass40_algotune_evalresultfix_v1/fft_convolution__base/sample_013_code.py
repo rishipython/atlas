@@ -1,0 +1,138 @@
+import numpy as np
+import logging
+from scipy import signal
+from typing import Dict, Any
+
+# --------------------------------------------------------------------------- #
+# Optimised FFT convolution implementation
+# --------------------------------------------------------------------------- #
+
+def _next_fast_len(n: int) -> int:
+    """
+    Find the next fast length for FFT (multiple of 2, 3, 5).
+    """
+    # Simple heuristic: next power of two
+    return 1 << (n - 1).bit_length()
+
+
+def _fft_convolve_real(x: np.ndarray, y: np.ndarray, mode: str) -> np.ndarray:
+    """
+    Perform linear convolution of two real 1‑D arrays using rfft/irfft.
+    """
+    len_x, len_y = len(x), len(y)
+
+    # Handle empty inputs
+    if len_x == 0 or len_y == 0:
+        return np.array([], dtype=np.float64)
+
+    # Direct convolution for very small signals
+    if len_x * len_y < 2000:
+        return np.convolve(x, y, mode)
+
+    # Linear convolution length
+    full_len = len_x + len_y - 1
+
+    # Choose FFT length (next power of two for speed)
+    nfft = _next_fast_len(full_len)
+
+    # Zero‑pad signals
+    X = np.fft.rfft(x, n=nfft)
+    Y = np.fft.rfft(y, n=nfft)
+
+    # Element‑wise multiplication in frequency domain
+    Z = X * Y
+
+    # Inverse transform and truncate to linear convolution length
+    conv = np.fft.irfft(Z, n=nfft)[:full_len]
+
+    # Select output mode
+    if mode == "full":
+        return conv
+    elif mode == "same":
+        # Center part of length max(len_x, len_y)
+        out_len = max(len_x, len_y)
+        start = (full_len - out_len) // 2
+        return conv[start : start + out_len]
+    elif mode == "valid":
+        out_len = max(0, max(len_x, len_y) - min(len_x, len_y) + 1)
+        if out_len == 0:
+            return np.array([], dtype=np.float64)
+        start = max(len_x, len_y) - out_len
+        return conv[start : start + out_len]
+    else:
+        raise ValueError(f"Unsupported mode: {mode}")
+
+
+class FFTConvolution:
+    """
+    Optimised solver for the FFT convolution task.
+    """
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two real signals using an efficient FFT approach.
+        """
+        try:
+            # Extract problem data
+            signal_x = np.asarray(problem["signal_x"], dtype=np.float64)
+            signal_y = np.asarray(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            # Compute convolution
+            result = _fft_convolve_real(signal_x, signal_y, mode)
+
+            # Return as list for JSON serialisation
+            return {"convolution": result.tolist()}
+
+        except Exception as exc:
+            logging.error(f"Error in FFTConvolution.solve: {exc}")
+            raise
+
+    def is_solution(self, problem: Dict[str, Any], solution: Dict[str, Any]) -> bool:
+        """
+        Validate the solution against scipy's reference implementation.
+        """
+        try:
+            if "convolution" not in solution:
+                logging.error("Missing 'convolution' key in solution.")
+                return False
+
+            student = np.asarray(solution["convolution"], dtype=np.float64)
+            if not np.all(np.isfinite(student)):
+                logging.error("Solution contains non‑finite values.")
+                return False
+
+            # Reference result using scipy
+            ref = signal.fftconvolve(
+                np.asarray(problem["signal_x"], dtype=np.float64),
+                np.asarray(problem["signal_y"], dtype=np.float64),
+                mode=problem.get("mode", "full"),
+            )
+
+            if student.shape != ref.shape:
+                logging.error(
+                    f"Shape mismatch: expected {ref.shape}, got {student.shape}"
+                )
+                return False
+
+            if not np.allclose(student, ref, rtol=1e-6, atol=1e-6):
+                diff = np.abs(student - ref)
+                logging.error(
+                    f"Numerical difference exceeds tolerance. "
+                    f"max={diff.max():.2e}, mean={diff.mean():.2e}"
+                )
+                return False
+
+            return True
+
+        except Exception as exc:
+            logging.error(f"Error in FFTConvolution.is_solution: {exc}")
+            return False
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point used by the evaluation harness.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)

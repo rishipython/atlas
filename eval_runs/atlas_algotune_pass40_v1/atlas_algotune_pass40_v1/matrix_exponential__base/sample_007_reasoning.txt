@@ -1,0 +1,29 @@
+We need to produce a fast implementation that matches scipy.linalg.expm. So easiest: import scipy.linalg.expm and call it. But we must keep function signature. That would be trivial but maybe too trivial? The goal is speed; using scipy's implementation is fast. But we need to ensure we don't violate any restrictions: we can import scipy. It's allowed. So implement:
+
+```
+import numpy as np
+from scipy.linalg import expm as _expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return _expm(A)
+```
+
+But we must ensure output dtype float64. scipy returns same dtype. Should be fine.
+
+However, maybe they want a custom implementation using Pade approximant and scaling/squaring. But calling scipy is simplest.
+
+But we must consider that the evaluator might not have scipy installed. But problem statement says we may import scipy. So okay.
+
+But we must ensure the function returns a copy? Not necessary. But we can return result.
+
+Let's ensure no side effects. Use np.asarray.
+
+Also maybe we need to handle non-square input: but spec says square. So fine.
+
+Return result.
+
+Edge cases: if A is not float64? But spec says float64.
+
+We can cast to float64: A = np.asarray(A, dtype=np.float64). But it's fine.
+
+Let's produce final code.

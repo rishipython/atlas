@@ -1,0 +1,79 @@
+max_iterations: 40
+checkpoint_interval: 5
+log_level: INFO
+random_seed: 42
+diff_based_evolution: true
+allow_full_rewrites: true
+max_code_length: 20000
+llm:
+  models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  evaluator_models:
+  - name: openai/gpt-oss-20b
+    weight: 1.0
+  api_base: http://localhost:8000/v1
+  api_key: EMPTY
+  temperature: 0.4
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 600
+  retries: 2
+  retry_delay: 5
+prompt:
+  system_message: "You are speeding up a Python numerical kernel. The reference implementation\n\
+    inside the EVOLVE-BLOCK is a correct-but-very-slow triple nested loop. Your\n\
+    job is to replace it with a much faster numpy / scipy / numba implementation\n\
+    that returns bitwise-close results on the same inputs.\n\n## Task\nImplement `pairwise_sq_dist(X)`\
+    \ for a 2-D float64 array X of shape (N, D).\nReturn the (N, N) matrix D where\
+    \ `D[i, j] == sum_k (X[i, k] - X[j, k])**2`.\n\n## Strategies (roughly in order\
+    \ of speedup)\n1. **Gram matrix trick.** D = ||X||^2 + ||X||^2.T - 2 X @ X.T,\
+    \ where\n   ||X||^2 is a length-N vector of per-row squared norms. ~100-1000x\n\
+    \   faster than the triple loop for small N, small D.\n2. **`scipy.spatial.distance.cdist(X,\
+    \ X, 'sqeuclidean')`.** Basically\n   free to write, usually matches or beats\
+    \ the Gram trick.\n3. **`numba.njit` on the triple loop.** Great speedup per line\
+    \ of code,\n   but numba has JIT overhead on the first call \u2014 the evaluator\
+    \ does a\n   warmup call so this is fine.\n4. **Avoid Python loops entirely.**\
+    \ Even a single `for i in range(N)`\n   with numpy broadcasting can be 20-100x\
+    \ slower than the fully\n   vectorised form for small inputs (function-call overhead\
+    \ dominates).\n\n## Correctness requirements\n- The output must have shape `(N,\
+    \ N)` and dtype `float64` (or a dtype\n  that compares equal under `np.allclose(...,\
+    \ rtol=1e-6, atol=1e-6)`).\n- `np.allclose` is used with `equal_nan=False`, so\
+    \ NaNs fail the check\n  even if both sides contain them. Clip tiny negative values\
+    \ produced\n  by `X @ X.T` rounding to 0 to avoid them turning into NaN downstream.\n\
+    \n## Response format\nOpenEvolve will apply SEARCH/REPLACE diffs to the EVOLVE-BLOCK\
+    \ or\naccept a full rewrite. Keep the function signature\n`pairwise_sq_dist(X:\
+    \ np.ndarray) -> np.ndarray` exactly.\n"
+  num_top_programs: 5
+  num_diverse_programs: 5
+  use_template_stochasticity: true
+  include_artifacts: true
+  max_artifact_bytes: 32768
+  suggest_simplification_after_chars: 8000
+database:
+  in_memory: true
+  log_prompts: true
+  population_size: 200
+  archive_size: 30
+  num_islands: 4
+  migration_interval: 20
+  migration_rate: 0.1
+  elite_selection_ratio: 0.2
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.6
+  feature_dimensions:
+  - score
+  - complexity
+  feature_bins: 10
+evaluator:
+  timeout: 180
+  max_retries: 2
+  parallel_evaluations: 1
+  cascade_evaluation: false
+evolution_trace:
+  enabled: true
+  format: jsonl
+  include_code: true
+  include_prompts: true
+  buffer_size: 1
+  compress: false

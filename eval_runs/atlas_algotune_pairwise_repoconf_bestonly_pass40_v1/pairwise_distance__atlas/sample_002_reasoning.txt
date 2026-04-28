@@ -1,0 +1,18 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. Classic: use broadcasting or matrix operations: D = X^2 sum + X^2 sum - 2 X X^T. For numeric stability, use np.dot. Implementation: compute norms = np.sum(X**2, axis=1). Then D = norms[:, None] + norms[None, :] - 2 * X @ X.T. Ensure dtype float64. Might have negative small due to numerical errors; set to zero via np.maximum(D, 0). Return D.
+
+We should preserve same shape and dtype. Use np.asarray to ensure float64. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X * X, axis=1)
+    D = norms[:, None] + norms[None, :] - 2 * X @ X.T
+    D = np.maximum(D, 0)
+    return D
+
+Edge cases: if X shape (N, D). Works.
+
+Add imports. Provide entire file. Ensure function signature same.
+
+Return type np.ndarray.
+
+Let's produce final code.

@@ -1,0 +1,23 @@
+We need to implement conv1d efficiently. Use numpy. We can use np.fft.fft convolution. For real arrays, we can use np.fft.fft. Use real-to-complex. Use np.fft.rfft? But we want real output. We can use np.fft.fft(x, n) * np.fft.fft(h, n) and then ifft. The length of full convolution is N+M-1. The FFT length should be at least N+M-1, choose next power of two for speed. Use np.fft.rfft for real arrays and then ifft. But we need to get real output. Use np.fft.irfft. Let's implement: n = N+M-1; nfft = 1 << (n-1).bit_length() . Then compute X = np.fft.rfft(x, nfft), H = np.fft.rfft(h, nfft). Y = X*H; y = np.fft.irfft(Y, nfft); return y[:n]. Use dtype float64. That should be fine.
+
+But need to ensure numerical equality within tolerance. Should be fine.
+
+Edge cases: if N or M is 0? Not possible. But handle.
+
+Also if N+M-1 is 1? Then nfft=1? rfft of size 1 returns 1 element. Works.
+
+Ok.
+
+We need to import numpy as np.
+
+Return same dtype float64.
+
+Add docstring.
+
+Let's produce final code.
+
+Check that conv1d returns array of length N+M-1.
+
+Testing quickly with small arrays.
+
+Ok.

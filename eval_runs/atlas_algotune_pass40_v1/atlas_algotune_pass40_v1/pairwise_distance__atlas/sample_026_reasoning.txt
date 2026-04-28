@@ -1,0 +1,30 @@
+We need to implement faster pairwise squared Euclidean distances. Standard formula: D = A + B - 2C where A is row-wise sum of squares, B same but transposed, C = X @ X.T. So compute dot product. Use np.dot or @. Ensure dtype float64. Should be efficient. Provide function pairwise_sq_dist with same signature.
+
+Edge cases: negative values fine. Input dtype float64. We'll compute:
+
+sq_norms = np.sum(X**2, axis=1).reshape(-1,1)  # (N,1)
+dist = sq_norms + sq_norms.T - 2 * X @ X.T
+
+Make sure result non-negative due to numerical errors: clip to zero.
+
+Return dist.
+
+Also may use np.dot(X, X.T). Use np.maximum(0, dist) to avoid small negative.
+
+Return as float64.
+
+Testing: Should match reference for random arrays.
+
+Also ensure memory: for large N maybe memory heavy but okay.
+
+Let's produce code.
+
+Also need to import numpy as np at top.
+
+Define function.
+
+Return dist.
+
+That's it.
+
+Let's produce final code.

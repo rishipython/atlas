@@ -1,0 +1,34 @@
+We need to replace reference with fast implementation. Use scipy.linalg.expm or np.linalg.matrix_power? But we need speed. We can use scipy.linalg.expm. But must keep same signature. Just call scipy.linalg.expm. That is fast and accurate. But maybe we need to import scipy.linalg. That's allowed.
+
+However, maybe they want something faster than naive but still numpy. But easiest is to delegate to scipy.linalg.expm. That will match reference outputs exactly. Let's check: They want "matches scipy.linalg.expm(A) within tight tolerance". So we can just return scipy.linalg.expm(A). That is fine.
+
+But we should also consider that SciPy may not be available? But they allowed to import scipy. So fine.
+
+However, we might want to handle small matrices? But fine.
+
+Edge cases: Input is float64. We return matrix of same shape.
+
+Implement:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But to be safe, ensure dtype float64. expm returns float64.
+
+We might add np.asarray(A, dtype=np.float64) to ensure.
+
+Also we might consider caching if repeated calls? Not needed.
+
+Thus solution file.
+
+But maybe they want to avoid external libs? But SciPy is allowed. Use SciPy.
+
+Ok.
+
+Also we may include docstring same as reference.
+
+Let's produce file.
+

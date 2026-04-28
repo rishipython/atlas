@@ -1,0 +1,79 @@
+We need to produce faster implementation of 1-D convolution. The reference uses direct loops. We can use numpy's FFT or scipy.signal.fftconvolve. But need to ensure numerical close. Use np.fft.fft? For real signals, we can use np.fft.rfft? But easiest: use scipy.signal.fftconvolve. But we may not want to rely on SciPy? The environment likely has SciPy. But we can also implement using numpy.fft.fft. Use np.fft.fft to compute convolution.
+
+Define conv1d(x,h):
+
+- Ensure x,h are 1-D float64 arrays.
+
+- Compute lengths: N, M.
+
+- Compute total length L = N + M - 1.
+
+- Compute next power of 2? Not necessary but speed.
+
+- Use np.fft.fft(x, n=L) etc.
+
+- Multiply pointwise, inverse fft, take real part.
+
+- Possibly small rounding errors; use np.real.
+
+Return array of length L.
+
+Make sure dtype is float64.
+
+Edge cases: x or h empty? Problem likely not.
+
+Also we need to preserve the same semantics: full convolution.
+
+Implement:
+
+def conv1d(x, h):
+
+    x = np.asarray(x, dtype=np.float64)
+
+    h = np.asarray(h, dtype=np.float64)
+
+    N = x.size
+
+    M = h.size
+
+    L = N + M - 1
+
+    # next power of 2 for speed? Use np.fft.next_fast_len
+
+    nfft = np.fft.next_fast_len(L)
+
+    X = np.fft.rfft(x, nfft)
+
+    H = np.fft.rfft(h, nfft)
+
+    Y = X * H
+
+    y = np.fft.irfft(Y, nfft)
+
+    return y[:L]
+
+Return float64.
+
+We also need to import numpy.
+
+This should produce numerically close.
+
+We also might need to consider that the reference uses dtype float64 and real numbers. Using rfft and irfft ensures real output.
+
+Alternatively, use np.fft.fft and ifft. But rfft is faster.
+
+Edge: if nfft=0? Not possible.
+
+Ok.
+
+Also, if x or h has dtype not float64? We cast.
+
+Add docstring maybe.
+
+Return.
+
+Make sure we don't import scipy.
+
+Ok.
+
+Let's produce final code.

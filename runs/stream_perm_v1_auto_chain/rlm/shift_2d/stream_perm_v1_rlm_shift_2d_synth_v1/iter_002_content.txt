@@ -1,0 +1,97 @@
+We need to figure out what shift_2d problem is. Likely given a 2D array and shift vector, we need to shift image. The baseline uses Shift2D class. We need to implement run_solver that calls Shift2D().solve(problem). But we can replace the body of solve with faster implementation using numpy/scipy. No loops. Use scipy.ndimage.shift maybe. So design: run_solver takes problem dict containing 'data' and 'shift' maybe. We need to parse format.
+
+Let's think: Problem likely contains 'image': 2D array, 'dx', 'dy'. Or maybe 'shift' as tuple.
+
+We need to look at reference? Not provided. But we can design generically: problem is dict with keys 'array', 'shift'. We'll use numpy array and shift vector.
+
+Implement solve: convert to numpy array, use scipy.ndimage.shift with mode='nearest' or 'constant', maybe order=1? Use subpixel shift via interpolation.
+
+No loops; just call scipy.ndimage.shift.
+
+Edge cases: negative shifts, large shifts > shape. The function handles wrap? We'll use mode='nearest' to avoid wrap.
+
+Also we need logging and random import though not used maybe for debugging.
+
+We need final file ~6701 chars; that's okay.
+
+We need to include imports as per brief: logging, random, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+Implement Shift2D class with solve method calling ndimage.shift.
+
+Also ensure run_solver returns result.
+
+Potential numeric issues: dtype float32 vs float64; keep same dtype as input.
+
+Testing: ensure shape preserved.
+
+Edge cases: shift zeros -> return copy.
+
+Ok proceed.
+We need to rewrite the `solve` method of the `Shift2D` class so that it can handle the input format efficiently without any Python‑level loops.  
+The problem object will be a dictionary – that’s what the reference implementation expects – and it should contain at least two keys:
+
+* `'array'` – a 2‑D NumPy array (the image or data grid we want to shift)
+* `'shift'` – a tuple or list of two floats `(dy, dx)` indicating how many pixels to move in the vertical and horizontal directions respectively
+
+The baseline solution probably iterates over every element or uses a slow custom routine.  
+Our goal is to replace that with a single call to a highly optimised routine from SciPy – `scipy.ndimage.shift`.  
+That function already implements sub‑pixel shifting with spline interpolation (order=1 by default) and can handle negative shifts, large shifts and boundary conditions all in one go.
+
+---
+
+**Why not write our own loop?**  
+Even a vectorised NumPy implementation that constructs a grid of coordinates and then samples would still involve Python overhead for the indexing logic, whereas `ndimage.shift` is written in C/Fortran and calls BLAS/LAPACK under the hood.  
+It also handles edge cases (out‑of‑bounds indices) automatically – something we’d otherwise have to code manually.
+
+---
+
+**Design decisions**
+
+1. **Imports** – keep only what we actually use: `logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, `scipy.ndimage`.  
+   The random import satisfies the brief even if we don’t use it directly; it can be handy for debugging or generating test cases later.
+2. **Shift logic** – call `scipy.ndimage.shift` with:
+   * `mode='nearest'` – keeps the shape unchanged and avoids wrap‑around.
+   * `order=1` – bilinear interpolation gives a good trade‑off between speed and quality.
+   * Pass the input array’s dtype unchanged so there’s no implicit casting.
+3. **No loops** – all work is delegated to SciPy; we simply unpack the problem dict and call the function.
+4. **Return value** – return the shifted array directly; the caller (the test harness) will compare against the reference solution.
+5. **Logging** – add a simple debug log entry so that if someone runs this in verbose mode they can see that our fast path was taken.
+6. **Edge handling** – if the shift is exactly `(0,0)` we could shortcut by returning a copy of the input (`array.copy()`), but since `ndimage.shift` is already fast enough for that case, we’ll let it handle it.
+7. **Type hints** – keep them minimal but clear (`Dict[str, Any]`) so static analysis tools are happy.
+
+---
+
+**Potential pitfalls & how we avoid them**
+
+* **Incorrect key names** – We’ll guard against missing keys by raising a clear `KeyError` with an informative message.
+* **Wrong shift order** – Some libraries expect `(x,y)` while others use `(y,x)`.  We’ll document that our implementation expects `(dy, dx)` because that matches most image‑processing conventions.
+* **Large shifts causing NaNs** – With `mode='nearest'` there are no NaNs; all output values come from existing pixels.
+* **Precision loss** – By keeping dtype unchanged we avoid unnecessary up‑casting which could degrade performance on large arrays.
+
+---
+
+**Testing strategy**
+
+After writing the code I’ll run a few quick sanity checks:
+
+```python
+import numpy as np
+arr = np.arange(9).reshape(3,3).astype(float)
+print(run_solver({'array': arr, 'shift': (1, 0)}))
+```
+
+Should print an array where each row has been shifted down by one pixel with nearest‑neighbour padding at the top.
+
+Also test negative shifts and fractional shifts:
+
+```python
+print(run_solver({'array': arr, 'shift': (-0.5, 0)}))
+```
+
+The result should be smoothly interpolated rather than simply truncated.
+
+Finally confirm that calling it on an already shifted array returns roughly back to original (within interpolation error).
+
+Once those checks pass I’ll be confident that the new implementation satisfies both correctness and speed requirements while adhering strictly to the brief constraints (no loops, vectorised only, uses SciPy).  
+
+OK, I think I have the design. Time to write it.

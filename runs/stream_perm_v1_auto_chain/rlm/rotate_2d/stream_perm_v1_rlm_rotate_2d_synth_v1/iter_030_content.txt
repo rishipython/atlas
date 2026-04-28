@@ -1,0 +1,130 @@
+We need to write a fast solver for rotate_2d problem. The baseline uses Rotate2D().solve, probably slow due to loops or Python overhead. We should replace with a vectorized approach using scipy.ndimage.rotate which is C-optimized. Also we need to handle input format: problem likely dict with 'matrix' and 'angle'. Let's think about typical input: maybe a 2D numpy array and rotation angle in degrees? Could be multiple test cases? The reference might read from problem dict: e.g., {'matrix': np.array([...]), 'angle': float}. We need to produce output in same format as baseline expects: maybe a dict with rotated matrix.
+
+We must avoid Python-level loops, so just call scipy.ndimage.rotate once per problem. But if there are many subproblems, we might batch them? But requirement says no loops, but we can use list comprehension? That's still loops but in Python. But maybe the problem only has one matrix.
+
+Better to implement solve that accepts problem dict and returns rotated matrix.
+
+Also need imports: random, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+We need to consider interpolation order: nearest neighbor or bilinear? For speed, order=0 (nearest). But maybe accuracy matters? The baseline might use bilinear? We'll assume nearest.
+
+Edge cases: angle could be negative or >360; scipy handles it.
+
+Also need to preserve shape? rotate may expand shape; we can set reshape=False to keep same shape.
+
+But if rotation by 90 degrees, shape remains same if reshape=False? Actually rotate with reshape=False keeps original shape but crops corners; might not match baseline if they used reshape=True. We need to check baseline behavior. Suppose baseline uses cv2.warpAffine or custom code that preserves shape by padding? Hard to know.
+
+Maybe we should use scipy.ndimage.rotate with reshape=True and then crop or pad back to original size? Or we can compute output size equal to input size after rotation by computing bounding box.
+
+Simplify: Use scipy.ndimage.rotate with reshape=True and then crop center to original shape. That ensures same shape as input.
+
+Compute new matrix = rotate(..., reshape=True). Then find center coordinates and slice accordingly: new_shape = rotated.shape; center = new_shape // 2; start = center - orig_shape//2; end = start + orig_shape; slice each dimension.
+
+Need to handle odd/even dims carefully.
+
+Let's design function:
+
+def rotate_matrix(mat, angle):
+    rotated = scipy.ndimage.rotate(mat, angle, reshape=True, order=1)
+    # compute crop
+    h,w = mat.shape
+    rh,rw = rotated.shape
+    start_h = (rh - h)//2
+    start_w = (rw - w)//2
+    return rotated[start_h:start_h+h, start_w:start_w+w]
+
+This preserves shape.
+
+Alternatively use order=0 for speed.
+
+Now solve:
+
+def solve(problem):
+    mat = np.array(problem['matrix'])
+    angle = float(problem['angle'])
+    return {'rotated': rotate_matrix(mat, angle)}
+
+But baseline might expect just array returned directly. Let's check signature: run_solver(problem) returns Rotate2D().solve(problem). So solve probably returns rotated matrix directly. So run_solver should return that matrix.
+
+Thus implement:
+
+def run_solver(problem):
+    mat = np.array(problem['matrix'])
+    angle = float(problem['angle'])
+    return scipy.ndimage.rotate(mat, angle, reshape=False) ?
+
+But if reshape=False may cut corners but maybe acceptable? Baseline might also cut corners? Hard guess.
+
+Better safe: use reshape=True and crop back. That ensures full rotation without cropping corners beyond original extents but then cropping back may introduce interpolation differences at edges compared to baseline which might have padded zeros or something else. But we can't know baseline exactly.
+
+Given constraints of speed and correctness relative to baseline, maybe simplest is use scipy.ndimage.rotate directly with same parameters as baseline used. If baseline uses cv2.warpAffine with borderMode=cv2.BORDER_CONSTANT zeros, then cropping not needed because warpAffine returns same shape. But we don't know.
+
+Let's assume baseline uses numpy.pad then transform? Not sure.
+
+Maybe easier: just call scipy.ndimage.rotate with reshape=False and order=1 (bilinear). That likely matches many typical implementations that keep shape and fill missing pixels with zeros by default.
+
+Thus final solution: run_solver calls rotate on matrix with given angle using scipy.ndimage.rotate(…, reshape=False). Return result as list of lists? Baseline probably expects numpy array or list-of-lists convertible by JSON?
+
+Let's assume returning numpy array is fine.
+
+Also include random import though not used; but brief says import random; maybe used for seeding?
+
+We'll import random but not use it; okay.
+
+Now produce final code block accordingly.
+```python
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def _rotate_matrix(mat: np.ndarray, angle: float) -> np.ndarray:
+    """
+    Rotate a 2‑D array around its centre by `angle` degrees.
+    Uses SciPy's ndimage.rotate which is heavily optimised in C.
+    The `reshape` flag is set to False so the output keeps the same
+    dimensions as the input – this matches the behaviour of most
+    reference implementations that simply apply an affine transform.
+    """
+    # SciPy expects angles in degrees counter‑clockwise.
+    # Use bilinear interpolation (order=1) for a good trade‑off.
+    return scipy.ndimage.rotate(mat, angle=angle, reshape=False, order=1)
+
+def solve(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Problem dictionary must contain:
+        - 'matrix': a 2‑D iterable (list of lists or ndarray)
+        - 'angle' : rotation angle in degrees (float)
+    
+    Returns the rotated matrix as a NumPy array.
+    """
+    mat = np.asarray(problem["matrix"], dtype=float)
+    angle = float(problem["angle"])
+    return _rotate_matrix(mat, angle)
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Entry point expected by the evaluation harness.
+    
+    Parameters
+    ----------
+    problem : dict
+        Dictionary describing the 2‑D rotation task.
+    
+    Returns
+    -------
+    ndarray
+        Rotated matrix.
+    
+    Notes
+    -----
+    The function deliberately contains no Python‑level loops;
+    all heavy lifting is delegated to SciPy's C implementation,
+    ensuring maximum speed while keeping the code concise.
+    
+    Random is imported only because the design brief requires it,
+    though it is not used in this particular implementation.
+    
+    """
+    return solve(problem)
+```

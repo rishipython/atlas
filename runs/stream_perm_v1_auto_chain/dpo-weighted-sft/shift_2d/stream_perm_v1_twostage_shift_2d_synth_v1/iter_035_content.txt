@@ -1,0 +1,161 @@
+We need to figure out what shift_2d problem is. Likely shift 2D array by some offset? Maybe aligning images? Let's assume problem dict contains 'image', 'shift', etc. But we need to produce generic solver. Let's think: The baseline uses Shift2D class with solve method. We need to replace with faster implementation. Use numpy and scipy.ndimage for shift. No loops.
+
+We need to import logging, random, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+We need to define run_solver(problem) that returns solution. Use vectorized operations.
+
+Maybe problem contains 'data': 2D array, 'shift': tuple of ints? Or maybe 'grid' and we need to shift by fractional amounts using interpolation.
+
+Use scipy.ndimage.shift for subpixel shift with order=1 or 3. That uses FFT internally? It's efficient.
+
+We can also use np.roll for integer shifts.
+
+We must avoid loops: no python-level loops over pixels.
+
+Edge cases: negative shifts, out-of-bounds: we can set mode='constant', cval=0.
+
+Also maybe the problem wants to compute cross-correlation and find best shift? But baseline slow may use brute force search over shifts. We can accelerate by using FFT-based cross-correlation: compute FFT of image and reference, multiply, inverse FFT, find peak. That's vectorized.
+
+But we don't know exact requirement. Let's assume problem dict contains 'image' and 'target', want to compute shift that aligns them. Use scipy.signal.correlate2d? But that's slower than FFT.
+
+Use scipy.signal.fftconvolve for cross-correlation.
+
+But design brief says use scipy functions somewhere; no loops; vectorized; final file ~11867 chars (but we don't have to match length). Just produce design.
+
+We'll propose using numpy arrays and scipy.ndimage.shift or fftconvolve.
+
+Edge cases: if problem missing keys, raise ValueError.
+
+Also random seed for reproducibility? random import maybe used for debugging?
+
+We'll create a function shift_image(image, shift) that uses np.roll for integer part and ndimage.shift for fractional part combined: shift = (dy, dx). integer = np.floor(shift). fractional = shift - integer. Use roll then ndimage.shift with order=3 and mode='constant'.
+
+Alternatively directly use ndimage.shift with shift argument including fractional part; it handles both integer and fractional in one call.
+
+So simplest: return scipy.ndimage.shift(image, shift=shift, order=3, mode='constant', cval=0).
+
+Thus run_solver just calls that on problem['image'] with problem['shift'].
+
+But baseline might be more complex: maybe it needs to compute optimal shift by minimizing sum of squared differences between image and reference over a grid of possible shifts. We can accelerate by computing cross-correlation via FFT once per pair instead of looping over shifts.
+
+Let's design: If problem has 'source' and 'target', we compute cross-correlation via fftconvolve of source and flipped target; find argmax gives best shift. Use scipy.signal.correlate2d with mode='valid' or full; but we can use fftconvolve from scipy.signal which is efficient.
+
+Thus algorithm:
+
+- src = problem['source']; tgt = problem['target']
+- Compute cross_corr = scipy.signal.correlate2d(src, tgt[::-1,:][::-1,:], mode='full')
+- Find max index via np.unravel_index(np.argmax(cross_corr), cross_corr.shape)
+- Compute shift = (index[0] - src.shape[0]+1, index[1] - src.shape[1]+1)
+- Apply shift to src via ndimage.shift or roll
+- Return shifted image as solution
+
+This is vectorized no loops.
+
+Need imports: logging, random (maybe not used), typing.Any Dict, numpy as np, scipy.ndimage
+
+Also need scipy.signal for fftconvolve or correlate2d; but brief didn't mention signal but okay.
+
+Better use fftconvolve from scipy.signal; but brief only lists imports; we can import from scipy.signal too if needed but brief didn't specify but allowed?
+
+It said imports: logging; random; typing.Any Dict; numpy as np; scipy.ndimage
+
+Only those imports required? Might be okay to import more but not necessary.
+
+But we can implement cross-correlation manually using FFT via numpy's fft2 which is also fast. Use np.fft.fft2 on padded arrays then multiply conj etc.
+
+Let's design:
+
+def compute_best_shift(src,tgt):
+    # pad both to next power of two size sum dims
+    shape = tuple(np.array(src.shape)+np.array(tgt.shape)-1)
+    f_src = np.fft.rfftn(src, shape)
+    f_tgt = np.fft.rfftn(np.flipud(np.fliplr(tgt)), shape)
+    corr = np.fft.irfftn(f_src * f_tgt.conj(), shape)
+    idx = np.unravel_index(np.argmax(corr), corr.shape)
+    # compute shift
+    dy = idx[0] - src.shape[0] + 1
+    dx = idx[1] - src.shape[1] + 1
+    return dy,dx
+
+Then apply shift via ndimage.shift(image,(dy,dx),order=3)
+
+This uses only numpy and scipy.ndimage; no loops.
+
+Edge cases: if shapes mismatched? Ensure dtype float64 for accuracy.
+
+Also handle if problem dict contains 'shift' key directly then just apply that shift instead of computing optimal one.
+
+Thus run_solver:
+
+def run_solver(problem):
+    if 'shift' in problem:
+        img = problem.get('image')
+        return scipy.ndimage.shift(img, problem['shift'], order=3)
+    elif 'source' in problem and 'target' in problem:
+        src=problem['source']; tgt=problem['target']
+        dy,dx=compute_best_shift(src,tgt)
+        return scipy.ndimage.shift(src,(dy,dx),order=3)
+    else:
+        raise ValueError("Unsupported problem format")
+
+Also add logging info about chosen method.
+
+Now consider numerical precision: use float32 maybe faster but risk precision loss; use float64 default.
+
+Also consider if image large memory overhead from padding in FFT; but okay.
+
+Now think about alternative designs:
+
+Design A: Use direct brute-force search over possible shifts within small range using numpy broadcasting difference sums; slower but simple. Reject because loops needed or heavy memory usage if vectorized across all shifts may blow memory.
+
+Design B: Use SciPy's correlate2d which does convolution directly using FFT under hood maybe slower than manual FFT? But simpler code. Acceptable but might not meet speed target if large images due to overhead of Python call each time? But still fine.
+
+Design C: Use JAX jitted function for shifting and correlation; could be fast but requires JAX installation overhead maybe heavy; plus no loops needed anyway but JIT compile cost may offset benefit for small tasks. Might not be necessary given SciPy already optimized C code.
+
+Thus choose manual FFT approach with numpy's rfftn/irfftn which are fast C-coded too. No loops at Python level except small ones for indexing etc which are fine.
+
+Edge cases: If input arrays are not 2D? Raise error or flatten?
+
+If dtype is complex? We assume real images grayscale floats/ints convert to float64 automatically by numpy operations when performing FFT; ensure conversion before operations using .astype(np.float64).
+
+Also handle negative shifts when applying ndimage.shift: works fine with negative values producing padding on opposite side due to mode='constant'.
+
+Test case sanity:
+
+- Problem dict with image 100x100 array and shift (5,-3): should return rolled image with zeros inserted accordingly.
+- Problem dict with source & target arrays same size 256x256: compute best alignment shift maybe zero if identical else something else.
+- Ensure output shape same as input shape after shifting (ndimage.shift preserves shape).
+
+Potential performance improvements: precompute next power-of-two size once per call; use rfftn which reduces memory by half because real input -> complex output real-only frequencies along last axis? Actually rfftn returns half-size along last axis only if real input along all axes? For 2D real input returns shape (M,N//2+1). But we need full shape for inverse transform so irfftn will reconstruct properly given shape param equal original padded shape size M,N maybe N//2+1? Wait rfftn returns shape (M,N//2+1). Then irfftn expects same shape plus original last dimension size N? Actually irfftn expects shape argument equal original full dimensions? According to docs irfftn accepts input array of shape (..., n_fft//2+1) where n_fft is length of last dimension of output array after inverse transform. So we must pass original padded shape dims (M,N). Good.
+
+Thus f_src = rfftn(src_padded) where src_padded has shape padded_shape (M,N). Similarly f_tgt flipped padded same shape M,N. Then multiply f_src * f_tgt.conj() elementwise then irfftn(..., padded_shape) yields full correlation array of shape M,N (real). Good.
+
+Compute idx via argmax on corr flattened then unravel_index using corr.shape which is M,N not original dims sum minus one? Actually correlation result size is M,N where M=Npadded dims sum minus one? Wait padded_shape=M=Npadded dims sum minus one along each dimension individually because padding ensures convolution result fits exactly without wrap-around when using linear convolution via FFT with zero padding equal sum dims minus one each dimension separately. So padded_shape must be next power-of-two >= src.shape[0]+tgt.shape[0]-1 etc. So correct correlation result size is padded_shape M,N which equals sum dims minus one padded up to power-of-two. The true linear convolution result size would be src.shape[0]+tgt.shape[0]-1 etc inside this padded array at indices [0:M], [0:N]. So argmax may find index > true size if padding includes zeros beyond true convolution area; but zeros won't be maximum unless all correlation values negative or zero which unlikely unless images all zeros. To avoid confusion we can crop correlation result back to true linear conv size before argmax:
+
+true_shape = (src.shape[0]+tgt.shape[0]-1, src.shape[1]+tgt.shape[1]-1)
+corr_cropped = corr[:true_shape[0], :true_shape[1]]
+idx_true = np.unravel_index(np.argmax(corr_cropped), true_shape)
+
+Then compute dy/dx accordingly as above subtract src.size -1 etc yields correct shift within range [-tgt.size+1,...].
+
+Thus implement cropping step ensures accurate peak detection even with padding zeros at edges due to next power-of-two larger than true conv size leading extra zeros at high indices that could incorrectly be max if all correlations zero beyond edges (unlikely). But safe anyway.
+
+Now complexity wise O(MN log MN) where MN ~ next pow-of-two > sum dims product ~ about 4x larger than product of sums maybe fine.
+
+Now decide whether to use rfftn vs fftn: rfftn reduces memory/time by factor ~2 along last axis only; good enough because input real both axes so could use rfftn on both axes giving half-size along last axis only not both axes though still benefit maybe minimal compared to full fftn; simpler code use fftn though overhead small relative overall cost maybe negligible relative speed improvement from avoiding loops anyway. We'll stick with fftn for simplicity since brief didn't mention rfft specifically but allowed any SciPy functions?
+
+But we want vectorized no loops so okay either way.
+
+Thus final design:
+
+Imports as required plus optionally import math or sys but keep minimal per brief only listed imports needed though others allowed but not necessary.
+
+Add logging configuration optional debug prints suppressed by default level warning maybe set by environment variable LOG_LEVEL else debug level unknown?
+
+Use random import maybe not used but include placeholder for potential future randomness like jittering initial guess?
+
+But design brief includes random import but not necessarily used in final code though allowed maybe used for seeding random generator when selecting initial guess if needed later but not required now; we could just leave unused import cause it's allowed though lint might warn but okay within constraints perhaps acceptable since brief lists it among imports meaning expected usage somewhere else maybe debug prints show random seeds etc.; Might just add a line like random.seed(42) at start of run_solver for reproducibility when generating synthetic test data inside function if any debug code uses randomness e.g., generating noise overlay etc.; But not necessary so might ignore or include trivial usage like `random.random()` just to satisfy presence requirement though unnecessary overhead minimal; better keep code clean though import unused may cause flake8 warning but not runtime error. Could just keep import even if unused fine in Python script executed without linting errors except warnings about unused imports may appear in some environments but likely fine here as it's a script executed by evaluation harness ignoring linter warnings. So keep import even unused safe enough.
+
+Now ensure final file includes run_solver function only expected entry point returning solution dictionary perhaps same structure as baseline expects? Baseline returns Shift2D().solve(problem) likely returns dictionary containing solution key e.g., {'solution': ...}. We should mimic that interface: return {'solution': shifted_image}. Or simply return shifted_image depending on baseline expectation unknown. But safe route: return shifted_image directly because baseline likely expects raw output rather than wrapper dict because they call solve(problem) expecting numeric array result used later in evaluation harness expecting numeric output type matching ground truth solutions computed earlier by reference implementation returning numeric array perhaps directly or wrapped dict? Without knowledge can't guarantee exact interface but likely they expect numeric array returned by solve() directly because typical algorithm tasks require numeric output value(s). The run_solver wrapper probably passes through that numeric output into evaluation harness expecting numeric array matching ground truth computed by reference baseline solution file reading from dataset etc.; So returning the shifted image array directly likely correct.
+
+However baseline might wrap into dict e.g., {'solution': ...} because they want metadata like cost etc.; But the design brief didn't mention metadata so likely just raw output array returned by solve() method of Shift2D class originally implemented probably returns a NumPy array representing the shifted image or something similar like best alignment parameters perhaps a tuple of ints indicating shift found plus cost metric value returned as dictionary containing those fields e.g., {'shift':(dy,dx),'cost':value}. Hard guess... Let's inspect typical AlgoTune tasks: They often ask optimize algorithm solving some optimization objective returning a solution object that includes objective value etc.; For example "shift_2d" might ask find optimal subpixel translation between two images minimizing squared error - output might be translation vector as tuple or array plus cost value maybe optional metrics like mean squared error after alignment returned as float inside dictionary keyed 'objective'. But baseline solve method probably returns dictionary containing these fields because evaluation harness expects these keys for scoring objective value difference vs reference baseline's objective value within tolerance thresholds defined in dataset config file "problem.json". Usually AlgoTune tasks provide a `reference_solution` file containing correct answer(s) including objective value(s). The evaluation harness compares returned solution's objective value(s) against reference within tolerance thresholds defined per field names specified in "config.json" under "objective" key mapping field names to tolerances e.g., {"objective": {"rtol": 1e-6,"atol": 1e-8}} etc. So our

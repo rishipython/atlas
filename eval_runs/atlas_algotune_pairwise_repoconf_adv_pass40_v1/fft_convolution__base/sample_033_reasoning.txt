@@ -1,0 +1,21 @@
+We need to replace with faster FFT convolution. Use scipy.signal.fftconvolve or numpy. But we must keep same signature and return same shape and dtype. We'll implement using numpy. But to be robust to small sizes we may fallback to direct convolution for small arrays. Use np.fft.fft. Use real FFT to avoid complex? We can use np.fft.rfft and irfft. But convolution length L = N+M-1. Need to zero pad to next power of 2 maybe. Use np.fft.fft with length L_fft = 1 << (L-1).bit_length().
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    L=N+M-1
+    L_fft=1<< (L-1).bit_length()
+    X=np.fft.rfft(x, L_fft)
+    H=np.fft.rfft(h, L_fft)
+    Y=X*H
+    y=np.fft.irfft(Y, L_fft)[:L]
+    return y.astype(np.float64)
+
+We need to ensure dtype float64. Input arrays may be float64. Use float64. Use np.fft.rfft.
+
+Edge cases: zero-length? Not likely.
+
+Return dtype float64.
+
+Let's produce final code.

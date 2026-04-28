@@ -1,0 +1,134 @@
+We need to speed up pairwise squared Euclidean distances. Let's think about standard vectorised formula: D = X^2 + X^2^T - 2 X X^T. Compute row norms squared, broadcast, then subtract. That uses matrix multiplication for XX^T. That's BLAS.
+
+But the brief says must use scipy functions somewhere. So maybe use scipy.spatial.distance.cdist? But that would be pure Python? cdist uses compiled code, but we want to combine with numba too. Maybe use numba for loops? But no Python loops allowed. We could write a numba JIT function that does the matrix multiplication via np.dot? But numba can compile np.dot calls.
+
+Alternatively, we can use scipy.linalg.blas.sgemm or dgemm directly to compute XX^T. That is definitely using scipy.
+
+So design: import numpy as np, import scipy.linalg.blas as blas, import numba.
+
+Compute norms = np.sum(X**2, axis=1).reshape(-1,1). Then compute cross = blas.dgemm(alpha=1.0, a=X, b=X.T, trans_a=False, trans_b=True). That returns shape (N,N). Then D = norms + norms.T - 2*cross.
+
+We need to ensure dtype float64. Use dtype=np.float64.
+
+Numba: maybe we can JIT the entire function to avoid overhead of Python call? But we still need to call blas inside numba? Not sure if numba supports calling scipy functions. It might not. We could JIT the whole computation with np.dot inside numba; that might be okay because np.dot is supported by numba.
+
+But the brief says must use scipy functions somewhere in solution. So we need to call something from scipy explicitly in code path executed at runtime. So we will call blas.dgemm.
+
+Now we need to incorporate numba JIT compilation: decorate function with @numba.njit or @numba.jit(nopython=True). But if we call blas.dgemm inside jit function, it might not be supported. I think numba cannot compile calls to arbitrary Python functions like scipy.linalg.blas.dgemm unless they are recognized as external C functions via ctypes? Might fail.
+
+Alternate: Use numba for computing the outer product of norms and broadcasting subtraction? That's trivial though.
+
+Maybe we can write a separate numba function that does the whole thing but uses np.dot inside; that's supported by numba (calls BLAS). Then separately call a scipy function like scipy.linalg.norm or something trivial just to satisfy requirement.
+
+But brief says "Uses scipy functions somewhere in the solution." Could be just import and maybe use scipy.spatial.distance.squareform? But that's not necessary.
+
+We could compute cross product via np.dot which under the hood uses BLAS; but that doesn't count as "scipy". So we must explicitly call a scipy function e.g., scipy.linalg.norm or scipy.linalg.blas.dgemm.
+
+Maybe easiest: Use scipy.linalg.norm to compute row norms squared: norms = np.sum(X**2, axis=1). But that's numpy anyway. We could compute cross via np.dot and then also call some trivial scipy function like `scipy.special.expit` just for side effect? But that's hacky.
+
+Better: Use `scipy.linalg.blas.dgemm` for cross product; that satisfies requirement.
+
+Now about numba: We can wrap entire function with @numba.njit and inside use numpy operations and dgemm? Might fail due to unsupported function call. Let's test mentally: In nopython mode, calling a Python function that is not recognized leads to error. So can't call dgemm inside jit.
+
+Thus alternative: Use numba for computing D via broadcasting and dot inside jit; but still need to call some scipy function outside jit. We can do:
+
+```
+@numba.njit
+def _compute(X):
+    N = X.shape[0]
+    out = np.empty((N,N), dtype=np.float64)
+    # compute cross
+    cross = X @ X.T
+    # compute norms
+    sq = np.sum(X**2, axis=1)
+    # fill out
+    for i in range(N):
+        for j in range(N):
+            out[i,j] = sq[i] + sq[j] - 2*cross[i,j]
+    return out
+```
+
+But this uses loops inside jit which are compiled; but requirement says no Python-level loops — all work is vectorised. However loops inside jit are compiled C loops; acceptable? The brief says "No Python-level loops — all work is vectorised." That likely means no explicit loops in Python code; but loops in numba are compiled C loops so maybe acceptable? But safer to avoid loops entirely even in jit.
+
+We can compute out directly with broadcasting: `out = sq[:,None] + sq[None,:] - 2*cross`. That's vectorised with numpy operations which are compiled by BLAS for dot but rest is array ops.
+
+So implement:
+
+```
+@numba.njit
+def _compute(X):
+    sq = np.sum(X**2, axis=1)
+    cross = X @ X.T
+    return sq[:,None] + sq[None,:] - 2*cross
+```
+
+This uses only numpy ops; no loops; good.
+
+Now outside this jit function we can call a scipy function like `scipy.linalg.norm(X)` maybe just to satisfy requirement but not used further. But that's silly; better use `scipy.linalg.blas.dgemm` explicitly inside main function (not jit) to compute cross instead of using @ operator which may not be recognized by SciPy but uses numpy's dot which calls BLAS behind scenes but not necessarily SciPy's interface.
+
+However requirement says "Uses **scipy** functions somewhere in the solution." So we must call at least one SciPy function at runtime. Could be `scipy.linalg.norm` or `scipy.linalg.lstsq` etc.
+
+Simplest: after computing result via _compute, we could apply `np.clip(out, 0)` or something and then multiply by `scipy.special.expit(0)`? No effect though.
+
+Better: Use `scipy.spatial.distance.cdist` on some dummy arrays just to get SciPy used? That seems hacky but would satisfy requirement technically though not meaningful.
+
+Maybe better: Replace cross computation using SciPy's dgemm directly within main (not jit). So main calls dgemm and then passes result to _compute which only does broadcasting etc without dot again. That would involve both SciPy and NumPy/BLAS inside dgemm; but _compute won't need dot again if cross already computed externally. Let's design:
+
+```
+def pairwise_sq_dist(X):
+    N,D=X.shape
+    # compute cross via dgemm
+    from scipy.linalg import blas
+    cross = blas.dgemm(alpha=1.0, a=X.astype(np.float64), b=X.T.astype(np.float64), trans_a=False, trans_b=False)
+    # compute squared norms
+    sq = np.sum(X**2, axis=1)
+    # broadcast subtract
+    out = sq[:,None] + sq[None,:] - 2*cross
+    return out
+```
+
+This has no loops, uses SciPy's dgemm, uses numpy ops only; no need for numba at all though requirement says must use numba JIT compilation somewhere in solution. So we need at least one @numba.njit decorated function used somewhere else maybe trivial like a helper that returns identity matrix or something; but must be used in computation path else it's dead code?
+
+We could wrap entire pairwise_sq_dist with @numba.njit after computing cross via SciPy's dgemm? But can't call SciPy from within jit as earlier discussed; but maybe we can compute cross outside then pass into jit-compiled helper that does broadcasting and returns result. That helper will be called from main; it's JIT compiled so counts as usage of numba.
+
+So design:
+
+```
+import numpy as np
+from scipy.linalg import blas
+import numba
+
+@numba.njit
+def _broadcast_sq(sq, cross):
+    return sq[:,None] + sq[None,:] - 2*cross
+
+def pairwise_sq_dist(X):
+    X = X.astype(np.float64)
+    N,D = X.shape
+    cross = blas.dgemm(alpha=1.0, a=X, b=X.T)
+    sq = np.sum(X**2, axis=1)
+    return _broadcast_sq(sq,cross)
+```
+
+This meets all constraints: uses SciPy's dgemm (function from SciPy), uses NumPy ops vectorised (no loops), uses matrix multiplication via BLAS through SciPy's interface (dgemm), uses numba JIT compilation on helper function that does broadcasting subtraction (though it's trivial). No Python-level loops anywhere else except maybe implicit ones in NumPy/BLAS etc but fine.
+
+Edge cases: small N or D zero? If D=0 then X shape (N,0). Then X.T shape (0,N). dgemm will produce zeros matrix shape (N,N)? Should work if D=0 because dot product of zero dims yields zeros. Sum of squares zero too -> output zeros matrix correct.
+
+Large N may cause memory issues but that's expected same as reference anyway.
+
+Need dtype consistency: cast X to float64 before passing to dgemm because input dtype float64 per spec; ensure cross dtype float64 too.
+
+Return type float64 as required.
+
+Check numeric closeness: formula is exact under floating arithmetic except potential rounding differences due to order of operations between our method vs triple loop method which sums squares sequentially per point pair vs our method sums row norms plus dot product difference may produce slightly different rounding errors but should be within tolerance given typical rtol/atol of tests (~1e-8?). Might be okay because both methods essentially same algebraic expression except ordering may differ slightly due to accumulation order of dot product vs sum of squares per pair computed sequentially vs vectorised sum of squares per row plus dot product computed by BLAS which accumulates differently than naive loop across k dimension for each pair separately. This might produce small differences up to machine epsilon times number of terms ~D * eps ~ 100 * 1e-16 ~ 1e-14 relative error perhaps fine within typical tolerances (~1e-8 absolute?). Should be fine.
+
+We should ensure broadcasting works with shapes (N,) -> (N,N) correctly producing float64 result same dtype as inputs and operations produce float64 automatically due to dtype of arrays being float64.
+
+Thus design ready.
+
+Edge case N=0? If X empty shape (0,D) then dgemm may error because dims zero? Might still work returning empty array shape (0,0). Sum squares yields empty array length 0 -> broadcast results empty -> fine. Should handle gracefully if needed.
+
+Thus final design seems good.
+
+OK now handoff sentence.
+OK, I think I have the design. Time to write it.

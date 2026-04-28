@@ -1,0 +1,40 @@
+We need to produce a fast implementation. Use numpy. Use np.fft.fftconvolve? But we can implement ourselves: use np.fft.fft with appropriate size. The input arrays are float64. For speed, use np.fft.rfft? But conv1d expects full convolution, so length N+M-1. We can use np.fft.fft of length next power of two >= N+M-1. Use np.fft.fft on real arrays? Use np.fft.rfft of length L. But must handle real. Implementation:
+
+```
+def conv1d(x,h):
+    N=x.shape[0]; M=h.shape[0]
+    L = N+M-1
+    nfft = 1<< (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, nfft)[:L]
+    return y
+```
+
+But need to ensure dtype float64. np.fft.rfft returns complex64? Actually returns float64 if input float64? It returns complex128. That's fine. For speed, maybe use np.fft.fft of complex? But rfft is more efficient for real input. Use irfft.
+
+Edge cases: If either x or h is empty? Input lengths >0. We'll handle.
+
+Should we use np.fft.fft with complex? Equivalent.
+
+But note: For small arrays, overhead of FFT may be slower than direct. But tests likely large.
+
+Also we can use scipy.signal.fftconvolve. But we can implement ourselves.
+
+Ok.
+
+Also we can handle dtype of output: float64.
+
+Implementation details: Use np.fft.rfft.
+
+Return y as float64.
+
+Testing: Should produce same as np.convolve.
+
+Let's produce file with imports and function.
+
+Also we can set `np.seterr(all='ignore')`? Not needed.
+
+Ok produce final.
+

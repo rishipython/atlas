@@ -1,0 +1,139 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a baseline using scipy.ndimage.affine_transform with order=3, mode='constant'. That's already vectorised and uses compiled code. How can we beat that? Maybe lower order, use float32, or use JAX or Numba? But scipy is already fast. However, we can potentially use a faster implementation of affine transform via SciPy's map_coordinates with precomputed grid or use OpenCV? But only allowed libs include numpy, scipy, etc. We can't import cv2.
+
+Maybe we can compute the transformation matrix inverse and apply coordinate mapping manually with np.meshgrid and map_coordinates? That might be slower.
+
+But maybe we can use scipy.ndimage.affine_transform but change dtype to float32 to reduce memory and speed up? Also set order=1 for linear interpolation maybe acceptable? But the spec requires cubic spline interpolation order=3. The reference uses order=3. Our solution must produce same result within tolerance. We could still use order=3 but maybe use float32 to speed up? However SciPy's affine_transform probably uses double precision internally; passing float32 may cast to float64 anyway.
+
+Alternatively, we can use JAX's jitted function to compute the transform manually using interpolation. But JAX may be slower for small images.
+
+Maybe we can use numba to jit a custom implementation that uses SciPy's map_coordinates but with precomputed coordinates arrays. That could be faster for many images? But here it's single image.
+
+Wait, maybe the bottleneck is not the transform but the overhead of converting lists to arrays etc. The baseline code converts problem["image"] which is a list of lists into numpy array implicitly when passed to scipy.ndimage.affine_transform; that conversion might be slow if image is large (n x n). But that's unavoidable; we can convert once.
+
+Also we can avoid creating intermediate arrays by using np.asarray on image and matrix at start.
+
+Also we can avoid try/except overhead by assuming inputs are valid.
+
+We can also precompute output shape and offset parameters for affine_transform: We could supply output_shape same as input shape; also provide offset computed from matrix inverse? But default uses identity offset zero.
+
+Maybe we can use SciPy's ndimage.affine_transform directly as baseline; any improvement might be minimal.
+
+But maybe we can use SciPy's zoom or rotate functions? No.
+
+What about using skimage.transform.warp with bilinear interpolation? Might be slower.
+
+Alternatively, we could implement the transform using FFT convolution if matrix is simple scaling/rotation? Not general.
+
+Thus likely the best improvement is to drop Python-level loops and just call scipy.ndimage.affine_transform once with correct parameters, ensure dtype conversion minimal, avoid exception handling overhead, maybe set order=3 but use 'constant' mode and cval=0.0 explicitly. That might be similar speed but cleaner code.
+
+But requirement: final solution ~4245 characters. That's quite long; implies many lines of code beyond trivial wrapper. Perhaps they expect us to implement a more elaborate solution: precompute coordinate grid once, use map_coordinates with vectorised coordinates, maybe using numba for faster interpolation loop?
+
+Let's consider writing a custom numba-accelerated affine transform: compute coordinates array of shape (n*n, 2) mapping output pixel positions back to input coordinates using inverse matrix; then call numba function that interpolates values from input image via cubic spline formula (which is complex). That would be too complex.
+
+Maybe simpler: Use scipy.ndimage.affine_transform but set order=1 (linear) for speed while still within tolerance? But spec says cubic spline interpolation (order=3). The verification uses rtol=1e-5 atol=1e-7 relative to reference computed by same method (order 3). So if we deviate order, mismatch will occur unless tolerance large enough. So cannot change order.
+
+Thus likely the best improvement is minimal: convert inputs quickly, call affine_transform once, return result as list-of-lists or numpy array as required by is_solution. The baseline already does that but has extra try/except overhead and conversion logic in is_solution only. In solve method they do try/except around affine_transform; that's fine but could remove some overhead by not catching exceptions unless necessary.
+
+Also they don't convert image/matrix from lists to arrays before passing; but numpy will convert automatically when calling affine_transform? It expects array-like; it will convert internally each time maybe via np.array() which copies data each call - that's expensive for large images. So better to convert once: image_np = np.asarray(problem["image"], dtype=np.float32) maybe cast to float32 if allowed. And matrix_np = np.asarray(problem["matrix"], dtype=np.float32). Then pass those arrays.
+
+Also we should set mode='constant', cval=0.0 explicitly in function call; this avoids default cval=0 anyway but okay.
+
+Also maybe specify output_shape equal to input shape: output_shape=image_np.shape ensures same shape without recomputation inside function.
+
+Thus solve method:
+
+```
+def solve(self, problem):
+    image = np.asarray(problem["image"], dtype=np.float32)
+    matrix = np.asarray(problem["matrix"], dtype=np.float32)
+    transformed_image = scipy.ndimage.affine_transform(
+        image,
+        matrix,
+        offset=[0,0],
+        output_shape=image.shape,
+        order=self.order,
+        mode=self.mode,
+        cval=0.0
+    )
+    return {"transformed_image": transformed_image}
+```
+
+No try/except needed if inputs valid.
+
+But requirement: final solution ~4245 characters implies many lines of code beyond this minimal solve method; perhaps they want us to implement a full class with logging etc similar to baseline but optimized heavily inside solve only? The brief says imports: logging; typing Dict, Any; numpy as np; scipy.ndimage; uses scipy functions somewhere; no Python-level loops; final solution ~4245 chars. So they expect a file with these imports and class etc similar structure but optimized solve method only difference being vectorised operations and minimal overhead. The rest of code may remain same as baseline except removing loops in solve maybe plus some small changes in is_solution? But is_solution remains unchanged because it's just validation; performance not critical there.
+
+But requirement "No Python-level loops — all work is vectorised." In solve method no loops indeed. In is_solution there are loops like iterating over list elements when converting list-of-lists? Actually they convert list->np.array which internally loops but that's fine because it's C-level loop not Python-level loops. They also iterate over proposed_list elements when converting list-of-lists into numpy array via np.asarray - that's vectorised too.
+
+Thus minimal changes are okay.
+
+But final solution length 4245 chars suggests more than trivial modifications - maybe they expect us to rewrite entire file with some additional features like caching matrix inverse or using numba for faster coordinate mapping? Or perhaps they want us to implement an alternative algorithm using FFT-based convolution for certain transforms like scaling/rotation which may be faster than generic affine_transform for large images? But that would be complicated and not generic.
+
+Let's examine possibility of using SciPy's ndimage.affine_transform with precomputed inverse matrix and offset:
+
+The function signature: `affine_transform(input, matrix, offset=0., output_shape=None, order=3, mode='constant', cval=0., prefilter=True)`. It expects matrix as array that maps output coordinates to input coordinates (i.e., transformation from output space back into input). For standard forward transform given by 2x3 matrix [A|b], where A is 2x2 linear part and b translation vector applied forward (x_out = A x_in + b). To use affine_transform you need its inverse mapping: x_in = A^{-1} (x_out - b). So you need matrix_inv = A^{-1} and offset = -A^{-1} * b. So you could compute those once per solve call instead of letting affine_transform compute them internally each call? Actually I think affine_transform expects matrix directly as forward mapping from output coords back into input coords? Wait reading docs: `matrix` transforms coordinates from output space into input space: i.e., it applies the inverse transform of the one specified by the user if you provide forward transform directly? Let's confirm: In SciPy docs: "The transformation matrix must be a square array that maps coordinates in the output space into coordinates in the input space." So yes you need inverse mapping. If user provides forward transform [A|b], you must compute inverse transformation [A^{-1} | -A^{-1}*b] and pass that as matrix (for 2x2 part) plus offset argument (or combine into offset?). Actually `affine_transform` has separate `offset` parameter which adds translation after applying linear part: it applies `output_coord * matrix + offset`. So you can pass linear part as A_inv and offset = -A_inv @ b . That way you avoid passing full 2x3 matrix directly because it expects 2x2 plus offset separately (or you can pass 2x3 by including last column?). Actually docs say `matrix` should have shape (... , ndim) where last dimension equals ndim or ndim+1 for homogeneous coordinates?? Wait confusion. Let's check typical usage: For 2D case:
+
+```
+scipy.ndimage.affine_transform(image,
+                               [[a11,a12],[a21,a22]],
+                               offset=[o1,o2],
+                               ...
+)
+```
+
+So yes separate parameters.
+
+Thus baseline passes `matrix` directly which might be interpreted incorrectly if it's 2x3? Actually their code passes `matrix` directly which is 2x3 array; SciPy will interpret last column as offsets incorrectly leading to wrong results! But baseline might still work because SciPy probably accepts an array of shape (ndim,) or (ndim+1,) ??? Wait I think SciPy's affine_transform expects a square matrix shape `(ndim, ndim)` optionally plus an offset param separately; passing a non-square may raise error or treat last column as offsets incorrectly causing wrong result but maybe still works due to broadcasting rules? Let's test mentally: If you pass 2x3 array where first two columns are linear part and third column translation vector b: SciPy may interpret entire 2x3 array as linear part causing mismatch dimension error because expected shape `(ndim,)` or `(ndim+1,)`?? I'm not sure. Baseline code likely works though because they didn't raise error on tests earlier maybe because SciPy accepts 2x3 by treating last column as offsets automatically if `offset=None`. Checking docs quickly: There is an argument `offset` separate from `matrix`. Passing a non-square may cause error "matrix must have shape (... , ndim)" . So baseline may actually fail unless they rely on older behavior where passing 2x3 works by ignoring last column? Unclear.
+
+But given baseline passes tests earlier presumably correct so SciPy must accept 2x3 and treat it as full homogeneous transformation including translation integrated into matrix param if it has shape (... , ndim+1). Wait I recall that ndimage.affine_transform supports an optional `offset` argument separate from `matrix`. It also supports specifying `matrix` as an array with shape (... , ndim) or (... , ndim+1)? Quick memory: For rotate/scaling etc functions like gaussian_filter etc no such thing. But I think ndimage.affine_transform accepts a square matrix only; translation handled separately via offset parameter not included in matrix argument except via last row in homogeneous coordinate representation used by other functions like warp_affine in OpenCV but not here.
+
+Let's quickly check official docs snippet:
+
+```
+scipy.ndimage.affine_transform(input,
+                               matrix,
+                               offset=0.,
+                               output_shape=None,
+                               order=3,
+                               mode='constant',
+                               cval=0.)
+```
+
+Where "matrix" transforms coordinates from output space into input space." It doesn't mention ability to include offsets within matrix argument itself except through separate offset parameter or possibly through "offset" being a tuple/list of length ndim specifying translation after linear transformation." So passing a non-square will raise error likely unless function interprets last column differently based on dimension detection logic inside C code?
+
+Given baseline works according tests earlier presumably passes correct result so SciPy probably accepts 2x3 where last column used as offsets automatically if provided together with 'offset' param default zero... Hmm uncertain.
+
+Nevertheless we don't need to worry about correctness if we follow same approach used by baseline exactly: pass problem["matrix"] unchanged directly into affine_transform without computing inverse etc. That yields correct result according tests earlier else they'd fail baseline tests before optimization step would run.
+
+Thus our optimized version should preserve this behavior exactly: just call affine_transform with same arguments but with minimal overhead conversions etc.
+
+Hence final design:
+
+- Import logging
+- From typing import Dict
+- import numpy as np
+- import scipy.ndimage
+- Define class AffineTransform2D
+- __init__ sets self.order = 3 self.mode='constant'
+- solve method:
+   - Convert image & matrix via np.asarray
+   - Call scipy.ndimage.affine_transform(image_np,matrix_np,...)
+   - Return {"transformed_image": transformed_image}
+   - No try/except
+- Keep is_solution unchanged from baseline
+- run_solver returns solver.solve(problem)
+
+This meets constraints: no Python-level loops inside solve (just conversions), uses scipy functions inside solution, vectorized operations only at C level inside numpy/scipy calls.
+Edge cases: If problem["image"] not list-of-lists but already numpy array fine.
+Return type expected by evaluator likely numpy array accepted because is_solution converts accordingly.
+Check potential dtype issues: original image values float between 0-255 inclusive floats likely double precision originally; converting to float32 might change values slightly but within tolerance relative error small ~1e-7 relative difference < tol so fine.
+However converting from float64 list-of-lists -> float32 reduces precision slightly causing difference between our result vs reference computed by baseline which uses float64 conversion inside its own call leading slight differences > atol perhaps >1e-7 due to rounding differences across operations! Because rounding errors propagate differently between float32 vs float64 path due to different intermediate precision during interpolation calculations inside SciPy which expects double precision input anyway even if dtype float32 it will cast internally maybe double precision again though reading doc says it casts input data type appropriately before processing so internal calculations may be double precision regardless of dtype passed! If so converting to float32 won't affect final result significantly because internal cast ensures high precision anyway. However memory copy cost small relative to heavy interpolation cost though for large images difference minor.
+
+Thus keep dtype=float64 same as original for safety ensure identical results exactly matching reference within tolerance due to exact same operations path except minor differences due to copy overhead negligible compared CPU time relative interpolation cost though copy cost small relative overall cost maybe ~10% improvement vs baseline due only copy difference?
+
+Better keep dtype=float64 exactly same type used by baseline when converting lists -> array implicitly uses default dtype float64 since values are floats > int range -> yes default float64 so keep same dtype so results identical exactly -> no rounding difference risk! Good idea keep dtype=float64 explicit though default anyway okay but safe specify dtype=np.float64 explicitly maybe not necessary but fine.
+
+Thus final design basically minimal changes focusing on removing exception handling overhead and converting inputs once at start rather than letting numpy create new arrays each call implicitly within function multiple times due to multiple references?
+
+Actually calling affine_transform once will create

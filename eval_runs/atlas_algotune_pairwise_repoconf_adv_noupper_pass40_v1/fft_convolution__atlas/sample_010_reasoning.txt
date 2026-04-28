@@ -1,0 +1,33 @@
+We need to implement conv1d with FFT. Must be correct, numerically close. Use numpy. Use np.fft.fft. For real data, we can use np.fft.rfft for speed but must return same shape. We can use np.fft.fft to length L = next power of two or at least N+M-1. For speed, use np.fft.fft of length L, multiply, ifft, take real part. Ensure dtype float64. Might need to round small imag part. Use np.fft.ifft. The result will be complex but negligible imaginary. Take real part and maybe round to float64.
+
+Also ensure that if inputs are not 1D? Problem says 1-D. We'll assume 1D.
+
+Edge cases: length 0? Not likely.
+
+We'll use np.fft.fft(x, L) * np.fft.fft(h, L) then ifft.
+
+Return np.real(np.fft.ifft(...))[:N+M-1] (maybe cast to float64). Use np.fft.fft(...). Might produce float64.
+
+Better: Use np.fft.rfft for real. But rfft returns real output of length L//2+1. But multiplication same. Then irfft. That yields real output of length L. That might be faster.
+
+We'll implement:
+
+L = 1 << (N+M-1-1).bit_length()  # next power of two
+
+Use rfft: X = np.fft.rfft(x, L); H = np.fft.rfft(h, L); Y = X * H; y = np.fft.irfft(Y, L); return y[:N+M-1]
+
+This returns float64.
+
+We need to import numpy.
+
+We should also handle case where inputs may be int? but dtype float64. We'll cast.
+
+We'll produce code.
+
+Check test: np.allclose(np.convolve(x,h,mode='full'), conv1d(x,h)). Should be fine.
+
+Edge: If L=0? N+M-1 >0. For N=0? Not.
+
+Ok.
+
+Let's produce final code.

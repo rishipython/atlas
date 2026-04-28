@@ -1,0 +1,104 @@
+We need a fast implementation of the Base64 encoder that works on arbitrary byte payloads coming in the `problem` dictionary and optionally produces an HMAC digest when a key is supplied. The goal is to drop any Python‑level loops and rely on NumPy’s vectorised arithmetic so that the whole transformation runs in compiled BLAS‑style kernels under the hood – that’s where the speedup comes from compared to the reference implementation that probably walks the input byte‑by‑byte in pure Python or uses a slow pure‑Python base64 routine.
+
+Let’s sketch what the solver must do:
+
+- Grab `data` from `problem`. The API isn’t strict about type – it could be a `bytes` object or a `str`. If it’s a `str` we’ll encode it as UTF‑8 first so everything downstream sees raw bytes.
+- Compute how many 3‑byte groups are needed (`n_groups = (len(data)+2)//3`). The standard Base64 rule says each group produces four output characters.
+- Pad the byte stream with zeroes up to `n_groups * 3` so that reshaping into an `(n_groups, 3)` array is trivial.
+- Convert that `(n_groups × 3)` uint8 view into three separate uint32 columns (`a`, `b`, `c`). Shift them left by the appropriate amounts (`<<16`, `<<8`, `<<0`) and OR them together – this gives us an array of 24‑bit integers per group (`v`).
+- Split each `v` into four 6‑bit indices by shifting right (`>>18`, `>>12`, `>>6`, `>>0`) and masking with `&63`. All four index arrays have shape `(n_groups,)`. Stack them into a flat `(n_groups*4,)` index vector.
+- Create a NumPy lookup table containing the standard Base64 alphabet (`"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"`) as an array of single‑character strings (`dtype='<U1'`). Index this table with our flat index vector – we now have a flat array of output characters.
+- Deal with padding explicitly: depending on `len(data) % 3`, set the last one or two entries in this character array to `'='`. The rest of the characters are already correct because zero padding in the input maps cleanly back to `'A'` values which we override only where required.
+- Finally convert that flat character array into a Python string by joining its elements (`''.join(chars)`).
+
+The whole pipeline uses only NumPy operations – no explicit Python loops – so it will run at C speed once NumPy has built its temporary buffers and performed its bitwise arithmetic internally. This satisfies the “no Python-level loops” constraint while keeping the logic straightforward enough that future tweaks are easy (e.g., swapping out the lookup table for a precomputed byte buffer).
+
+If a key is present in the input dictionary under `'key'`, we’ll compute an HMAC‑SHA256 digest over the *original* payload (not over the encoded form – that’s what most protocols expect). We’ll import `hashlib` for SHA256 and use Python’s built‑in `hmac.new()` routine because it’s already highly optimised in C and doesn’t interfere with our NumPy flow. The digest will be returned as a hexadecimal string (`hexdigest()`), which is convenient for downstream consumers while still being compact enough not to dominate runtime cost relative to encoding itself.
+
+Edge cases:
+
+- Empty payload → zero groups → empty output string; HMAC will still hash an empty byte sequence correctly.
+- Payload lengths not divisible by three → our explicit padding step guarantees proper `'='` placement.
+- Input already being bytes vs str → handled at start.
+- Key might be given as str or bytes → normalise similarly before feeding into `hmac`.
+
+The resulting class looks like this skeleton:
+
+```python
+import base64   # kept for compatibility though unused
+import hmac
+from typing import Any, Dict
+import numpy as np
+import hashlib
+
+class Base64Encoding:
+    def solve(self, problem):
+        # Grab raw data
+        raw = problem.get('data', b'')
+        if isinstance(raw, str):
+            raw = raw.encode('utf-8')
+        data_bytes = raw
+
+        # Vectorised Base64 encoding
+        n_bytes = len(data_bytes)
+        if n_bytes == 0:
+            encoded_str = ''
+        else:
+            n_groups = (n_bytes + 2) // 3
+            padded_len = n_groups * 3
+            pad_needed = padded_len - n_bytes
+
+            # Pad with zeros
+            arr = np.frombuffer(data_bytes + b'\x00'*pad_needed,
+                                dtype=np.uint8).reshape(-1, 3)
+
+            # Build 24‑bit values
+            v = ((arr[:,0].astype(np.uint32) << 16) |
+                 (arr[:,1].astype(np.uint32) << 8) |
+                 arr[:,2].astype(np.uint32))
+
+            # Split into four indices per group
+            i0 = (v >> 18) & 63
+            i1 = (v >> 12) & 63
+            i2 = (v >> 6 ) & 63
+            i3 = v & 63
+
+            idx_flat = np.concatenate([i0,i1,i2,i3])
+
+            # Lookup table for alphabet
+            tbl = np.array(
+                list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"),
+                dtype='<U1'
+            )
+            chars = tbl[idx_flat]
+
+            # Apply padding characters where needed
+            rem = n_bytes % 3
+            if rem == 1:
+                chars[-2:] = '='   # two pads
+            elif rem == 2:
+                chars[-1:] = '='   # one pad
+
+            encoded_str = ''.join(chars)
+
+        # Optional HMAC computation
+        hm_val = None
+        key_raw = problem.get('key')
+        if key_raw is not None:
+            key_bytes = key_raw.encode('utf-8') if isinstance(key_raw,str) else key_raw
+            hm_val = hmac.new(key_bytes,
+                              data_bytes,
+                              hashlib.sha256).hexdigest()
+
+        return {'encoded': encoded_str,
+                'hmac': hm_val}
+```
+
+Finally expose the required entry point:
+
+```python
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+This design keeps all heavy lifting inside NumPy’s vectorised kernels while still providing optional security via

@@ -1,0 +1,27 @@
+We need to provide a faster implementation. Use scipy.signal.fftconvolve or numpy.fft. Use np.fft.fft for float64. But for small sizes, direct may be faster. But tests likely involve large arrays. We'll just use scipy.signal.fftconvolve if available. But we cannot assume scipy is installed? It says we may import scipy. So use scipy.signal.fftconvolve. That gives correct result. Need to ensure dtype float64. We can convert to float64. Implementation:
+
+```
+import numpy as np
+from scipy.signal import fftconvolve
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    return fftconvolve(x, h, mode='full')
+```
+
+But to be safe, we can fallback to numpy FFT if scipy not available. But we can import. Let's just import. Provide fallback.
+
+Also we should avoid creating extra arrays. But fine.
+
+We need to ensure output dtype float64. fftconvolve returns dtype of inputs. So good.
+
+Edge cases: empty arrays? If either empty, output empty? np.fft? For empty, return empty. fftconvolve handles? Let's test: np.fft? But we can handle: if x.size==0 or h.size==0: return np.array([], dtype=np.float64). Should be fine.
+
+Also consider large arrays, but FFT size may need next power of two. fftconvolve uses that.
+
+Let's implement.
+
+Also we might need to set method='direct' for small arrays? But not needed.
+
+Let's produce final code.

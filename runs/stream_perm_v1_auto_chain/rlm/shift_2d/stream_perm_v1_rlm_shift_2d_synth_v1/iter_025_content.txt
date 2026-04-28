@@ -1,0 +1,103 @@
+We need to figure out what shift_2d problem is. Probably shift a 2D array? Let's assume problem contains an image and a shift vector? Might be aligning two images? Let's think: The reference uses Shift2D().solve(problem). We need faster implementation using scipy functions, no Python loops, vectorized. Use numpy and scipy.ndimage for shift. Probably problem dict contains 'image', 'shift', maybe 'output_shape'. We need to return shifted image.
+
+Let's design: run_solver(problem) -> returns result of shift. Use scipy.ndimage.shift or map_coordinates.
+
+Need to handle different data types, maybe float64.
+
+Edge cases: shift can be fractional, use order=3 cubic interpolation. Need to preserve shape. Use mode='constant', cval=0.
+
+Also might need to compute optimal shift via cross-correlation? But reference likely just applies shift.
+
+Let's design: parse problem: image = np.array(problem['image']); shift = problem.get('shift', (0,0)). If missing, compute via cross-correlation with itself? But baseline might compute shift that maximizes correlation between two images? Actually shift_2d might be aligning two images: problem has 'source', 'target' arrays; we find shift that best aligns source to target via phase correlation. That uses FFT.
+
+Better: Use scipy.signal.fftconvolve for cross-correlation; then find peak. That is vectorized and fast.
+
+So design: if problem contains 'source' and 'target', compute cross-correlation via fftconvolve; find argmax; apply shift to source using ndimage.shift; return shifted source.
+
+Use numpy for arrays, scipy.signal for fftconvolve, scipy.ndimage for shift.
+
+No loops.
+
+Let's craft code outline:
+
+import logging, random, typing.Any, Dict
+import numpy as np
+import scipy.ndimage
+import scipy.signal
+
+def run_solver(problem: Dict[str, Any]) -> Any:
+    src = np.asarray(problem['source'])
+    tgt = np.asarray(problem['target'])
+    # compute cross-correlation
+    corr = scipy.signal.fftconvolve(src, tgt[::-1, ::-1], mode='full')
+    # find peak
+    max_idx = np.unravel_index(np.argmax(corr), corr.shape)
+    # compute shift relative to center
+    center = tuple(s//2 for s in corr.shape)
+    shift = tuple(m - c for m,c in zip(max_idx, center))
+    # apply shift
+    shifted = scipy.ndimage.shift(src, shift=shift, order=3, mode='constant', cval=0)
+    return {'shift': shift, 'aligned': shifted}
+
+But need to match baseline signature: Shift2D().solve(problem) returns something. Likely returns dictionary with 'shift' and 'aligned'.
+
+Edge cases: if arrays are large, fftconvolve may be heavy but okay.
+
+Need to ensure dtype float64 for accuracy.
+
+Also random import maybe used for seeding? Not necessary but include as per brief.
+
+Logging maybe used for debug.
+
+Return type maybe numpy array only? But baseline likely returns dict.
+
+We can include optional seed param in problem to make deterministic?
+
+Also handle case where only one array given: just return it unchanged.
+
+Let's incorporate robust handling:
+
+if 'source' not in problem or 'target' not in problem:
+   return {'aligned': np.asarray(problem.get('image', []))}
+
+Also ensure shape same; else raise ValueError.
+
+Add small epsilon to avoid negative zeros from rounding?
+
+Use np.round(shift).astype(int)? For fractional shifts we want subpixel alignment? But cross-correlation peak gives integer offset only because arrays discrete. We could refine using phase correlation subpixel but too complex. Keep integer.
+
+Make sure we use dtype=np.float64 when computing corr.
+
+Also maybe use np.int32 for indices.
+
+Edge case: zero-size arrays => return empty dict.
+
+Test with random arrays.
+
+Now final code will be ~8000 chars including imports and function definitions etc. We'll write full file with imports at top and run_solver function defined at bottom. Include __name__ guard maybe not needed but okay.
+
+We must not output full code yet; just the chain-of-thought. So stop here with handoff sentence.
+We need to replace the slow `Shift2D().solve(problem)` with a fast vectorised version that still respects the original API and semantics. The task description hints that the input is a “problem” dictionary – presumably containing at least two 2‑D arrays that we want to align by shifting one relative to the other. The reference implementation probably does something like compute a cross‑correlation or phase‑correlation between the two images, find the peak location (the optimal integer pixel offset), then apply that offset to one of the images using some interpolation scheme (cubic or nearest‑neighbor). It also likely returns the computed shift together with the aligned image so downstream code can inspect it or use it further.
+
+Given that we’re allowed to use `numpy`, `scipy`, `scipy.ndimage`, and `scipy.signal`, a natural fast path is:
+- Convert both inputs to NumPy arrays (`np.asarray`) so we don’t care whether they come as lists or already as arrays.
+- Compute the full cross‑correlation via FFT convolution (`scipy.signal.fftconvolve`). This is O(N log N) and fully vectorised.
+- Find the index of the maximum value in the correlation volume (`np.argmax` + `np.unravel_index`). That gives us an integer pixel offset relative to the centre of the “full” correlation result.
+- Convert that offset into a signed integer pair `(dy, dx)` that tells us how many pixels we need to move one image so that it aligns best with the other.
+- Apply this offset using `scipy.ndimage.shift`. We’ll choose cubic interpolation (`order=3`) because it’s a good trade‑off between speed and quality for typical images; we’ll set `mode='constant'` and `cval=0` so pixels shifted out of bounds become zero – this matches many baseline implementations.
+- Return a dictionary containing at least two keys: `'shift'` (the integer pair) and `'aligned'` (the shifted image). That matches what most callers expect from a “solver” object’s `solve` method – they usually want both the solution parameters and any transformed data.
+- If the input dictionary does not contain both `'source'` and `'target'`, fall back gracefully by simply returning the provided image unchanged under `'aligned'`. This keeps the function robust against incomplete inputs.
+- Add optional logging so users can see when we’re doing heavy FFT work – useful for debugging large inputs.
+- Keep everything vectorised; no explicit Python loops over pixels or over array elements.
+- Make sure we always cast intermediate results (like correlation) to `float64` so we avoid overflow on large integer images.
+- Finally wrap everything in a single file with imports at the top (`logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, `scipy.ndimage`, `scipy.signal`) as required by the brief. The file will expose only one public entry point: `run_solver(problem)` which performs all of this logic and returns the dictionary described above.
+
+Potential pitfalls I considered:
+- **FFT padding**: `fftconvolve` automatically pads both inputs so that output shape is `(src.shape + tgt.shape - 1)`. That’s fine because we only care about finding the peak location relative to this padded space.
+- **Negative shifts**: The offset calculation must subtract the centre index from the peak index; otherwise we’d get wrong sign.
+- **Sub‑pixel accuracy**: We’re limiting ourselves to integer pixel shifts because FFT convolution gives us only discrete peaks unless we add additional sub‑pixel refinement (e.g., parabolic fit). Adding that would complicate things and slow us down unnecessarily given the brief’s constraints.
+- **Data types**: Converting inputs via `np.asarray` preserves dtype but if they’re integers we convert correlation results explicitly to float64 before any accumulation – otherwise large integers could overflow during convolution.
+- **Edge cases**: Empty arrays or mismatched shapes raise informative errors rather than silently returning nonsense.
+- **Performance**: Using built‑in FFT convolution is orders of magnitude faster than nested loops; applying `ndimage.shift` is also highly optimised internally (C code + BLAS where possible).
+
+With these decisions settled I’m ready to write out the actual code file following exactly these steps. OK, I think I have the design. Time to write it.

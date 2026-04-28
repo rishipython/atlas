@@ -1,0 +1,70 @@
+We need to write a fast implementation of 1D convolution, full mode, using numpy FFT or scipy. We should keep same signature, return np.ndarray float64. Use numpy.fft.fft. For large arrays, use FFT-based convolution. Use np.fft.fftpack? We can use np.fft.fft. Use real FFT? We'll use np.fft.fft for complex. Steps:
+
+- Determine length L = N + M - 1. Next power of two >= L for FFT speed? We can use np.fft.fft with length L directly; but zero-padding to L is fine. For large arrays, FFT size may be large but fine. For small arrays, overhead may be bigger but still okay.
+
+- Compute X = np.fft.fft(x, n=L), H = np.fft.fft(h, n=L). Multiply: Y = X * H. Then y = np.fft.ifft(Y).real. Ensure dtype float64. Use np.fft.fft with dtype float64? It returns complex64? Actually if inputs are float64, outputs are complex128. So fine.
+
+- Return y.real.
+
+Edge cases: if x or h empty? Probably not. But if length zero, conv result is zero length? But we can handle.
+
+Also might consider using np.fft.rfft for real inputs to reduce memory. But simpler: use full FFT.
+
+Let's implement conv1d as:
+
+```
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    if L == 0:
+        return np.array([], dtype=np.float64)
+    # choose next power of two for speed? maybe not needed.
+    fftlen = L
+    X = np.fft.fft(x, n=fftlen)
+    H = np.fft.fft(h, n=fftlen)
+    y = np.fft.ifft(X * H).real
+    return y
+```
+
+But we need to ensure output length exactly L. The ifft returns array of length fftlen. If we choose fftlen = L, then result length L. Good.
+
+But we might want to use np.fft.fftpack? No.
+
+We could also use scipy.signal.fftconvolve, but we may not have SciPy? But it's allowed. But using numpy is fine.
+
+Potential numeric differences: Using FFT may produce small imaginary parts due to numerical errors. We take real part. Might be small differences but within tolerance.
+
+But there might be issues with very large arrays causing memory blow. But test likely moderate.
+
+Also we can use np.fft.rfft to reduce memory: rfft of length L produces (L//2+1) complex numbers. Multiply and irfft.
+
+Implement:
+
+```
+X = np.fft.rfft(x, n=L)
+H = np.fft.rfft(h, n=L)
+Y = X * H
+y = np.fft.irfft(Y, n=L)
+```
+
+Return y.
+
+This is more efficient.
+
+Edge case: L may be 0? If either x or h empty, conv result length 0. Let's handle.
+
+Also we should ensure dtype float64. rfft returns complex128 for float64 inputs.
+
+Let's produce final code.
+
+Also we need to import numpy as np.
+
+Write code accordingly.
+
+Testing: For small arrays, compare with np.convolve. For large, okay.
+
+Return np.ndarray dtype float64.
+
+We must not modify function signature. Provide only conv1d.
+
+Let's produce final code.

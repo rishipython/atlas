@@ -1,0 +1,100 @@
+We need to speed up the affine transform. Let's think: The baseline uses scipy.ndimage.affine_transform, which is already pretty fast but maybe overhead from Python and data conversion. We can try to replace with a custom implementation that uses SciPy's map_coordinates or maybe use OpenCV? But only allowed packages include numpy, scipy, etc. We can't use cv2. So stick with scipy.
+
+Maybe we can use scipy.ndimage.affine_transform but precompute the inverse matrix and use map_coordinates for vectorized mapping? But map_coordinates also loops internally.
+
+Could we use SciPy's ndimage.rotate? No.
+
+Maybe we can use SciPy's affine_transform but convert image to float32 to reduce memory and speed. Also set order=1 instead of 3 for speed. But requirement: keep same behavior? The problem says cubic spline interpolation order=3. But we can maybe approximate with order=1 and still pass verification? Probably not; the is_solution checks against reference solution computed with order=3, so must match within tolerance. So can't change order.
+
+So we need to call scipy.ndimage.affine_transform anyway. But maybe we can reduce overhead by using numpy arrays directly and avoiding Python loops.
+
+But the baseline already does that: it passes image and matrix as numpy arrays, calls affine_transform.
+
+Potential speedup: Use numba to jit a custom transform that uses bilinear interpolation? But need cubic spline; implementing cubic spline manually is complex.
+
+Alternatively, we could use SciPy's affine_transform but ensure we pass the correct dtype (float32) and maybe specify output_shape explicitly to avoid internal shape inference overhead.
+
+Also we could try using SciPy's ndimage.affine_transform with precomputed inverse matrix via np.linalg.inv on 3x3 homogeneous matrix. But the function expects transformation matrix that maps output coordinates to input coordinates; we can compute inverse ourselves to avoid overhead inside function? But it still does that internally.
+
+Maybe we can call scipy.ndimage.affine_transform with 'output' argument specifying pre-allocated array, thus avoiding allocation overhead. That could be faster.
+
+Also we could consider using SciPy's ndimage.shift? No.
+
+We might also try using SciPy's ndimage.affine_transform but with mode='constant', cval=0.0 default. That's fine.
+
+Could we use JAX or Numba? JAX would require converting array to jax.numpy and calling jax.scipy.ndimage.affine_transform? JAX doesn't have that function directly; maybe jax.scipy.ndimage is not available.
+
+Numba: We could write a numba-accelerated routine that loops over output pixels in parallel (vectorized). But that would involve writing loops in numba, which is compiled C-level loops; no Python loops at runtime. That might be faster than SciPy's C implementation for small images? Probably not.
+
+But we could implement a simple bilinear interpolation in numba for order=1; but again need cubic.
+
+So likely best approach: Keep scipy.ndimage.affine_transform but precompute inverse matrix and call with output_shape and preallocate output array of correct dtype float32, perhaps also set prefilter=False if not needed? For cubic spline, prefilter=True by default; setting prefilter=False may speed up but might degrade quality slightly; but may still pass tolerance if difference small? Not sure.
+
+We could also use scipy.ndimage.map_coordinates directly with grid of coordinates computed once outside loop, then vectorized call; that's similar overhead.
+
+Given constraints, maybe just call affine_transform as baseline but add small optimizations: convert image to float32, compute inverse matrix once, pass output_shape, allocate output array of same shape float32, set mode='constant', cval=0.0, order=self.order (3). That might give slight speedup.
+
+Also ensure we don't convert image back to list or something; just return numpy array as solution dict value; is_solution will convert it anyway.
+
+Edge cases: image may be list of lists; so convert to np.array dtype float32 early. Matrix may be list of lists too; convert to np.array dtype float32 too.
+
+Also handle potential exceptions gracefully: if affine_transform fails, return empty list as baseline did.
+
+So design: In solve(), parse problem dict, convert image and matrix to np.array float32 (or float64?). Use float32 to reduce memory and speed. Then compute inv_matrix = np.linalg.inv(np.vstack([matrix, [0,0,1]]))[:2,:] maybe? Actually affine_transform expects matrix mapping output coords to input coords directly; so we need the forward transform matrix M such that x_out = M * x_in + t? Wait typical usage: affine_transform(image, matrix) applies transformation defined by matrix mapping output coords to input coords: x_in = matrix @ x_out + offset? Actually SciPy docs: The input array is transformed by the given matrix and offset arguments; the output coordinate y is mapped back into input coordinate x = dot(matrix,y)+offset. So if our problem provides a 2x3 affine transform [A|t], then that's forward mapping from input to output: y = A x + t. To use in affine_transform we need inverse mapping from output y back to input x: x = A^{-1} (y - t). So we can compute inv_A = np.linalg.inv(A); offset = -inv_A @ t. Then call affine_transform(image, inv_A, offset=offset,...). That avoids computing inverse inside function each time? Might help slightly.
+
+Thus implement:
+
+```
+A = np.asarray(matrix[:2,:2], dtype=np.float32)
+t = np.asarray(matrix[:2,2], dtype=np.float32)
+invA = np.linalg.inv(A)
+offset = -invA @ t
+```
+
+Then call:
+
+```
+out = np.empty_like(image)
+scipy.ndimage.affine_transform(image, invA, offset=offset,
+                               order=self.order,
+                               mode=self.mode,
+                               cval=0.0,
+                               prefilter=True,
+                               output=out)
+```
+
+Note `output` param exists in newer SciPy versions; check signature: `affine_transform(input, matrix, offset=0.0,... , output=None)`. Yes there's an `output` argument after `mode`. So pass out array to avoid allocation overhead.
+
+Return solution dict with "transformed_image": out (numpy array).
+
+Edge cases: If image shape not square or zero-size? Problem says n x n array but could be any shape; handle gracefully.
+
+Also handle if image contains NaNs etc.; just let function handle it.
+
+Testing: is_solution will compare out vs reference computed by same method but without our optimizations; difference should be zero if our math correct. Use same dtype float32 vs reference float64 may cause tiny differences due to precision; set atol accordingly maybe 1e-5 or 1e-6. Our solution will produce float32 values which when compared with float64 reference may have small error due to rounding; but tolerance rtol=1e-5 should cover it.
+
+We also need logging import etc., keep same class structure.
+
+Potential pitfalls: computing invA fails if A singular (e.g., degenerate transform). In such case fallback to default affine_transform without inverse computation?
+
+We can wrap in try/except around invA calculation and if fails just call default method as fallback like baseline did.
+
+Also ensure `matrix` provided as list-of-lists convertible correctly even if nested lists have different lengths? Assume proper shape 2x3.
+
+Ok design settled.
+
+Now produce final code skeleton accordingly in a single file with run_solver function returning solver.solve(problem).
+
+Edge cases sanity check:
+
+- If problem["image"] empty list -> image array shape (0,) -> empty => affine_transform returns empty => return empty list acceptable.
+- If image contains zeros only -> fine.
+- If transformation has translation only -> offset computed correctly.
+- If transformation has scaling zero -> singular -> fallback works.
+- If dtype conversion reduces precision slightly -> tolerance covers.
+- Ensure no Python loops inside solve except minimal conversion loops which are trivial (<10 lines). That's okay per brief "No Python-level loops" meaning heavy loops avoided; small loops for conversion are fine maybe not counted?
+
+Better avoid explicit loops entirely: Use np.asarray directly on problem["image"] without iterating over rows manually. That will parse nested lists into array automatically without explicit loops at Python level beyond underlying C code. So fine.
+
+Thus final design ready.
+OK, I think I have the design. Time to write it.

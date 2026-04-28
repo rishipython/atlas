@@ -1,0 +1,124 @@
+We need to speed up the affine transform. The baseline uses scipy.ndimage.affine_transform directly. That is already vectorised, but maybe overhead from Python call and data conversion. Maybe we can use numba to JIT a custom implementation? But implementing cubic spline interpolation manually is heavy. Maybe we can use scipy's map_coordinates which is also vectorised but maybe slower.
+
+Alternatively, we could precompute the inverse matrix and use grid indexing with np.meshgrid to produce coordinates and then use scipy.ndimage.map_coordinates with order=3. That might be similar speed.
+
+But maybe the main bottleneck is memory allocation of large arrays for big images. We can use float32 to reduce memory and speed.
+
+We can also consider using jax.lax.map or jax.numpy to JIT compile the entire transform. But jax requires installing, but allowed.
+
+But we cannot add loops; must be vectorised.
+
+Maybe we can use scipy.ndimage.affine_transform but specify output shape same as input, and pass precomputed matrix and offset? The function already does that.
+
+But maybe we can reduce overhead by using numpy's built-in transform via affine transformation on coordinates: create grid of coordinates, apply matrix, then sample with interpolation using scipy.ndimage.map_coordinates. That might be faster because we can compute coordinate arrays once.
+
+Let's think: For each pixel (i,j) in output image, we need source coordinate = M_inv @ [i,j,1]. We can compute arrays of i and j via np.indices or np.meshgrid. Then compute x_src = M_inv[0,0]*i + M_inv[0,1]*j + M_inv[0,2]; y_src similarly. Then call map_coordinates(image, [y_src.ravel(), x_src.ravel()], order=3, mode='constant', cval=0). Reshape back. That uses vectorised operations; no Python loops.
+
+But computing M_inv each time might be overhead; but it's constant per call.
+
+Also we could use float32 for image and coordinates to reduce memory and speed; but need to ensure interpolation accuracy.
+
+We must keep same output shape as input. The baseline uses default output_shape = input shape; that's fine.
+
+Potential issues: map_coordinates expects array of coordinates in shape (ndim, N). We can provide flattened arrays.
+
+Edge cases: if image is small (like 3x3), performance difference negligible.
+
+Also consider using SciPy's affine_transform directly but with precomputed offset? But that's what it does internally; maybe not much difference.
+
+Alternatively, we could use cv2.warpAffine from OpenCV which is fast but not allowed? We only have numpy, scipy etc. cv2 not in list.
+
+Maybe using numba to JIT a custom bilinear interpolation would be fastest for large images? But implementing cubic spline interpolation manually would be complex; but bilinear might be acceptable if order=1 gives similar quality? But spec requires cubic? Actually spec says uses cubic spline interpolation order=3. So must match that accuracy within tolerance 1e-5 relative error? The validator compares against reference solution with order=3; so our result must match within tolerance. So cannot change order.
+
+Thus best approach: use map_coordinates with order=3; that matches reference exactly if same coordinates mapping used. Need to ensure offset handling matches affine_transform's default behavior: affine_transform applies the matrix to input coordinates after translating by half pixel shift? Let's check: In scipy.ndimage.affine_transform, the matrix argument is the inverse mapping from output to input coordinates: output[i] = input[dot(matrix, [i,...]) + offset]. Actually documentation: "The matrix defines the linear transformation from output coordinates to input coordinates." And offset is applied after matrix multiplication. So if we want same behavior as affine_transform with only matrix given (no offset), we need to compute source coords as dot(matrix, [x,y]) + offset where offset defaults to 0. But careful: In affine_transform, the matrix argument is the inverse mapping from output space to input space? Let's check quickly: In SciPy docs: "matrix : array-like of shape (output_ndim, input_ndim). The transformation matrix." So it maps output coordinates to input coordinates via dot(matrix, output_coord) + offset. So our mapping should match that: For each output pixel coordinate (i,j), compute src = M @ [i,j] + offset (offset default zero). So just compute that directly using M (not its inverse). Good.
+
+So we don't need inverse; just use given matrix directly.
+
+Thus algorithm:
+
+- Get image as numpy array dtype float32 or float64.
+- Get matrix as numpy array shape (2,3).
+- Compute grid of indices i,j shape (n,n). Use np.arange(n) for each dimension.
+- Use broadcasting: i_grid[..., None] * M[0,:2] etc.
+- Compute src_x = M[0,0]*i_grid + M[0,1]*j_grid + M[0,2]
+- src_y = M[1,0]*i_grid + M[1,1]*j_grid + M[1,2]
+- Flatten arrays.
+- Call map_coordinates(image.astype(np.float32), [src_y.ravel(), src_x.ravel()], order=3, mode='constant', cval=0). Reshape back.
+- Convert back to original dtype maybe float32 or float64.
+- Return as list of lists or numpy array? The solver expects numpy array? In reference they return numpy array; solution verification converts to list if needed. So returning numpy array fine.
+
+Potential speed improvements: Use np.einsum or vectorized operations for computing src coords instead of explicit loops. Use np.add.outer? But simple broadcasting works fine.
+
+Memory overhead: creating two n x n arrays for src coords; okay for moderate sizes (~512x512). For larger maybe heavy but acceptable.
+
+Alternative design: Use scipy.ndimage.affine_transform but precompute offset and use 'constant' mode cval=0 explicitly; may be same speed but less code.
+
+But maybe map_coordinates might be slightly slower due to extra flattening/unflattening overhead vs built-in affine_transform which likely uses optimized C code for entire operation including interpolation kernel loops etc. So maybe original is already fast enough; but problem expects improvement via vectorization or lower precision etc.
+
+However the baseline uses affine_transform which is already vectorized C code; so any alternative may not beat it unless we reduce precision or avoid repeated memory allocation. Could switch dtype to float32 reducing memory traffic and enabling faster interpolation kernel on GPU? But SciPy's C code may still operate on float64 by default if image dtype is float64; if we cast to float32 before calling affine_transform it might still convert internally? Actually ndimage functions accept float32 and perform calculations in float32 probably faster on some hardware.
+
+Thus simplest improvement: cast image and matrix to float32 before calling affine_transform; set order=3; mode='constant', cval=0 (explicit). That reduces memory traffic and may speed up by ~10-20%. Also avoid Python-level loops entirely (none anyway).
+
+Additionally could avoid copying image by using view with dtype conversion via .astype(np.float32) which creates copy though; but could cast in place if original dtype is float64? Might create copy anyway.
+
+Alternatively use numba JIT on a custom implementation performing bilinear interpolation which might be faster than SciPy's generic implementation due to specialized loops compiled by numba; but implementing cubic spline accurately would require complex kernels and may not match SciPy's results exactly leading to validation failure.
+
+Thus best design: keep using scipy.ndimage.affine_transform but cast inputs appropriately and perhaps precompute offset param explicitly for clarity.
+
+Also ensure no Python-level loops in solve method aside from minimal operations like reading dict entries etc. That's fine.
+
+Edge cases: small images where np.indices may allocate small arrays fine. Negative indices produce negative source coords handled by mode constant -> zeros outside bounds - correct behavior matches SciPy's default?
+
+Need also handle potential None values in problem dict keys - assume correct format per spec.
+
+Also ensure returned array type consistent with expected shape - same as input shape - yes because default output_shape equals input shape when not specified.
+
+Test numeric tolerance: Using same algorithm ensures identical results except possible floating point differences due to dtype cast differences between float64 vs float32 leading small errors > tolerance? Tolerance rtol 1e-5 relative error across values up to 255 may allow ~2e-3 absolute difference which may be okay if cast from double->float reduces precision slightly but still within tolerance maybe borderline if differences accumulate in interpolation kernel across many points? Might exceed 1e-5 relative error for some values near edges? Let's estimate worst-case error due to rounding from double->float during calculation of source coords then interpolation weights computed in float32 vs double => difference could be ~1e-7 relative error times 255 ~ 2e-5 absolute difference > tolerance 1e-7 absolute?? Wait rtol 1e-5 means relative error allowed <= 1e-5 * max(|ref|). If ref ~200 then allowed diff <= 200*1e-5 = 0.002 absolute. That's large enough for typical rounding errors (~1e-7 relative?). Actually converting double -> float reduces precision by about 7 decimal digits (~1e-7 relative). So diff ~200*1e-7 = 2e-5 < 0.002 allowed -> safe. So using float32 should still pass validation within tolerance easily.
+
+Thus implement solve:
+
+```
+def solve(self, problem):
+    img = np.asarray(problem["image"], dtype=np.float32)
+    mat = np.asarray(problem["matrix"], dtype=np.float32)
+    transformed = scipy.ndimage.affine_transform(img,
+                                                mat,
+                                                order=self.order,
+                                                mode=self.mode,
+                                                cval=0)
+    return {"transformed_image": transformed}
+```
+
+But note that affine_transform expects matrix shape (output_ndim,input_ndim) where input ndim equals image ndim (2). Provided mat shape (2x3) matches that: first row corresponds mapping from output y,x? Actually row order matters: first row transforms y coordinate of output into y coordinate of input etc. In SciPy docs example uses transformation matrix accordingly. Provided example uses [ [a,b,c], [d,e,f] ] mapping [x,y] -> ... We trust this works same as baseline because baseline uses same mat directly without transposing etc. So keep same usage.
+
+Also need import logging at top though not used heavily except errors maybe none needed because no errors expected now after casting safe types?
+
+Edge case: problem dict keys missing -> will raise KeyError early - acceptable since test probably provides correct format.
+
+Also ensure no Python loops inside solve beyond minimal dictionary access - that's fine.
+
+Now finalize design summary:
+
+Imports:
+```
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+Class AffineTransform2D with __init__ setting self.order=3 self.mode='constant'.
+
+solve method as above with casting to float32 for performance and consistency with spec regarding constant padding zeros via cval=0 param added explicitly though mode constant defaults cval=0 anyway.
+
+Return dictionary with key "transformed_image" value numpy array of dtype float32 maybe converted back to original dtype later automatically by caller? The validator will compare arrays element-wise after converting both sides into floats - so dtype doesn't matter as long as values close enough within tolerance - converting back may produce slight differences due to rounding differences between original double vs our float32 result vs reference double result computed by SciPy on double image originally passed in problem dict (which was originally list floats maybe interpreted as Python floats -> converted by our code into float32 losing precision before passing into SciPy). Wait reference solver receives problem["image"] which is list of floats Python floats are double precision when converted by numpy.asarray default dtype=float64 unless specified otherwise in our solve method earlier they didn't cast so it used whatever type returned by problem["image"] list -> numpy will infer dtype=float64 typically because Python floats are double precision. Our solve casts it into float32 before passing into SciPy's affine_transform which will compute interpolation in float32 only producing result rounded at intermediate steps relative error ~1e-7 * value ~ small < tolerance threshold as argued earlier yes passes check against reference computed in double precision giving more accurate result potentially slightly different by < few e-5 absolute difference < tolerance .002 allowed . Good safe.
+
+But caution: If reference result has value close to zero e.g., near edges zeros from constant padding might differ slightly due rounding errors leading relative error undefined because denominator small -> rtol used too small relative difference may fail if diff > atol 1e-7 absolute threshold too strict for near-zero values! The validator uses atol=1e-7 which is very strict absolute tolerance! For values near zero (<~1e-6) any tiny difference > 1e-7 fails! Our rounding errors might produce differences > 1e-7 even for zero values at boundary because our computation may produce small non-zero values instead of exact zero due floating point rounding when interpolating at border with constant padding zeros - SciPy's double version might produce exact zero due better precision or algorithmic cancellation leading exact zero at border positions where source coords outside bounds produce cval exactly zero regardless of interpolation weights? Actually map_coordinates when mode='constant' sets out-of-bounds contributions weight times cval zero so final value exactly zero regardless of weights because all contributions from out-of-bounds replaced by zero weight times cval zero leads sum zero exactly even in floating point arithmetic since multiplication by zero yields exact zero irrespective of weight rounding errors? However weights computed inside algorithm may involve sums that include zeros times weight leading exactly zero no matter weight value because multiplication yields zero exactly in floating point arithmetic? Yes multiplication by zero yields exact zero regardless of other operand precision because representation includes exponent range includes negative infinity effectively making product exactly zero independent of rounding errors except potential underflow but product with finite weight yields exact zero because representation has infinite exponent range for subnormal numbers? Actually floating point multiplication by exact integer 0 yields exact result 0 regardless of other operand value because representation has exponent such that product exponent becomes negative infinity => result exactly 0 represented as signed zero without rounding error aside from sign bit maybe negative sign determined by sign bits product rule - sign determined by XOR of signs resulting negative sign if weight negative times positive zero yields negative zero maybe but still magnitude zero within atol threshold ignoring sign differences due np.allclose handles sign differences too? allclose considers -0 == 0 true because both are equal numerically after abs difference <= tol?
+
+So boundary zeros likely fine even with float32 vs double because product yields exact zeros anyway independent of weight rounding errors except sign bit difference irrelevant since abs diff <= tol holds true because diff between -0 and 0 is 0 absolute difference indeed it's exactly equal numeric representation wise due allclose compares numeric equality after abs diff <= tol so -0 equals 0 diff = |(-0)-0| = | -0 | = 0 <= tol => passes).
+
+Thus safe again.
+
+Therefore design final code accordingly minimal loops no explicit loops beyond dictionary access etc., using vectorized SciPy function only once per call plus casting overhead minimal compared to heavy interpolation loop inside C code anyway improved memory traffic due smaller dtype perhaps slight speedup though not huge but meets requirement "speedup".
+
+Edge cases like empty image or non-square shapes still handled correctly since code generic dimension n x n assumption not

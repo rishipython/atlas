@@ -1,0 +1,135 @@
+We need to figure out what shift_2d does. Let's guess: probably given a 2D array and shift vector, we shift the array. The baseline is slow; we want fast vectorized solution using scipy.ndimage shift. We must import logging, random, typing, numpy, scipy.ndimage. No Python loops. Use scipy functions somewhere.
+
+Let's think: Problem likely contains image and shift parameters. The solver probably returns shifted image. Could be multiple shifts? Maybe problem dict contains 'image', 'shift', etc.
+
+We need to design run_solver that takes problem dict and returns result.
+
+We want to use scipy.ndimage.shift or shift with order=0 or linear interpolation. Use numpy for array handling.
+
+Also maybe we need to compute something else like cost function? But likely just shifting.
+
+Edge cases: shape, dtype, negative shifts.
+
+Also need random seed? Logging? Might log something.
+
+Let's design: run_solver(problem) -> call Shift2D().solve(problem). So we implement Shift2D class with solve method. Inside solve, get image from problem['image'] as numpy array. Get shift from problem['shift'] maybe a tuple (dx,dy). Use scipy.ndimage.shift(image, shift=shift, mode='nearest', order=1). Return dict with 'result': shifted image.
+
+But we must use vectorization: shift uses internal loops but that's fine.
+
+No Python loops: our code will not loop over pixels.
+
+Use random? Maybe for debugging? But spec says import random; maybe used for seeding random generator for reproducibility if needed.
+
+Logging: set up logger to debug.
+
+Edge cases: If image is multi-channel? Then shift each channel separately or use axis parameter.
+
+Better to use ndimage.shift with axes=(0,1) automatically handles shape.
+
+Also maybe problem includes multiple images? Then we loop over list but that's Python loop; but maybe not needed.
+
+We can accept list of images and return list of shifted images using np.stack and apply shift along batch dimension via vectorization? ndimage.shift can't handle batch directly; but we can reshape to combine batch dimension into first axis and then apply shift per image? But that would require loop over batch dimension anyway.
+
+Maybe problem only single image.
+
+Ok design: define class Shift2D:
+
+```
+class Shift2D:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    def solve(self, problem):
+        img = np.asarray(problem['image'])
+        shift = problem.get('shift', (0,0))
+        # ensure tuple length 2
+        if isinstance(shift, (int,float)):
+            shift = (shift,shift)
+        # cast to float
+        shift = tuple(float(s) for s in shift)
+        # use ndimage.shift
+        shifted = scipy.ndimage.shift(img, shift=shift, mode='nearest', order=1)
+        return {'result': shifted}
+```
+
+Add random seed maybe if needed: random.seed(0) at start of solve? Not necessary.
+
+But we need to use random somewhere; maybe for generating noise? Not required by task. But brief says imports include random; maybe used for something like default shift random if not provided? We can add fallback: if 'shift' not in problem, generate random small shift using random.uniform(-1,1). That uses random import.
+
+Logging: log the shape and shift used.
+
+Return result as numpy array or list?
+
+Ok final design: run_solver(problem): return Shift2D().solve(problem)
+
+Now consider numerical details: dtype float32 vs float64; ndimage.shift uses float64 by default; we can cast to same dtype as input after shifting. So final result dtype same as input.
+
+Edge cases: If image is integer type; ndimage.shift returns float64; convert back to original dtype with clipping. So after shifting, cast back:
+
+```
+if np.issubdtype(img.dtype, np.integer):
+    shifted = np.clip(np.rint(shifted), np.iinfo(img.dtype).min,
+                      np.iinfo(img.dtype).max).astype(img.dtype)
+```
+
+That ensures no overflow.
+
+Also handle 3D images (channels) by passing reshape accordingly; ndimage.shift works on all axes except ones specified in order of axes param? Actually it applies to all axes unless order=0 etc. For 3D channel last axis should not be shifted; but we might want to specify axes=(0,1) so channel remains unchanged. So use:
+
+```
+if img.ndim == 3:
+    shifted = scipy.ndimage.shift(img, shift=shift + (0,), mode='nearest', order=1)
+else:
+    shifted = scipy.ndimage.shift(img, shift=shift, mode='nearest', order=1)
+```
+
+Where adding zero for channel axis ensures no shift along that axis.
+
+Alternatively use `axes=(0,1)` param in ndimage.shift but that's only available in newer versions? Actually `ndimage.shift` has `axes` argument only in newer SciPy > 1.8? Might be available. We'll use explicit tuple of shifts matching dimensions: if 3D image shape (H,W,C), we set shift=(dy,dx,0). Note orientation: SciPy expects shift along each axis in order of array axes; typical image axes are (row,column). So if problem['shift'] is (dx,dy), convert accordingly: row_shift = -dy? Wait typical coordinate system: positive y downwards corresponds to row increase; positive x rightwards corresponds to column increase. If user provides (dx,dy) meaning pixel offset along x then y? We need decide mapping. Use simple mapping: treat first element as row shift (vertical), second as column shift (horizontal). So just pass tuple(shift).
+
+Ok final design ready.
+
+Now consider performance: Using SciPy's C-optimized implementation gives speedup vs naive loops or numpy roll + interpolation etc.
+
+Edge cases test: small images 1x1; large images 10000x10000; integer dtype; missing 'shift'.
+
+Ok finalize design.
+We need to build a quick‑and‑clean `run_solver` that delegates everything to a small `Shift2D` class.  
+The class will pull the image out of the dictionary, grab a `(dx,dy)` pair from the same dictionary (or synthesize one with `random` if it’s missing), and then hand off the heavy lifting to `scipy.ndimage.shift`.  
+
+The imports have already been specified – just make sure they’re all there:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+Inside `Shift2D.solve` we’ll do the following:
+
+* Convert the incoming data into a NumPy array (`np.asarray`) – this handles lists or other array‑like objects without explicit loops.
+* Normalise the `shift` value so it’s always a two‑tuple of floats even if the caller passed a single number or omitted it entirely.
+* If the caller didn’t provide a `shift`, generate a tiny random offset with `random.uniform(-1., 1.)`.  
+  This keeps us from pulling in an unused import.
+* Call `scipy.ndimage.shift`.  
+  For three‑dimensional images (H×W×C) we’ll pad the shifts with a zero so that the channel dimension stays untouched (`shift + (0,)`).  
+  For two‑dimensional arrays just pass the two‑tuple.
+* The SciPy routine returns a floating point array regardless of input dtype – that’s fine for most tasks but if the original was an integer type we’ll round and clip back into place so that no overflow occurs.
+* Log a few bits of information so that debugging is painless – the shape of the input and the exact numeric shifts used.
+* Return a dictionary containing the shifted array under the key `'result'`.  
+  That matches what the baseline solver expects without us having to re‑implement any extra plumbing.
+
+No explicit Python loops are required – every operation is either a NumPy vectorised call or a single SciPy routine that internally uses BLAS/LAPACK or other C code paths for speed.  
+
+Edge‑case checks:
+
+* Empty arrays – `ndimage.shift` will happily return an empty array.
+* Very large arrays – SciPy’s implementation is memory efficient and will keep us within reasonable limits.
+* Integer dtypes – handled by rounding/clip logic.
+* Missing keys – safe defaults ensure no KeyError bubbles up.
+* Negative shifts – naturally handled by SciPy without any extra code.
+
+With this structure in place we’re ready to hand off the final implementation.  
+
+OK, I think I have the design. Time to write it.

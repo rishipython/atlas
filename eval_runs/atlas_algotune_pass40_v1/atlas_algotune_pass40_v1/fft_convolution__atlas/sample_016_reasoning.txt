@@ -1,0 +1,51 @@
+We need to replace body with FFT-based convolution. Use numpy. Use np.fft.fft. But need to handle lengths. Use np.fft.rfft? For real. Use np.fft.fft. Use next_fast_len from numpy. Actually numpy.fft.rfft may be faster for real input. But we can use np.fft.fft. Compute length L = next_fast_len(N+M-1). Use np.fft.rfft to compute. For real input, rfft length L. Convolution: Y = ifft(fft(x, L) * fft(h, L)). Real part. Ensure dtype float64. Use np.fft.rfft(x, n=L) etc. Use np.fft.irfft. That returns length L. Then slice to N+M-1. That is fine.
+
+Edge cases: zero-length? Not likely. Ensure dtype. Use np.asarray.
+
+Also we could use scipy.signal.fftconvolve if available. But we can use numpy.
+
+Return np.real of result.
+
+Implementation:
+
+```
+import numpy as np
+from numpy.fft import rfft, irfft
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    out_len = N + M - 1
+    L = np.fft.next_fast_len(out_len)
+    X = rfft(x, n=L)
+    H = rfft(h, n=L)
+    Y = irfft(X * H, n=L)
+    return Y[:out_len]
+```
+
+We need to import next_fast_len from numpy. That's np.fft.next_fast_len. Yes.
+
+Make sure we handle dtype. Use dtype float64.
+
+Test with random arrays. Should produce same as np.convolve.
+
+Also need to consider performance. That's good.
+
+Edge: If either input is empty? Then convolution is empty. np.convolve returns empty array. Our code: N=0 or M=0 => out_len = -1? That fails. So handle if N==0 or M==0: return np.array([], dtype=float). So we add:
+
+```
+if N==0 or M==0:
+    return np.array([], dtype=np.float64)
+```
+
+Ok.
+
+Also ensure we import numpy as np.
+
+Return Y[:out_len] cast to float64.
+
+That's it.
+
+Let's produce final code.

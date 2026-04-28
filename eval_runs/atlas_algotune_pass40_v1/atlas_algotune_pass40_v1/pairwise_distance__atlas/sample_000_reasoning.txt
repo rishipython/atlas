@@ -1,0 +1,23 @@
+We need to replace the triple loop with efficient vectorized computation. The standard formula: pairwise squared Euclidean distances can be computed via broadcasting: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i · x_j. So we compute squared norms of each row, shape (N,). Then compute Gram matrix G = X @ X.T. Then D = norms[:, None] + norms[None, :] - 2 * G. Ensure numeric stability; maybe clip negative zeros. Use np.maximum(D, 0) to avoid small negative due to floating errors. Ensure dtype float64.
+
+Implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    G = X @ X.T
+    D = norms[:, None] + norms[None, :] - 2 * G
+    # due to floating errors, clip small negative
+    D = np.maximum(D, 0.0)
+    return D
+
+Also handle shape (N, D). Should be fine.
+
+Edge cases: N=0? But likely not. But we can handle.
+
+We should also maybe use np.dot.
+
+Return dtype float64.
+
+Let's produce file.
+

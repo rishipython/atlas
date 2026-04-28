@@ -1,0 +1,23 @@
+We need to produce a faster implementation. Standard approach: compute Gram matrix and use broadcasting: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms vector, then use outer addition and subtract 2*dot product. Implementation using np.dot.
+
+Also ensure dtype float64. Return shape (N,N). Use np.maximum(D,0) to avoid negative due to numeric error.
+
+Edge cases: N=0? But shape (N,D). Might be 0. We'll handle.
+
+Implementation:
+
+def pairwise_sq_dist(X): compute norms = np.sum(X*X, axis=1). Then dist = norms[:,None] + norms[None,:] - 2 * X.dot(X.T). Clip to zero. Return dist.
+
+Should be fine.
+
+Also we can use np.linalg.norm but dot is fine.
+
+Let's produce code.
+
+We need import numpy. Provide function.
+
+Return dtype float64.
+
+Edge: if X has shape (0,D) then dot will produce shape (0,0). Norms shape (0,). Then dist = np.zeros((0,0)). Works.
+
+Let's produce final code.

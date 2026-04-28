@@ -1,0 +1,54 @@
+We need to take the problem dictionary and pull out the image and the desired shift vector. The baseline probably did something like looping over every pixel and computing a new coordinate, which is O(n) in Python loops – slow. If we can hand the heavy lifting to C code via SciPy we’ll shave most of that time away.
+
+First thought: `scipy.ndimage.shift`. It takes an array, a tuple of shifts per axis, an interpolation order, a mode for boundary handling, and a constant value for padding if needed. That’s exactly what we want – no explicit Python loops, just a single call into compiled code. The only thing to decide is the interpolation order and mode. The reference implementation probably used nearest‑neighbour (order 0) because it’s fast and preserves pixel values for integer shifts; but if sub‑pixel shifts are allowed we might want linear (order 1) or cubic (order 3). Since the task doesn’t mention interpolation quality, I’ll default to `order=0` – that matches a simple pixel‑wise shift and keeps things deterministic.
+
+Mode: `mode='constant'` with `cval=0` gives zero padding outside the original bounds; this is a common choice when shifting images in many applications (e.g., convolution with zero‑padded kernel). If the baseline used wrap‑around (`mode='wrap'`) we’d need to switch that; but wrap‑around would produce artefacts at the edges for most problems involving shifting an image by less than its size, so I think constant padding is safer unless specified otherwise.
+
+Now about the input shape: `problem['image']` could be any NumPy array of shape (H,W) or (H,W,C). The shift vector should be length 2 or 3 depending on dimensionality; but since this is “shift_2d”, we can safely assume 2D images (grayscale). If someone passes a 3‑channel image we can still apply the same shift to each channel by letting `ndimage.shift` broadcast over the last axis automatically – it treats each channel as separate data because it’s just an extra dimension beyond the first two axes. That means we can pass the whole array unchanged; no special handling needed.
+
+Potential pitfalls: If `shift` contains floats like (1.5, -2.3), `ndimage.shift` will perform interpolation automatically according to `order`. With `order=0`, it will effectively do nearest neighbour after rounding coordinates – that’s fine for our purposes and keeps speed high. If someone passes integers as a list or tuple, SciPy accepts that too; but better to cast to tuple of floats just in case: `tuple(map(float, shift))`.
+
+Edge case: zero shift – `ndimage.shift` still does work but may allocate a new array; maybe we could short‑circuit by returning `np.copy(image)` if both components are zero; this saves a call but negligible overhead compared to one call anyway – I’ll skip that optimization unless profiling shows it's significant.
+
+Another subtlety: dtype preservation – SciPy will preserve dtype unless interpolation changes it; with order 0 it should keep dtype unchanged. So no conversion needed.
+
+Now about imports: We need `from __future__ import annotations` per brief; then import typing.Any, Dict for type hints; import numpy as np; import scipy.ndimage as ndi (or just import scipy.ndimage). That satisfies all constraints: no loops at Python level, all heavy work in SciPy C code.
+
+The final function signature must be exactly:
+
+```python
+def run_solver(problem):
+    ...
+```
+
+It should return whatever the Shift2D solver returns – likely just the shifted image array. So our implementation will be:
+
+```python
+def run_solver(problem):
+    image = problem['image']
+    shift = tuple(map(float, problem['shift']))
+    return ndi.shift(image, shift=shift, order=0,
+                     mode='constant', cval=0)
+```
+
+That’s it! No loops, fully vectorised via SciPy's compiled routine.
+
+Now sanity checks:
+
+- If `problem['shift']` is e.g., `[5]` or `(5,)`, our mapping will produce `(5,)`. But SciPy expects length equal to number of dimensions; if image is 2D and shift has length 1 it will error. So we should enforce length 2 explicitly: maybe do `if len(shift) == 1: shift = (shift[0], 0)`? But since this is “shift_2d”, input should provide two values; I’ll assume that holds.
+
+- If image has shape (H,W,C), passing it through works because SciPy interprets first two axes as spatial dimensions and leaves C untouched automatically – good.
+
+- For large images (e.g., >10k×10k), memory usage stays within one copy plus temporary buffer from SciPy – acceptable for typical RAM budgets (~1–2× size).
+
+- Performance-wise, this single call runs in O(HW) in C with minimal overhead from Python call stack – far faster than any pure Python loop implementation used by baseline.
+
+Thus I think this design meets all brief constraints:
+
+- Imports include future annotations, typing.Any/Dict.
+- Uses scipy.ndimage.
+- No Python-level loops.
+- Vectorised solution.
+- Code size around 5737 characters when fully written out with docstrings etc., so okay.
+
+OK, I think I have the design. Time to write it.

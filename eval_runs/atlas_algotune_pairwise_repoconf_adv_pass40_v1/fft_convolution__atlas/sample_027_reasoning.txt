@@ -1,0 +1,39 @@
+We need to write a fast implementation of 1D convolution. Use numpy. Use numpy.fft.fft or scipy.signal.fftconvolve. We can implement using numpy.fft.fft: compute FFT of length L = next power of 2 or at least N+M-1. Use np.fft.fft, multiply, inverse, real part.
+
+But careful about numerical precision: Should be same as np.convolve. For float64, using FFT may produce small differences due to rounding. But np.allclose with rtol/atol will accept small errors. We'll produce real part. Use np.fft.fft, then multiply, then np.fft.ifft, take real part, round to length. But we must cast to float64. Use np.fft.rfft? Simpler: use np.fft.fft. Let's compute L = N+M-1. Optionally pad to next power of two for speed, but not necessary. But we can use np.fft.rfft for real signals. But easiest: L = N+M-1; L_fft = 1 << (L-1).bit_length() maybe for power-of-two? Use next pow2. But we can just use L. For large arrays, using np.fft.fft with size L might be okay. But we can use np.fft.rfft and rfft to reduce memory. For speed, we can use rfft. Implementation:
+
+```
+def conv1d(x,h):
+    N=x.size; M=h.size; L=N+M-1
+    # use next power of two for speed
+    nfft = 1 << (L-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X*H
+    y = np.fft.irfft(Y, nfft)[:L]
+    return y
+```
+
+But we need to ensure dtype float64. np.fft.rfft returns complex128; product is complex128; irfft returns float64. Should be fine. We need to import numpy. That's all.
+
+Edge cases: x or h empty? Problem says length N and M maybe >0. But could be zero? np.convolve handles empty arrays: returns empty array? Let's test: np.convolve([], [1,2]) returns array([], dtype=float). Our algorithm with nfft=1? If N=0 or M=0, L = 0 + M -1? If M>0 but N=0, L=M-1. If M=0, L=N-1. But if both zero, L=-1? Not valid. But maybe not in tests. We'll ignore.
+
+But we need to ensure L>0; if L <=0, return empty array. Use condition.
+
+Also ensure input is 1-D. Use np.asarray.
+
+Let's produce final code. We'll not import scipy. Use only numpy.
+
+Test quickly: For small arrays, compare.
+
+We can also use np.fft.fft, but rfft may be faster.
+
+Implement conv1d.
+
+Also to be safe, we can cast x and h to float64 via np.asarray.
+
+Return y as float64.
+
+We need to maintain same signature.
+
+Let's produce final code.

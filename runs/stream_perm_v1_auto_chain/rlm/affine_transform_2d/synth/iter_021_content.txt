@@ -1,0 +1,112 @@
+We need to speed up the affine transform. The baseline uses scipy.ndimage.affine_transform directly. That is already vectorised, but maybe overhead from Python call and data conversion. Maybe we can use numba to JIT a custom implementation? But implementing cubic spline interpolation manually is heavy. Maybe we can use scipy's map_coordinates which is also vectorised but maybe slower.
+
+Alternatively, we could precompute the inverse matrix and use grid indexing with np.meshgrid to compute coordinates and then use scipy.ndimage.map_coordinates with order=3. That might be similar speed.
+
+But maybe the main bottleneck is memory allocation of large arrays for big images. We can use float32 to reduce memory and speed.
+
+We can also consider using jax.lax.map or jit but that would require JAX import; but the brief says we must use scipy somewhere. So we can keep scipy for interpolation.
+
+Maybe we can avoid creating a full coordinate grid by using affine_transform's output_shape argument and providing the matrix in correct form? Wait, scipy.ndimage.affine_transform expects a matrix that maps output coordinates to input coordinates. Our input matrix is probably mapping input to output? We need to confirm. The baseline uses the matrix directly, so likely it's correct.
+
+We can try using scipy.ndimage.affine_transform with order=1 instead of 3 for speed, but must match reference? The is_solution will compare with reference computed by same order=3. So if we change order, it will fail verification.
+
+Thus we must keep order=3.
+
+Maybe we can reduce precision: convert image to float32 before calling affine_transform; then cast back to float64? That may speed up because underlying C code may use float32 if dtype is float32.
+
+Also mode="constant" default uses 0 padding; that's fine.
+
+We could also consider using scipy.ndimage.affine_transform with precomputed inverse matrix and specifying offset separately for better performance? But not necessary.
+
+Maybe we can drop some overhead: avoid try/except inside solve, just call directly; reduce logging overhead.
+
+Also avoid converting solution list; just return numpy array as transformed_image; is_solution will handle conversion.
+
+But we need to ensure solution returns numpy array or list? In reference they return numpy array. In is_solution they accept either list or array; they convert accordingly. So returning numpy array is fine.
+
+Thus main improvement: cast image to float32, call affine_transform with order=3, mode="constant", maybe specify output_shape same as input shape (default). Avoid try/except overhead. Remove unnecessary imports like random, logging inside solve? Logging minimal.
+
+Also ensure function signature remains same: solve(self, problem). We can store self.order = 3; self.mode = "constant".
+
+Potential numeric edge cases: small images size 1x1; affine_transform might produce weird shape? But test likely uses n>=1.
+
+We should also consider that scipy.ndimage.affine_transform expects matrix shape (output_ndim, input_ndim). For 2D it's 2x2 matrix and offset vector length 2. But our matrix is 2x3; maybe they treat last column as offset? Yes, affine_transform accepts matrix of shape (output_ndim, input_ndim) and offset separately. But passing 2x3 works because it interprets as matrix and offset combined? Actually SciPy's affine_transform has signature (input, matrix, offset=0). It expects matrix shape (output_dim, input_dim) and offset vector length output_dim. If you pass a 2x3 array, it will treat it as matrix of shape (2,3) which mismatches expected shape; but maybe SciPy accepts a combined form where last column is offset if you pass "matrix" argument incorrectly? Wait reading docs: The function signature: ndimage.affine_transform(input, matrix, offset=0.0,...). The "matrix" argument is the inverse mapping from output coords to input coords. If you want translation you pass offset separately or embed in matrix by adding a column? Actually you can provide a 2x3 array where the last column is treated as offset if you set "matrix" param incorrectly? I think SciPy expects a 2x2 matrix; passing 2x3 may cause error or be interpreted differently (maybe treat last column as part of linear transform?). But baseline code passes it directly and works according to tests. So maybe SciPy's function accepts a combined form: If "matrix" has shape (N,N+1), it splits into linear part and offset automatically? I'd check docs: In older versions there was an "offset" param separate from "matrix". But passing 2x3 might be accepted by some wrappers that split automatically. Let's assume baseline works.
+
+Thus our improved solve just calls same function with same arguments but cast dtype float32 for speed.
+
+Also we might precompute image dtype conversion once per problem; no loops needed.
+
+Potential improvement: Use np.asarray(problem["image"], dtype=np.float32) to avoid copying if already float32.
+
+Also convert result back to float64 for consistency? Not necessary; tests compare arrays element-wise with tolerance; if dtype differs it's fine as long as values close enough.
+
+But if result dtype float32 may have slightly different rounding errors compared to reference computed in float64 by default. That might cause failure due to tolerance too strict? The reference uses default dtype of image which might be float64 because problem["image"] list of floats -> np.array default dtype float64. Then affine_transform on float64 yields float64 result. Our result will be float32 -> less precision -> difference maybe > atol=1e-7 relative small differences maybe >1e-7 relative error due to rounding difference ~1e-7 * value (~255) = ~2e-5 > atol? Actually atol=1e-7 absolute tolerance; difference between float32 and float64 at magnitude ~100 might be about 1e-5 due to rounding error ~1e-7 relative error times value ~100 => 1e-5 > atol so fail! So we must keep dtype same as reference: use float64 for computation.
+
+Thus no benefit from dtype conversion unless we adjust atol accordingly or use higher tolerance. But tests use fixed tolerance inside is_solution defined earlier in code: rtol=1e-5, atol=1e-7 . That's strict absolute tolerance of 1e-7! So any difference >1e-7 fails even if relative difference small. Using float32 may produce differences larger than that due to rounding error in interpolation coefficients etc. So better keep double precision.
+
+Thus no dtype change beneficial.
+
+Then what optimization remains? Perhaps using numba compiled loop over pixels? That would involve writing own interpolation code which may be slower than optimized SciPy C code anyway.
+
+Maybe we can avoid creating new array by performing transform in-place on a preallocated output array passed via 'output' argument of affine_transform? Let's check signature: ndimage.affine_transform(input, matrix, offset=0., output=None,...). If output provided it's used instead of allocating new one. That could save allocation time for large images when repeated many times - but here only one call per solve so not huge gain.
+
+But perhaps using 'output' argument reduces memory overhead by reusing buffer allocated earlier in solve method from previous runs? Not applicable across runs since each solve call new instance?
+
+But within solve we could allocate output array once then pass it back after transform so no new allocation inside C code? Actually C code still allocates internally unless output provided - but providing output avoids internal allocation but still needs memory for output anyway - but could reduce overhead of memory allocation inside C routine vs Python-level allocation? Might be minor improvement though.
+
+We could also consider using SciPy's generic_filter or map_coordinates with precomputed coordinates grid - but that's similar cost.
+
+Another idea: Use SciPy's ndimage.shift or rotate functions that are specialized for rotation+translation etc - but not general affine transform.
+
+Thus the only major speed improvement likely comes from removing Python-level overhead like try/except blocks and logging calls inside solve method - those are executed each time and add overhead especially when many solves are called in benchmark loops. Removing them reduces overhead significantly because each solve call will just perform one function call instead of multiple Python statements and exception handling which incurs overhead even if no exception occurs (try/except still costs some).
+
+Also remove unnecessary imports like random etc at top-level; not used anyway.
+
+So design:
+
+- Keep imports minimal.
+- In __init__, set self.order = 3 self.mode = 'constant'.
+- In solve:
+    - Grab image = problem['image']; convert to np.ndarray.
+    - Grab matrix = problem['matrix']; convert.
+    - Call scipy.ndimage.affine_transform(image, matrix, order=self.order, mode=self.mode)
+    - Return {'transformed_image': transformed_image}
+No try/except or logging inside solve.
+No extra conversions.
+Return numpy array directly.
+This should reduce overhead significantly while still producing correct result identical to baseline because same parameters used.
+Edge cases: None.
+Need ensure that problem["image"] may be list of lists; converting via np.asarray will produce dtype float64 by default.
+Matrix likewise list-of-lists -> np.asarray -> shape (2,3).
+affine_transform will handle this combined form correctly as baseline did.
+Thus final solution matches spec.
+
+Check that run_solver returns solver.solve(problem) which returns dict with numpy array value - acceptable by evaluation harness expecting JSON serializable lists maybe; but tests expect numpy arrays convertible via json serialization via .tolist() later in evaluation pipeline perhaps handled automatically by runner converting arrays via .tolist() when serializing JSON response? Usually tasks expect nested lists rather than numpy arrays in JSON output; but original baseline returned numpy array too maybe accepted by harness converting automatically?
+
+In original code run_solver returns solver.solve(problem); solver.solve returns dict with 'transformed_image': transformed_image where transformed_image is numpy.ndarray returned by scipy.ndimage.affine_transform. In tests they probably compare solution via solver.is_solution which handles both lists and arrays appropriately including conversion from array to list when verifying shape etc. The final answer returned by run_solver may still contain numpy array which might get serialized incorrectly by JSON serializer used in evaluation environment; but earlier tasks accepted this pattern often because they convert arrays before sending out or they allow raw arrays in JSON due to custom serialization logic in evaluator (maybe uses json.dumps with default=str?). Hard guess but likely fine because original code did same thing and passed tests originally albeit slow.
+
+Thus design meets brief: uses scipy functions somewhere (affine_transform), no Python loops (none), vectorised operations only inside SciPy C code, minimal overhead lines.
+
+We should also remove unused imports like random at top-level since brief says minimal imports needed: logging, typing Dict Any, numpy as np, scipy.ndimage
+
+Also remove typing.Any import maybe not needed except for type hints optional; keep for clarity though not required but fine.
+
+Ok final design ready.
+We need a leaner `solve` that does nothing more than hand off the work to SciPy’s highly‑optimised C routine while avoiding any Python‑level noise – no `try/except`, no logging inside the critical path – so every call hits just one function call and one allocation on the C side instead of dozens of Python byte‑code instructions that all add up when the benchmark runs thousands of solves.
+
+Let’s strip down the class:
+
+* Keep only the essentials in `__init__`: `self.order = 3` and `self.mode = "constant"`.  
+* In `solve` grab `problem["image"]` and `problem["matrix"]`, turn them into NumPy arrays on demand (`np.asarray`).  
+* Call `scipy.ndimage.affine_transform` once with those arguments – exactly what the reference does – without wrapping it in any error handling or logging machinery.  
+* Return a dictionary `{ "transformed_image": transformed_image }`.  
+
+Because the caller (`run_solver`) simply forwards whatever `solve` returns and because `is_solution` knows how to coerce an ndarray into a list before comparison (`np.asarray(proposed_list)`), this minimal wrapper produces exactly the same numerical result as the original implementation while shaving off all unnecessary Python overhead.
+
+All other parts stay untouched – imports are limited to what’s actually used (`logging`, `typing`, `numpy`, `scipy.ndimage`) – so there are no stray modules pulling in extra weight or introducing hidden loops. This design satisfies every constraint from the brief:
+
+* Uses SciPy somewhere (`affine_transform`).  
+* No Python‑level loops – everything happens inside SciPy’s vectorised kernels.  
+* The final file size stays comfortably under the character limit (~4515 characters).  
+
+OK, I think I have the design. Time to write it.

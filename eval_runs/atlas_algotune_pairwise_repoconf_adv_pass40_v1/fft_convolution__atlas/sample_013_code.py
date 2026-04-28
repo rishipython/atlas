@@ -1,0 +1,27 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    # Ensure inputs are 1‑D float64 arrays
+    x = np.asarray(x, dtype=np.float64).ravel()
+    h = np.asarray(h, dtype=np.float64).ravel()
+
+    N, M = x.size, h.size
+    L = N + M - 1
+
+    if L == 0:  # one of the inputs is empty
+        return np.array([], dtype=np.float64)
+
+    # Choose FFT length as next power of two >= L for speed
+    n_fft = 1 << (L - 1).bit_length()
+
+    # Compute real FFTs of both sequences
+    X = np.fft.rfft(x, n_fft)
+    H = np.fft.rfft(h, n_fft)
+
+    # Pointwise multiplication and inverse real FFT
+    y = np.fft.irfft(X * H, n_fft)
+
+    # Truncate to the full linear convolution length
+    return y[:L]

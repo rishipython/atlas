@@ -1,0 +1,49 @@
+We need to pull the image and the rotation angle out of the `problem` dictionary and feed them straight into a SciPy routine that does the heavy lifting in compiled code – no Python loops at all.  
+Let’s keep it simple: `scipy.ndimage.rotate` already does exactly what we want – it rotates an ND array around its first two axes with bilinear interpolation (order = 1) and can keep the output shape fixed with `reshape=False`.  
+The only trick is making sure we don’t accidentally create any Python‑level iteration and that we handle the typical edge cases (non‑numeric angles, non‑array inputs, etc.) gracefully while still staying within the “no‑loops” rule.  
+
+**Imports**  
+We’ll bring in the standard logging set‑up so we can emit a helpful message if something goes wrong (this satisfies the “import logging” requirement).  
+`random` is pulled in because the brief lists it – we’ll just seed it once so any downstream stochastic behaviour is reproducible even though our core routine isn’t stochastic at all.  
+`typing.Any` and `Dict` are there just for type hints on the `problem` argument – they don’t affect runtime but keep the file tidy.  
+`numpy as np` is obviously needed for the array conversion and casting of the angle value.  
+Finally `scipy.ndimage` gives us the fast rotation kernel we’ll call once per solve request – no loops inside our Python code at all!
+
+**Handling the input**  
+The `problem` dict is expected to contain at least two keys: `'image'`, which should be a NumPy‑compatible sequence (list of lists, a NumPy array, etc.), and `'angle'`, which can be any numeric type convertible to float.  
+We’ll do a quick sanity check:
+
+```python
+img = np.asarray(problem.get('image'))
+if img.ndim < 2:
+    raise ValueError('Input image must have at least 2 dimensions')
+try:
+    ang = float(problem.get('angle'))
+except Exception:
+    raise TypeError('Angle must be numeric')
+```
+
+That guarantees we’re passing something sensible to `rotate`.  
+
+**The core operation**  
+Now just one line of compiled code:
+
+```python
+rotated = scipy.ndimage.rotate(img, ang, reshape=False)
+```
+
+No explicit loops here – `rotate` handles everything internally in C/Fortran code behind SciPy’s back‑end (BLAS/LAPACK or OpenMP).  
+
+**Return value**  
+The baseline `Rotate2D().solve()` most likely returns a NumPy array containing the rotated image (the tests compare pixelwise against that).  
+So we’ll simply return `rotated`.  If downstream code expects a dict with a key like `'rotated'`, it can be wrapped easily – but returning the raw array keeps things minimal and fast.
+
+**Edge cases & robustness**  
+* If the input image has more than three dimensions (e.g., a batch of images), `rotate` will treat everything beyond two axes as extra channels and rotate them together – that’s usually fine for most use cases.
+* The interpolation order defaults to bilinear (`order=1`). If higher fidelity is required one could expose an optional parameter, but keeping it simple satisfies speed.
+* Since we seed `random.seed(0)` at import time, any accidental randomness elsewhere remains deterministic without affecting our core logic.
+* We never touch any element individually; thus there are literally zero Python‑level iterations in this function body.
+
+All requirements are satisfied: imports match the brief (`logging`, `random`, `typing`, `numpy`, `scipy.ndimage`), everything is vectorised via SciPy’s compiled routine, no Python loops appear anywhere in our solve path, and we keep the code short enough that it stays under ~6669 characters once boilerplate like docstrings and comments are added later if desired.  
+
+OK, I think I have the design. Time to write it.

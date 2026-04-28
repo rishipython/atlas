@@ -1,0 +1,23 @@
+We need to implement fast conv1d via FFT. Use numpy. Ensure same dtype float64. Use np.fft.rfft? For real convolution, we can use rfft. But need to handle arbitrary lengths. We can use np.fft.fft with complex, but for speed rfft might be faster. Implementation: compute next power of two >= N+M-1. Use rfft to compute real FFT of both padded arrays. Multiply elementwise, inverse rfft. rfft returns length n//2+1, where n is FFT length. For real input, the inverse rfft returns real array of length n. We then take first N+M-1 elements.
+
+Edge cases: zero-length? Input arrays length >=1? Probably yes. But we can handle 0 gracefully.
+
+Let's implement:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); L=N+M-1
+    nfft=1<< (L-1).bit_length()  # next power of two >= L
+    X=np.fft.rfft(x, nfft)
+    H=np.fft.rfft(h, nfft)
+    y=np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+We need to ensure dtype float64. rfft returns complex128. Multiply, get complex128. irfft returns float64.
+
+Should be fine.
+
+Add imports.
+
+Return numpy array.
+
+Let's produce final code.

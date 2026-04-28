@@ -1,0 +1,39 @@
+We need to implement conv1d with FFT. Must be correct, numerically close. Use np.fft.fft with real to reduce memory? Use np.fft.rfft? Use np.fft.fft for double length? For real inputs, we can use rfft and irfft. But easier: use np.fft.fft of length L = next_pow2(N+M-1) maybe. Use rfft and irfft for speed. But ensure dtype float64. Use np.fft.rfft and np.fft.irfft. The output of irfft has length L. Then slice first N+M-1.
+
+Edge cases: if either array empty? Not specified but likely length>=1. Should handle small lengths. For small sizes, direct conv maybe faster. But we can just use FFT anyway; it's fine. But we need to ensure no overflow for large lengths? For length maybe up to 1e6? rfft is efficient.
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size = N+M-1
+    # compute next power of two for speed? Not necessary but maybe better.
+    L = 1 << (size-1).bit_length()
+    # rfft of length L
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:size]
+
+Check dtype: np.fft.rfft returns complex128; irfft returns float64.
+
+Edge: if size==1? L=1. Works.
+
+Should we handle if inputs not 1d? Assume 1d. Use np.asarray.
+
+Also, if using rfft, we need to provide n=L. For small arrays, L maybe small.
+
+All good.
+
+Test: Quick test.
+
+Also, to ensure numeric closeness: use np.allclose with rtol=1e-12? The problem may use default rtol 1e-5? But fine.
+
+We'll implement.
+
+Return numpy array of dtype float64.
+
+Also import numpy.
+
+Let's produce final code.

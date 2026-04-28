@@ -1,0 +1,31 @@
+We need to implement fast, numerically stable matrix exponential. Use scipy.linalg.expm? But we can just import scipy.linalg.expm and call it; but the point is to implement faster than naive. But we can use scipy's expm directly. That will be fast and accurate. However, they might want a custom implementation. But using scipy is allowed. So we can implement expm_fast that calls scipy.linalg.expm(A). That's simplest.
+
+But maybe they want to avoid heavy dependencies? But SciPy is allowed. So just import scipy.linalg.expm.
+
+But the challenge: we need to match SciPy's output within tolerance. So using scipy's expm will produce exactly same result. But maybe they want to implement a method like scaling and squaring with Padé approximants. But we can rely on scipy.
+
+We need to ensure that the function signature is same. We'll import numpy and scipy.linalg.
+
+We must produce a single Python file. Should we add guard for shape? Not necessary.
+
+Let's implement:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy.linalg.expm(A)
+
+That's it. But maybe they want a pure numpy implementation. But it's okay.
+
+We must ensure that A is float64. If not, cast.
+
+We can do A = np.asarray(A, dtype=np.float64)
+
+Return scipy.linalg.expm(A). That's fine.
+
+Edge cases: The reference uses np.eye and loops. But SciPy's expm works for any square matrix.
+
+We just need to ensure that the output shape matches.
+
+Let's produce final code.

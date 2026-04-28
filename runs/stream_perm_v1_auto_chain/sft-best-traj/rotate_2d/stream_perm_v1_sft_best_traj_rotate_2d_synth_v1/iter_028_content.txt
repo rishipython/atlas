@@ -1,0 +1,86 @@
+We need to think about rotating a 2D array? Problem rotate_2d. Likely rotate image by arbitrary angle? Let's assume input problem dict contains 'image' and 'angle'. We need efficient implementation using scipy.ndimage.rotate maybe. Use matrix multiplication? Could precompute rotation matrix and apply via affine_transform. Use numpy matrix mult for grid mapping. Avoid loops. Use scipy.ndimage.affine_transform which uses BLAS? Might use scipy.ndimage.rotate directly.
+
+Also need logging, random, typing.Any, Dict. Use numpy and scipy.ndimage. No loops. Provide run_solver that calls Rotate2D().solve.
+
+Define Rotate2D class with solve method taking problem dict. Inside, extract array, angle, maybe reshape. Use scipy.ndimage.rotate with reshape=False to keep size? Use order=1 interpolation.
+
+Matrix multiplication: we can compute rotation matrix and apply via affine_transform: map coordinates by inverse transform. But that still uses internal loops in C.
+
+But requirement: uses matrix multiplication (BLAS-backed). We can generate grid coordinates and multiply by rotation matrix to get rotated coordinates then sample via map_coordinates which is vectorized.
+
+Implement:
+
+h,w = img.shape
+y,x = np.indices((h,w))
+center = np.array([h/2,w/2])
+coords = np.stack([y - center[0], x - center[1]], axis=0)
+rot = np.array([[cos,-sin],[sin,cos]])
+rot_coords = rot @ coords.reshape(2,-1)
+rot_coords += center[:,None]
+# now use map_coordinates
+from scipy.ndimage import map_coordinates
+rotated = map_coordinates(img, rot_coords, order=1, mode='constant', cval=0).reshape(h,w)
+
+This uses matrix multiplication of shape (2,2) @ (2,N). That's BLAS.
+
+No loops. Good.
+
+Need logging and random maybe used for seed? Not necessary but include import random.
+
+Return rotated array in dict maybe.
+
+Edge cases: negative angles fine.
+
+Also need to handle multi-channel? Keep simple.
+
+Ok produce chain-of-thought.
+We need to take the `problem` dictionary, pull out whatever data it contains—most likely an image array and an angle—and produce a rotated version of that image as fast as possible. The reference implementation probably uses a naive loop over pixels or a slow interpolation routine; we want to replace that with something that relies on NumPy’s BLAS‑backed operations and SciPy’s highly optimised image‑processing functions.
+
+First thought: just call `scipy.ndimage.rotate`. That would be a one‑liner:
+
+```python
+rotated = scipy.ndimage.rotate(img, angle, reshape=False)
+```
+
+But that hides the heavy lifting inside SciPy; we’re not explicitly using matrix multiplication ourselves, and we don’t get to see the BLAS call that could be exploited for speed. Also `rotate` internally builds a grid of coordinates and interpolates pixel values; it’s already vectorised but not transparent about the linear algebra.
+
+Another idea is to build the affine transformation ourselves: compute the rotation matrix `R`, apply it to a grid of coordinates, then use `scipy.ndimage.map_coordinates` to fetch the pixel values at those transformed coordinates. That way we explicitly use a NumPy `@` operation (matrix multiplication) which will dispatch to BLAS for the big dot product of the coordinate array with the 2×2 rotation matrix. No Python loops are needed; everything stays in C/Fortran under the hood.
+
+We also have to satisfy the brief: imports must include `logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`. So we’ll bring those in even if not all are strictly necessary; maybe use `random` for seeding or a debug flag later.
+
+Let’s sketch the core logic:
+
+1. Extract image (`img`) from `problem['data']` or similar key.
+2. Get rotation angle in degrees from `problem['angle']`.
+3. Compute sine and cosine once.
+4. Build a grid of coordinates covering the image using `np.indices`. This gives two arrays of shape `(H, W)` each.
+5. Stack them into a `(2, H*W)` array so we can multiply by our 2×2 rotation matrix.
+6. Add back the centre offset after rotation.
+7. Feed these transformed coordinates into `map_coordinates` with linear interpolation (`order=1`) and zero padding (`mode='constant', cval=0`).
+8. Reshape back to `(H, W)` and return in whatever format the caller expects (likely just the rotated array).
+
+Potential pitfalls:  
+- The coordinate system of NumPy indices starts at 0 at the top‑left corner; rotating around the centre requires shifting by `(H/2 - 0.5, W/2 - 0.5)` rather than just `(H/2, W/2)` because pixel centres are offset by 0.5 in each direction.  
+- Negative angles should work automatically because sine changes sign accordingly; no extra handling needed.  
+- For very small images or very large angles close to multiples of 360°, rounding errors could cause tiny negative values after interpolation; but since we’re using linear interpolation on integer arrays this should be fine.
+
+We also want to keep everything vectorised: no explicit Python loops over pixels or rows; all heavy lifting is done by NumPy/SciPy calls that internally call BLAS/LAPACK routines for large matrix multiplications or convolution kernels.
+
+Finally we wrap this logic inside a class `Rotate2D` with a method `solve(problem)`. The entry point function `run_solver(problem)` simply creates an instance of this class and returns its result:
+
+```python
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+That satisfies the required signature while keeping the code clean and efficient.
+
+Before finalising we should double‑check edge cases:
+
+- If `img` is not 2‑D (e.g., has channels), our current code will fail because `np.indices` expects a 2‑tuple of shapes; we could add a guard that flattens any extra dimensions or raise an informative error.
+- If `angle` is given as radians instead of degrees (some libraries expect radians), we’ll convert using `np.deg2rad`.
+- If the input dictionary uses keys other than `'data'` or `'angle'`, we might need to inspect its structure first; but for this task we’ll assume those keys exist.
+
+With these decisions in place I’m ready to write out the final module—imports first, then the class with its vectorised solve method, followed by the required entry point function. All operations stay within NumPy/SciPy without any Python‑level loops, satisfying both speed and design constraints.
+
+OK, I think I have the design. Time to write it.

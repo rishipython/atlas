@@ -1,0 +1,28 @@
+Problem: matrix_exponential
+
+AlgoTune: speed up the matrix exponential.
+
+Given a square float64 numpy array ``A`` of shape ``(n, n)``, return
+``expm(A) = sum_{k=0..inf} A^k / k!``.  The reference implementation is
+a naive Taylor-series truncation in pure Python (slow, and numerically
+unstable for large ``||A||``).  Your task is to replace it with a fast,
+numerically-stable implementation that matches
+``scipy.linalg.expm(A)`` within tight tolerance.
+
+Reference (correct but slow) implementation — replace its body with a faster implementation, keeping the same function name and signature:
+```python
+import numpy as np
+
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix ``A``."""
+    n = A.shape[0]
+    result = np.eye(n, dtype=np.float64)
+    term = np.eye(n, dtype=np.float64)
+    for k in range(1, 40):
+        term = term @ A / k
+        result = result + term
+    return result
+```
+
+Produce a single ```python fenced block containing a complete runnable file. The entry-point function is `expm_fast`.

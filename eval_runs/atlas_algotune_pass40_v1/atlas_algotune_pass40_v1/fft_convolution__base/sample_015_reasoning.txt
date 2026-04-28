@@ -1,0 +1,71 @@
+We need to produce a faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must keep same function signature. We need to handle arbitrary lengths, ensure float64 dtype. The result should be numerically close. Using np.fft.rfft maybe. But easiest is to use scipy.signal.fftconvolve. However not sure if SciPy available. The problem states we may import scipy. We'll use scipy.signal.fftconvolve. But we must ensure the output dtype float64. Also check that the input arrays may not be contiguous, but that's fine. Use np.asarray. Implementation:
+
+```
+import numpy as np
+from scipy.signal import fftconvolve
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    return fftconvolve(x, h, mode='full')
+```
+
+But need to ensure dtype float64. The output of fftconvolve may be float64 if inputs are float64. But to be safe, cast to float64. Also we may want to avoid overhead of SciPy if not available. But we can rely on SciPy.
+
+Alternatively use numpy.fft.fft. But careful with zero-padding to next power of two. Implementation:
+
+```
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    n = N + M - 1
+    size = 1 << (n-1).bit_length()
+    X = np.fft.rfft(x, size)
+    H = np.fft.rfft(h, size)
+    Y = X * H
+    y = np.fft.irfft(Y, size)[:n]
+    return y
+```
+
+This uses real FFT for efficiency. But careful with dtype. Should use np.float64. Use np.fft.rfft, which returns complex. The result will be float64 real. Should cast to float64.
+
+We need to ensure numerical closeness. Use rfft/irfft is fine.
+
+Which is faster? For large arrays, rfft is efficient. We'll implement that. Ensure we don't import scipy if not needed. Use numpy only.
+
+Edge cases: if x or h empty? Problem states length N, M. But could be zero? Not sure. But we can handle. If either length 0, conv returns empty array? For full convolution of empty arrays? In numpy, convolve of empty array returns empty. We'll mimic that.
+
+If N==0 or M==0: return empty array dtype float64.
+
+Also if N+M-1 <= size? We'll compute size. If size==0? For n=0, bit_length of -1? Actually if n=0, bit_length of 0 is 0, then size=1 << 0 = 1? That would produce size 1. But we should return empty. So handle n==0 separately.
+
+Implementation:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    n = N + M - 1
+    if n == 0:
+        return np.array([], dtype=np.float64)
+    size = 1 << (n-1).bit_length()
+    X = np.fft.rfft(x, size)
+    H = np.fft.rfft(h, size)
+    Y = X * H
+    y = np.fft.irfft(Y, size)[:n]
+    return y
+```
+
+Check for small arrays: For n small, size may be 1? If n=1, size=1<<0=1. rfft of length 1? Works. irfft of length 1? returns array length 1. Good.
+
+For n=2, size=1<<1=2. rfft of length 2 returns 2 freq bins? Actually rfft of length 2 returns 2 elements (k=0,1). Works.
+
+Edge: if x or h is not 1D? Problem says 1-D. But we can handle.
+
+Also we need to import numpy.
+
+Return array dtype float64.
+
+Ok produce final code.

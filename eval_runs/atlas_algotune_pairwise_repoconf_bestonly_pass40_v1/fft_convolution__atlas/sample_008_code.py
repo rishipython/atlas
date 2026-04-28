@@ -1,0 +1,31 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster using FFT."""
+    # Ensure inputs are 1-D float64 arrays
+    x = np.asarray(x, dtype=np.float64).ravel()
+    h = np.asarray(h, dtype=np.float64).ravel()
+
+    N, M = x.size, h.size
+    out_len = N + M - 1
+
+    # If any input is empty, return an empty array
+    if N == 0 or M == 0:
+        return np.empty(out_len, dtype=np.float64)
+
+    # Choose FFT size as next power of two >= out_len for speed
+    nfft = 1 << (out_len - 1).bit_length()
+
+    # Compute FFTs of zero-padded inputs
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+
+    # Element-wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse FFT to get convolution result
+    y = np.fft.irfft(Y, nfft)
+
+    # Truncate to the true convolution length
+    return y[:out_len]

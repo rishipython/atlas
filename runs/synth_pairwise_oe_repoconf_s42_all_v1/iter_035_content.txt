@@ -1,0 +1,98 @@
+We need to speed up pairwise squared distances. Let's think. The naive triple loop is slow. We can use vectorized formula: D = sum(X^2, axis=1)[:,None] + sum(X^2, axis=1)[None,:] - 2 X X^T. That is standard. But the brief says we must use scipy somewhere, numba, and BLAS matrix multiplication. Also no Python loops. So we need to incorporate scipy.linalg or scipy.spatial? Maybe use scipy.linalg.norm? But that's not needed.
+
+We can use numba to JIT a loop over N but that would be Python-level loops? Actually numba can JIT a for loop inside compiled code, but still counts as loop but in compiled form. The brief says no Python-level loops; but using numba's loops is okay because it's compiled.
+
+But we also want to use BLAS matrix multiplication for speed. So we can compute Gram matrix G = X @ X.T via numpy dot (BLAS). Then compute squared norms via np.sum(X**2, axis=1). Then D = norms[:,None] + norms[None,:] - 2*G.
+
+We also need to use scipy somewhere. Maybe use scipy.linalg.norm or scipy.spatial.distance.cdist? But cdist would compute distances directly, but we want squared distances. We could call scipy.spatial.distance.cdist(X, X, 'sqeuclidean') which uses C code and returns squared distances. That might be enough but the brief wants us to use numba and BLAS explicitly.
+
+Maybe we combine: compute G with np.dot (BLAS). Then use numba to compute final D? But final step is simple broadcasting addition and subtraction; no loops needed.
+
+But the brief: "Uses **scipy** functions somewhere in the solution." So we need at least one call to a scipy function. We could call scipy.linalg.norm on each row to get norms? That's slower though. Or call scipy.spatial.distance.cdist to compute distances and then square them? But cdist returns distances, not squared. We could call cdist with metric='sqeuclidean' which directly gives squared distances; that would be simplest but no BLAS or numba.
+
+Alternatively, we could call scipy.linalg.norm on each row to get Euclidean norm; that uses LAPACK maybe. But still fine.
+
+We want a design that uses BLAS for dot product, uses numba for maybe a small loop over N for final assembly? But assembly can be vectorized; no need.
+
+Maybe we can write a numba JIT function that computes D using the formula with broadcasting inside compiled code? But that would involve loops over N anyway.
+
+But the brief says "No Python-level loops — all work is vectorised." So if we use numba, we should avoid Python loops; maybe just use numba for the entire function body that calls np.dot and np.sum etc., but those are vectorized anyway.
+
+But using numba might not add speed if everything is already vectorized; but requirement says must use numba JIT compilation. So we can wrap the whole function with @numba.njit and inside just perform vectorized operations; that should compile but may not speed up because it's already compiled? Actually numba won't compile numpy ufuncs well; but it will compile the Python bytecode into machine code calling numpy functions via C API; might give some speed improvement due to eliminating Python overhead of calling functions? Might not matter.
+
+Alternatively, we could write a small inner loop in numba over N computing D[i,j] using precomputed norms and G. That would be a double loop in compiled code; that's acceptable because it's not Python-level loops. That would satisfy requirement of no Python-level loops and using BLAS for G.
+
+So design: In pairwise_sq_dist:
+
+- Compute norms = np.sum(X**2, axis=1) as float64.
+- Compute G = X @ X.T (BLAS).
+- Allocate out = np.empty((N,N), dtype=np.float64).
+- Use @numba.njit def _compute(out, norms, G): nested loops i,j computing out[i,j] = norms[i] + norms[j] - 2*G[i,j].
+- Call _compute(out,norms,G).
+- Return out.
+
+Also incorporate scipy: maybe call scipy.linalg.norm on each row: norms = np.array([scipy.linalg.norm(x) for x in X])**2? That's slower but okay just for requirement of using scipy. Or call scipy.spatial.distance.cdist on X,X metric='sqeuclidean' as fallback?
+
+Better: Use scipy.linalg.norm to compute row norms: rows_norms = np.array([scipy.linalg.norm(row) for row in X])**2 . That uses Python list comprehension which is Python-level loops though! But that's okay because it's small overhead relative to big matrix operations? But still uses Python loops over N rows; maybe okay but brief says no Python-level loops overall? It didn't forbid small ones but says all work is vectorised; computing norms via list comprehension is not vectorised.
+
+Alternate: Use scipy.linalg.norm with axis=1: `norms = scipy.linalg.norm(X, axis=1)` returns Euclidean norm per row (uses LAPACK). That is vectorised and uses SciPy's LAPACK wrapper. Good! Then square it: `norms_sq = norms**2`. Great.
+
+Thus we satisfy SciPy usage.
+
+Now check numeric accuracy: The formula yields exact same result as naive double loop when using float64 due to associativity issues? It's mathematically equivalent except potential rounding differences due to order of operations (norms^2 + ... - 2*G). The naive triple loop accumulates each diff^2 sequentially which might produce slightly different rounding than our vectorized approach because of different order of addition/subtraction. But usually differences are small within tolerance of default rtol ~1e-5 maybe acceptable.
+
+Edge cases: For very large N or D memory may blow up computing full matrix G which is N x N; same as output size anyway.
+
+Check dtype: ensure float64 input yields float64 output.
+
+Now about char count ~1006 characters? We don't need to count now.
+
+Implementation details:
+
+- Import numpy as np
+- import scipy.linalg
+- import numba
+
+Define pairwise_sq_dist(X):
+
+```
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    N,D = X.shape
+    # compute squared norms using SciPy
+    norms_sq = scipy.linalg.norm(X, axis=1)**2
+    # compute Gram matrix via BLAS
+    G = X @ X.T
+    out = np.empty((N,N), dtype=np.float64)
+    _compute(out,norms_sq,G)
+    return out
+```
+
+Define _compute:
+
+```
+@numba.njit
+def _compute(out,norms_sq,G):
+    N = out.shape[0]
+    for i in range(N):
+        ni = norms_sq[i]
+        for j in range(N):
+            out[i,j] = ni + norms_sq[j] - 2*G[i,j]
+```
+
+Note: Might need `@numba.njit(parallel=True)`? Not necessary.
+
+Also consider memory copy overhead of `norms_sq` from SciPy's norm returning array of shape (N,) dtype float64; fine.
+
+Potential numeric issue: If G computed with float64 dot product may have rounding error leading to negative values after subtraction due to floating point error causing slightly negative distances near zero; we can clip with `np.maximum(out,0)` after compute or inside compute set if <0 then 0. Could add small epsilon clip after returning: `np.maximum(out,0.,out)` modifies in place before return.
+
+Let's add after compute: `np.maximum(out, 0., out)` ensures non-negative distances.
+
+Edge cases: For empty input (N=0)? Should return empty array shape (0,0). Our code will handle since shapes fine.
+
+Now check SciPy import path: from scipy import linalg as sla maybe simpler import linalg only; use `scipy.linalg.norm`.
+
+Also ensure that SciPy's norm accepts axis argument; yes it does.
+
+Now finalize design reasoning done. Let's handoff sentence.
+OK, I think I have the design. Time to write it.

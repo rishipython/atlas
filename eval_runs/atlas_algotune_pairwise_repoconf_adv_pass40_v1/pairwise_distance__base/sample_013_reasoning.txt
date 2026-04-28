@@ -1,0 +1,17 @@
+We need to provide a faster implementation. Use broadcasting or efficient matrix operations: D = sum((X[:,None,:]-X[None,:,:])**2, axis=2). But that uses memory O(N^2*D). For large N, that may be heavy but acceptable? We don't know constraints. Use vectorized formula: pairwise squared distance matrix = A + A.T - 2*X @ X.T where A[i] = sum(X[i]**2). Actually D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute squared norms vector of length N: sq_norm = np.sum(X**2, axis=1). Then D = sq_norm[:,None] + sq_norm[None,:] - 2 * X @ X.T. Ensure dtype float64. That will be fast.
+
+Edge cases: ensure result non-negative due to numerical errors. Could set negative small values to 0. But not necessary for allclose. Use np.maximum(D, 0). But keep same shape.
+
+Return D.
+
+Make sure to import numpy.
+
+Also we may want to avoid overflow: but X dtype float64; X @ X.T will produce float64.
+
+Implement.
+
+Also we can use np.einsum for dot product. But matrix multiplication is fine.
+
+Let's craft final code. Include docstring.
+
+We need to produce full file with imports and function. Provide final code.

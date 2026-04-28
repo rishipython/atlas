@@ -1,0 +1,38 @@
+We need to produce efficient convolution using FFT. Use numpy. But need to ensure same output as np.convolve(x,h). For real data, we can use np.fft.fft. Use real FFT or complex? Use np.fft.fft and ifft.
+
+We need to ensure shape: N+M-1. We can pad to next power of two >= N+M-1. Use np.fft.rfft for real? But simpler: use np.fft.fft.
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    size = N+M-1
+    # next power of two
+    nfft = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y[:size]
+
+Return float64.
+
+Edge cases: if size=1? bit_length 0? For size=1, (size-1).bit_length() => 0, 1 << 0 = 1, fine.
+
+Also we should handle if x or h not 1D? assume 1D.
+
+Return dtype float64.
+
+Test with np.allclose.
+
+Potential aliasing: due to rounding errors, but acceptable.
+
+Alternatively use scipy.signal.fftconvolve. But to avoid extra dependency, use numpy.
+
+Let's write file.
+
+Also maybe handle case where x or h empty? Not typical. But we can handle.
+
+If either is empty, conv returns empty? np.convolve([], h) returns array([]). Implementation: if N==0 or M==0: return np.array([], dtype=np.float64). We'll include.
+
+Let's produce final code.

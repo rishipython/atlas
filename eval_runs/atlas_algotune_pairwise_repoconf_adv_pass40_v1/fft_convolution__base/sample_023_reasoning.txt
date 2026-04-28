@@ -1,0 +1,46 @@
+We need to provide faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must ensure same numerical results. Use np.fft.fft with appropriate length. For real signals, we can use np.fft.rfft. Use np.fft.irfft. We can compute full convolution via FFT of length L = nextpow2(N+M-1). Use numpy.fft.rfft and irfft. That yields same results but maybe small differences. We need np.allclose with rtol/atol. Should be fine.
+
+Implement conv1d(x, h): compute length outlen = N+M-1. Compute L = 1 << (outlen-1).bit_length() to get next power of two >= outlen. Or use np.fft.next_fast_len in numpy >=1.17. Use np.fft.next_fast_len. Then compute X = np.fft.rfft(x, n=L), H = np.fft.rfft(h, n=L). Multiply: Y = X*H. Then y = np.fft.irfft(Y, n=L)[:outlen]. Return y.
+
+But note: Input dtype float64. Use np.fft.rfft returns complex64? For float64, returns complex128. Good.
+
+Edge cases: zero-length? x or h length 0? Problem maybe not. But we can handle.
+
+Also we may want to cast to float64. Ensure output dtype float64.
+
+We can also use scipy.signal.fftconvolve but need to import.
+
+Better to use numpy. Provide faster.
+
+Let's produce final code.
+
+Also we might add docstring. Provide imports.
+
+Return np.asarray(y, dtype=np.float64).
+
+Implementation:
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    outlen = N + M - 1
+    if outlen == 0:
+        return np.array([], dtype=np.float64)
+    L = np.fft.next_fast_len(outlen)
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)[:outlen]
+    return y
+
+We must also import numpy as np.
+
+Return type np.ndarray.
+
+Test: Should match np.convolve.
+
+Also for large arrays, faster.
+
+Ok.

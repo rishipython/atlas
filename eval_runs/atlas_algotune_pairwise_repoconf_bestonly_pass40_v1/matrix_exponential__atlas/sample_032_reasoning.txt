@@ -1,0 +1,23 @@
+We need to implement a fast, numerically stable matrix exponential. Use scipy.linalg.expm? But we should not call that? We can import scipy.linalg.expm to compute directly, but that would be trivial. But likely they want to replace naive with SciPy's expm, which is efficient. The requirement: "Your solution must define the same top-level function name and signature as the reference." We can implement expm_fast as simply return scipy.linalg.expm(A). That will be fast and accurate. But maybe they want an implementation that uses scaling and squaring + Pade approximants, like scipy's implementation. But we can just import scipy.linalg.expm and call it. That is allowed. The reference code is naive. So we replace with call to scipy.linalg.expm. That meets correctness and speed. It's a drop-in replacement. Must import scipy.linalg. So final code:
+
+```
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy.linalg.expm(A)
+```
+
+But the problem statement: "Given a square float64 numpy array A of shape (n, n), return expm(A) = sum_{k=0..inf} A^k / k!." They want fast. So using scipy's expm is fine. But maybe they want not to use SciPy? But allowed. Let's check "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So using scipy.linalg.expm is fine. But we need to ensure same output within tolerance. SciPy's expm is correct. So just call that. Ensure dtype is float64. SciPy will return float64 by default for float64 input. So fine.
+
+Edge case: A might not be square? They say square. But we can trust input.
+
+Thus produce file.
+
+But ensure that we don't import too many. Just import scipy.linalg. The function signature same.
+
+Add docstring.
+
+Return result.
+
+Let's produce final code.

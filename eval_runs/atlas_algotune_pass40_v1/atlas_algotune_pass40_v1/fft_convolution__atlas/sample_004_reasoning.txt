@@ -1,0 +1,54 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use rfft? But easiest: use np.fft.fft with appropriate length. Complexity: choose length L = next power of two >= N+M-1. Compute FFT of both padded to L, multiply, inverse FFT. Return real part, round to float64. Ensure dtype float64.
+
+Edge cases: x and h may be 1-d arrays; they might be empty? Convolve with empty returns empty? np.convolve of empty with non-empty returns empty? Let's check: np.convolve([], [1,2,3]) returns array([], dtype=float64). So we need to handle if len(x)==0 or len(h)==0 return np.array([], dtype=np.float64). Also if either length 1? Works.
+
+Also we need to preserve dtype? Input dtype float64, but we cast to float64.
+
+Implement conv1d accordingly.
+
+Also we might use scipy.signal.fftconvolve? But we can implement ourselves.
+
+Potential numeric differences: Using FFT may produce small imaginary parts due to rounding; take real part and maybe round small imaginary.
+
+Also ensure that dtype of result is float64.
+
+Test: need to match np.allclose.
+
+Implementation:
+
+```
+import numpy as np
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    n = x.size
+    m = h.size
+    if n == 0 or m == 0:
+        return np.array([], dtype=np.float64)
+    size = n + m - 1
+    L = 1 << (size-1).bit_length()  # next power of two >= size
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:size]
+```
+
+But rfft returns real FFT, which is efficient. Using real FFT is fine.
+
+Return real part only. Since irfft returns real. Good.
+
+Need to ensure dtype: result is float64.
+
+Edge: if size==0? Then L=1? But we returned earlier.
+
+Ok.
+
+Now produce full file.
+
+Also we can import numpy as np.
+
+Return as np.ndarray.
+
+Ok.

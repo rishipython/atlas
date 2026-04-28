@@ -1,0 +1,27 @@
+We need to replace the naive implementation with a faster numerically stable one. We can simply use scipy.linalg.expm. But maybe the evaluator expects we use SciPy. But we can use SciPy's expm directly: from scipy.linalg import expm. But the problem is that we must match SciPy's expm. So we can just call scipy.linalg.expm(A). That would be fastest. But maybe they want a custom implementation using scaling and squaring with Pade approximants. But easiest: just import scipy.linalg.expm and call it. That returns float64. Should be fine.
+
+But we need to keep the same signature. So:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But we must ensure that SciPy is available. The environment probably has SciPy. The problem says we may import scipy. So it's fine.
+
+Alternatively, we could implement scaling and squaring with Pade approximants ourselves. But using scipy is simpler.
+
+But maybe the evaluator purposely disallows calling SciPy's expm? But they say you may import SciPy. So it's fine.
+
+But there is a nuance: SciPy's expm returns float64 by default. It might produce a complex result if A has complex entries, but our input is float64. So it's fine.
+
+Thus we can simply delegate to SciPy.
+
+Alternatively, we could use scipy.linalg.expm but with some options? But it's fine.
+
+Thus final code: import numpy as np; from scipy.linalg import expm; def expm_fast(A): return expm(A)
+
+Add docstring.
+
+Let's produce the final code.

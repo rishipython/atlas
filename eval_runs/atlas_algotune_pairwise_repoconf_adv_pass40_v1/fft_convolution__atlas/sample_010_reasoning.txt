@@ -1,0 +1,56 @@
+We need to implement conv1d with FFT-based convolution. Use numpy. We need to ensure same dtype float64. Use np.fft.fft? For real signals, we can use np.fft.rfft and irfft for speed. But we need full convolution length N+M-1. Use next power of two >= N+M-1 for zero-padding. Compute FFT of both arrays padded to length L, multiply, ifft, take real part. Ensure dtype float64. Might need to cast to float64. Use np.fft.rfft for real inputs: we can use rfft for real to reduce computation. For two real sequences, we can do rfft of both, multiply, irfft. But the length of output of irfft is L. We can then truncate to N+M-1.
+
+Implementation: L = 1 << (N+M-1-1).bit_length() maybe. Actually L = 2**np.ceil(np.log2(N+M-1)). But we can use nextpow2.
+
+But we can also use scipy.signal.fftconvolve but we might not have SciPy in environment? The problem says we may import scipy. But it's safer to use numpy only. We'll use numpy.fft.rfft.
+
+Edge cases: if N or M is 0? Not possible? They are arrays of length N and M. Could be 1. Works.
+
+Return type: np.ndarray float64.
+
+Let's produce code:
+
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    # Ensure 1-D
+    x = np.asarray(x, dtype=np.float64).ravel()
+    h = np.asarray(h, dtype=np.float64).ravel()
+    N = x.size
+    M = h.size
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    out_len = N + M - 1
+    # Next power of two for FFT length
+    L = 1 << (out_len - 1).bit_length()
+    # Compute rfft
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    # Truncate to out_len
+    return y[:out_len]
+
+But we must check that for real inputs, rfft and irfft produce real output. Use dtype float64.
+
+Potential issues: For large arrays, memory usage okay.
+
+Also we might want to use np.fft.fft for complex? But rfft is fine.
+
+Test with small arrays: conv1d(np.array([1,2,3]), np.array([0,1,0.5])) should match np.convolve.
+
+Edge: if out_len is exactly L? Then we don't need slice. But slicing is fine.
+
+Return float64.
+
+Return type: np.ndarray.
+
+Also we might want to use np.fft.fft with n=out_len? But rfft reduces size by half. But we can use rfft to compute convolution with real inputs, but output length L. Should be fine.
+
+Let's produce final code. Ensure imports at top: import numpy as np.
+
+Also we might add __all__? Not necessary.
+
+Return.
+
+Let's produce final answer.

@@ -1,0 +1,23 @@
+We need to replace with faster implementation. Use numpy broadcasting or matrix multiplication: pairwise squared Euclidean distances can be computed as:
+
+D = X @ X.T gives Gram matrix G. Then squared distances: diag(G)[:,None] + diag(G)[None,:] - 2*G. Use np.einsum or np.dot.
+
+Need to handle dtype float64. Return shape (N,N). The result should be same as triple loop. Use np.maximum(D, 0) to avoid small negative due to numerical error.
+
+So implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    G = X @ X.T
+    sq_norm = np.diagonal(G)
+    D = sq_norm[:,None] + sq_norm[None,:] - 2*G
+    D = np.maximum(D, 0.0)
+    return D
+
+Edge cases: N=0? If X shape (0,D). Then G shape (0,0). diag is empty. D will be shape (0,0). Works.
+
+Also ensure dtype float64. Use X.astype(np.float64, copy=False). Use np.dot.
+
+We should import numpy.
+
+Let's produce final code.

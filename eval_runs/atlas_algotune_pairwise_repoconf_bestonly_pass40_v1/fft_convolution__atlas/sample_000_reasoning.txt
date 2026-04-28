@@ -1,0 +1,28 @@
+We need to replace slow implementation with fast one using FFT. We need to keep same function name and signature. We can use numpy. The straightforward solution: use numpy.fft.fft or scipy.signal.fftconvolve. But we should implement ourselves to avoid SciPy dependency maybe. But allowed to import SciPy. But safe to use numpy. Use real FFT. Compute length L = next power of two >= N+M-1. Compute FFTs, multiply, inverse. Use np.fft.rfft? For real inputs, rfft gives efficient. For simplicity, use np.fft.fft. That gives complex arrays. Compute y = np.fft.ifft(X * H).real. Then truncate to N+M-1.
+
+Edge cases: empty arrays? But likely not. Ensure dtype float64. Use np.asarray to ensure.
+
+Return np.array of shape N+M-1 dtype float64.
+
+Also ensure that for small arrays, maybe fallback to direct? But not needed.
+
+Let's write:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    L = 1 << (N+M-1-1).bit_length()
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = np.fft.irfft(X * H, n=L)
+    return Y[:N+M-1]
+
+We might want to round small imaginary parts: but using real FFT ensures real output.
+
+Testing: Should produce same as np.convolve.
+
+Let's produce file.

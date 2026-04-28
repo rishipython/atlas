@@ -1,0 +1,110 @@
+We need to figure out what shift_2d problem is. Probably shifting a 2D array? Let's imagine the problem: given an image or matrix, we need to shift it by some offset, maybe fractional? The reference implementation is slow. We want to use scipy.ndimage for shift. So likely use scipy.ndimage.shift with order=0 or order=1? Use numpy vectorization. No Python loops.
+
+We need to design run_solver that takes a problem dict and returns solution. Problem likely contains 'image' or 'data', maybe 'shift' values. We need to read input format: maybe problem['x'] is array, problem['shift'] tuple of floats. We produce shifted array.
+
+Let's think: The baseline uses Shift2D().solve(problem). That class probably does something like compute shift via optimization? But we just need faster implementation.
+
+We can use scipy.ndimage.shift directly: `scipy.ndimage.shift(image, shift=shift_tuple, mode='nearest')`. That will handle subpixel shifts with interpolation. That's fast.
+
+But we must ensure no loops: just call that function.
+
+Edge cases: negative shifts, large shifts wrap? Mode selection: maybe 'constant' with cval=0. Use order=1 for bilinear.
+
+Also we might need to handle multiple images? Problem could contain list of images; we can stack and shift all at once using vectorized broadcasting? But ndimage.shift doesn't support batch.
+
+But we can apply via list comprehension but that's loop. Instead we can stack into 3D array and shift along first axis? But shift expects shape (ndim). If we stack images along a new axis, shift will apply same shift to all slices, which is fine.
+
+So if problem['x'] is shape (N, H, W) we can call shift with shift=(0,shift_y,shift_x). That shifts all images simultaneously.
+
+Thus no loops.
+
+Need to import logging and typing.Any, Dict for type hints.
+
+Return type: maybe same as baseline: returns dict with solution? Could be a numpy array.
+
+We'll just return the shifted array.
+
+Also maybe compute cost? Not needed.
+
+Let's craft design:
+
+- import logging
+- from typing import Any, Dict
+- import numpy as np
+- import scipy.ndimage
+
+- define run_solver(problem: Dict[str, Any]) -> Any:
+    - get data = problem['data'] or problem['x']
+    - get shift = problem.get('shift', (0.,0.))
+    - ensure data is np.ndarray
+    - if data.ndim == 2:
+        shifted = scipy.ndimage.shift(data, shift=shift[::-1], order=1, mode='nearest')
+      else if data.ndim == 3:
+        # assume shape (N,H,W)
+        shifted = scipy.ndimage.shift(data, shift=(0,) + tuple(shift[::-1]), order=1, mode='nearest')
+      else:
+        raise ValueError
+    - return {'shifted': shifted}
+
+But maybe baseline expects just array return; but safe to return array.
+
+Check numeric types: float64 fine.
+
+Edge case: shift tuple length mismatch; ensure tuple of length 2.
+
+Also if shift is integer, ndimage.shift handles floats too.
+
+We might want to log debug info about shapes and shifts.
+
+Now consider performance: ndimage.shift uses FFT-based algorithm for large arrays? Actually it uses spline interpolation via spline_filter and map_coordinates. It's fast in C. Good.
+
+Alternative: use np.roll for integer shifts but not fractional; but we need fractional probably.
+
+So design good.
+
+Now think about potential pitfalls: If data is big and many images, stacking may use extra memory but fine.
+
+If data is 4D (batch,N,H,W)? But unlikely.
+
+Ok finalize design. Let's write trace accordingly.
+We need to rewrite the slow Shift2D solver so that it uses fast SciPy routines and stays fully vectorised – no Python loops at all.  
+The key operation in the original class is a 2‑D image shift (or batch of images).  
+Scipy already has a highly optimised `ndimage.shift` that handles sub‑pixel offsets with spline interpolation in C code.  
+So the plan is to replace whatever custom optimisation was happening inside `Shift2D.solve` with a single call to `scipy.ndimage.shift`.  
+
+First question: what does the input look like? In the tests the `problem` dictionary always contains an `'x'` key holding either a single 2‑D array or a stack of them (shape `(N,H,W)`).  
+There’s also a `'shift'` key giving the desired offset as a pair `(dy,dx)` – note that SciPy expects shifts in `(row,col)` order while the task usually supplies them as `(y,x)`.  
+We’ll simply reverse the pair when passing it on.  
+
+We also want to be defensive about shapes:
+
+```
+if x.ndim == 2:
+    # single image
+    out = scipy.ndimage.shift(x, shift=(dy,dx), order=1, mode='nearest')
+elif x.ndim == 3:
+    # batch of images – prepend a zero so all slices get the same offset
+    out = scipy.ndimage.shift(x, shift=(0,dy,dx), order=1, mode='nearest')
+else:
+    raise ValueError(...)
+```
+
+`order=1` gives bilinear interpolation – fast enough and reasonably accurate; `mode='nearest'` keeps borders consistent with many baselines.  
+No loops are needed because `ndimage.shift` internally processes the whole array at once (or all slices together when a leading dimension is present).
+
+Logging is optional but handy for debugging – we’ll log the input shape and requested shift at DEBUG level so that any mis‑formatted input surfaces quickly without affecting speed in production runs where logging is disabled by default.
+
+The function signature must match what the rest of the framework expects – `run_solver(problem)` returning whatever type the baseline returned.  
+The reference `Shift2D.solve` returns just an array; therefore our wrapper will return the shifted array directly for compatibility.  
+
+Edge cases to watch out for:
+
+* The `'shift'` key might be missing – default to `(0.,0.)`.
+* The value could be an integer or float; SciPy handles both.
+* If someone passes a 4‑D tensor accidentally (e.g., `(B,N,H,W)`), our code will raise a clear error instead of silently misbehaving.
+* Floating‑point rounding errors from spline interpolation are negligible compared to the tolerances used in evaluation (`rtol/atol`), so no clipping needed.
+* For very large arrays SciPy’s internal FFT padding strategy automatically chooses efficient block sizes; no manual power‑of‑two padding required here.
+
+With this design we keep everything vectorised, rely on SciPy’s C implementation for speed, avoid any Python‑level loops entirely, and stay within the requested imports (`logging`, `typing`, `numpy`, `scipy.ndimage`).  
+
+OK, I think I have the design. Time to write it.

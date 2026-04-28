@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""
+FFT Convolution Task – Optimised implementation
+
+This file contains a fast FFT‑based convolution solver that supports the
+three common modes: "full", "same" and "valid".  The implementation
+leverages NumPy's real‑FFT (`rfft`/`irfft`) and falls back to a direct
+convolution for very short inputs where the FFT overhead dominates.
+
+The entry point for the evaluator is the function `run_solver`.
+
+Author: OpenAI ChatGPT
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    def __init__(self):
+        """No special initialisation required."""
+        pass
+
+    @staticmethod
+    def _next_power_of_two(n: int) -> int:
+        """Return the next power of two greater than or equal to n."""
+        return 1 << (n - 1).bit_length()
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two real signals using an FFT based
+        approach with optional direct convolution fallback for small
+        inputs.
+
+        Parameters
+        ----------
+        problem : dict
+            Dictionary with keys:
+                - "signal_x": list or array of floats
+                - "signal_y": list or array of floats
+                - "mode": "full", "same" or "valid" (default: "full")
+
+        Returns
+        -------
+        dict
+            Dictionary with key "convolution" containing the result as a
+            list of floats.
+        """
+        try:
+            # Extract and convert inputs
+            x = np.asarray(problem["signal_x"], dtype=np.float64)
+            y = np.asarray(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            len_x, len_y = x.size, y.size
+
+            # Handle empty signals – result is an empty array
+            if len_x == 0 or len_y == 0:
+                return {"convolution": []}
+
+            # For very short signals, direct convolution is cheaper
+            if min(len_x, len_y) <= 64:
+                conv = np.convolve(x, y, mode=mode)
+                return {"convolution": conv.tolist()}
+
+            # Full convolution length
+            conv_len = len_x + len_y - 1
+
+            # Choose FFT length – next power of two for speed
+            Nfft = self._next_power_of_two(conv_len)
+
+            # Forward real FFTs
+            X = np.fft.rfft(x, n=Nfft)
+            Y = np.fft.rfft(y, n=Nfft)
+
+            # Element‑wise multiplication in frequency domain
+            Z = X * Y
+
+            # Inverse real FFT to obtain full linear convolution
+            full = np.fft.irfft(Z, n=Nfft)
+            # Truncate to the exact convolution length
+            full = full[:conv_len]
+
+            # Slice according to requested mode
+            if mode == "full":
+                result = full
+            elif mode == "same":
+                out_len = max(len_x, len_y)
+                start = (conv_len - out_len) // 2
+                result = full[start : start + out_len]
+            elif mode == "valid":
+                out_len = max(0, abs(len_x - len_y) + 1)
+                if out_len == 0:
+                    result = np.empty(0, dtype=np.float64)
+                else:
+                    start = min(len_x, len_y) - 1
+                    result = full[start : start + out_len]
+            else:
+                raise ValueError(f"Unsupported mode '{mode}'")
+
+            return {"convolution": result.tolist()}
+
+        except Exception as exc:
+            logging.error(f"Error in solve: {exc}")
+            raise
+
+    @staticmethod
+    def is_solution(problem: Dict[str, Any], solution: Dict[str, Any]) -> bool:
+        """
+        Validate the solver's output against a reference implementation.
+        This method is provided for completeness; the evaluator uses its own
+        checks.
+
+        Parameters
+        ----------
+        problem : dict
+            Problem definition.
+        solution : dict
+            Solver output.
+
+        Returns
+        -------
+        bool
+            True if the solution is correct, False otherwise.
+        """
+        try:
+            if "convolution" not in solution:
+                logging.error("Solution missing 'convolution' key.")
+                return False
+
+            student = np.asarray(solution["convolution"], dtype=float)
+
+            if not np.all(np.isfinite(student)):
+                logging.error("Convolution contains non‑finite values.")
+                return False
+
+            x = np.asarray(problem["signal_x"])
+            y = np.asarray(problem["signal_y"])
+            mode = problem.get("mode", "full")
+
+            expected = signal.fftconvolve(x, y, mode=mode)
+            if not np.allclose(student, expected, atol=1e-6, rtol=1e-6):
+                logging.error("Numerical mismatch with reference.")
+                return False
+
+            return True
+        except Exception as exc:
+            logging.error(f"Error in is_solution: {exc}")
+            return False
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point used by the evaluator.
+
+    Parameters
+    ----------
+    problem : dict
+        Problem dictionary containing 'signal_x', 'signal_y' and 'mode'.
+
+    Returns
+    -------
+    dict
+        Dictionary with key 'convolution' and the computed result.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)

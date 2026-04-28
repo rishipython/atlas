@@ -1,0 +1,29 @@
+```python
+import numpy as np
+from scipy.signal import fftconvolve
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """
+    Return the full linear convolution of two 1‑D float64 arrays
+    using an FFT‑based algorithm for speed.
+
+    Parameters
+    ----------
+    x : np.ndarray
+        Input array of shape (N,).
+    h : np.ndarray
+        Input array of shape (M,).
+
+    Returns
+    -------
+    np.ndarray
+        Convolution result of shape (N + M - 1,) with dtype float64.
+    """
+    # Ensure the inputs are 1‑D and of type float64
+    x = np.asarray(x, dtype=np.float64).ravel()
+    h = np.asarray(h, dtype=np.float64).ravel()
+
+    # Use SciPy's FFT‑based convolution; it already returns the
+    # full convolution in float64 when the inputs are float64.
+    return fftconvolve(x, h, mode="full")
+```

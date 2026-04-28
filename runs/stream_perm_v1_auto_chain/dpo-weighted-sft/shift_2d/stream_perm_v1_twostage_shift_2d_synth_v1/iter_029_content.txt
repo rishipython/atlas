@@ -1,0 +1,197 @@
+We need to figure out what shift_2d does. Likely shift a 2D array? Let's assume problem contains some data: maybe an image and a shift vector? The reference uses Shift2D().solve(problem). We need faster.
+
+We must use scipy, no python loops, vectorised. Probably use scipy.ndimage.shift or correlate. Might need to handle subpixel shifts via interpolation. Use order=1 or 3.
+
+Also logging, random, typing, numpy, scipy.ndimage.
+
+Maybe problem is dict with 'image', 'shift', 'mode', etc. We'll design run_solver that extracts image array and shift tuple.
+
+Edge cases: shift can be float, negative, zero. Need to preserve dtype.
+
+Also we might want to handle large arrays efficiently: use scipy.ndimage.shift which uses FFT? Actually it uses spline interpolation.
+
+Alternatively we could use np.roll for integer shifts then apply fractional via Fourier shift theorem: multiply by exp(-2πi (kx*dx + ky*dy)). That's fast with FFT. That would be pure numpy/scipy.
+
+Better: use scipy.fftpack.fftn and ifftn.
+
+Design: compute frequency grid using np.fft.fftfreq for each axis. Then compute phase shift array: exp(-2πi*(fx*shift[0] + fy*shift[1])). Multiply FFT of image by this phase array and inverse FFT. That gives shifted image with subpixel accuracy.
+
+No loops, vectorised.
+
+Need to cast to real if input real; output real via .real or clip small imaginary part.
+
+Edge cases: if shift is integer, we could just np.roll for speed but not necessary; the FFT approach works for all shifts but maybe slower for small arrays but okay.
+
+Also we might want to preserve dtype: cast back to original dtype after rounding? Use np.round? Or just keep float64.
+
+We also need logging and random maybe used for seeding? Not sure; maybe random used to choose interpolation order? Could incorporate randomness for jitter? Not needed.
+
+But brief says imports include random; maybe used in test harness? We can import but not use.
+
+We must not have python-level loops. So all operations are vectorised.
+
+Also final solution ~8712 chars - long file includes docstrings etc.
+
+We need to write run_solver function that returns result of Shift2D().solve(problem). But we replace Shift2D class with our own efficient implementation inside file; keep same name and signature. So we define class Shift2D with solve method performing shift via FFT.
+
+Also maybe implement fallback for small arrays using np.roll if integer shift for speed? But still vectorised no loops.
+
+We must use scipy functions somewhere; we use scipy.fftpack or scipy.fft or scipy.ndimage? We can use scipy.ndimage.shift as simpler but still uses loops internally but allowed as library call; but requirement says no python-level loops; library loops okay. But they want us to use scipy functions somewhere in solution; we can call scipy.ndimage.shift directly - that's trivial though not super optimized but fine. But they want us to avoid python loops anyway; calling ndimage.shift is fine. But maybe they expect us to implement ourselves using numpy/scipy functions like fftshift etc.
+
+Let's choose FFT approach using scipy.fftpack.fftn/ifftn or scipy.fft.fftn/ifftn (newer). Use np.exp etc.
+
+Implementation steps:
+
+- def solve(self, problem): expects dict with keys 'image', 'shift', maybe 'mode'. We'll extract image = problem['image']; shift = problem.get('shift', (0,0)); mode = problem.get('mode','constant'); cval = problem.get('cval',0).
+
+- For integer shifts: if all components are integers (np.isclose(shift[0], round(shift[0])) etc), we can use np.roll then apply padding for constant mode? But constant mode not handled by roll; easier just use ndimage.shift anyway.
+
+- Use fft-based shift:
+
+```
+img = image.astype(np.float64)
+fx = np.fft.fftfreq(img.shape[0])
+fy = np.fft.fftfreq(img.shape[1])
+FX, FY = np.meshgrid(fy, fx)  # note order
+phase = np.exp(-2j*np.pi*(FX*shift[0] + FY*shift[1]))
+shifted_fft = np.fft.fftn(img) * phase
+out = np.real(np.fft.ifftn(shifted_fft))
+```
+
+But careful about shape: freq arrays shape matches axes dims: fx shape (N,) fy shape (M,) meshgrid produce (N,M). For 2D image shape (H,W). Good.
+
+Need to handle mode 'constant': the FFT shift assumes periodic boundary conditions; constant mode would produce wrap-around artifacts; maybe acceptable or we can pad before shifting then crop after transform: pad image with zeros equal to max(|shift|) in each direction before shifting then crop back after inverse transform? That would simulate constant mode better but adds complexity and loops? We can compute padding amounts from shift magnitude floor/ceil? But shift may be fractional so pad enough for integer part plus margin of 1 pixel for interpolation effect? Might be okay to ignore mode and always return periodic shift because tests may not check constant mode heavily?
+
+But brief didn't specify behavior exactly; baseline likely uses ndimage.shift which supports modes including constant, nearest etc. We should replicate that behavior perhaps by calling ndimage.shift directly instead of implementing FFT manually because that ensures correct boundary handling without extra complexity.
+
+Thus simplest design: inside solve, call `scipy.ndimage.shift(image, shift=shift, order=3, mode=mode, cval=cval)` and return result cast back to original dtype if needed.
+
+But requirement "No Python-level loops" satisfied because ndimage.shift is C loop inside library. Use scipy function indeed.
+
+So final design: import numpy as np, import scipy.ndimage as ndi; define class Shift2D with solve method that calls ndi.shift with appropriate parameters extracted from problem dict; handle dtype conversion and rounding if original dtype int -> round after shift then cast back int16/uint8 etc preserving range/clipping using np.clip before cast?
+
+Edge cases: if dtype is uint8 and shifting introduces values outside [0,255], need clip before cast else overflow wrap around. Use `np.clip(out.astype(np.float64), 0, 255).astype(np.uint8)` if original dtype unsigned integer else just cast if float.
+
+Also ensure output shape same as input shape - ndimage.shift preserves shape by default unless mode='constant' with cval extends beyond boundaries but still same shape.
+
+Logging could log start/end times or debug info but optional.
+
+Random imported but unused maybe used in tests only; we can ignore or set seed at top `random.seed(42)` for reproducibility of any random aspects in baseline but our solver deterministic so fine.
+
+Now final file structure:
+
+```
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+random.seed(42)
+logging.basicConfig(level=logging.INFO)
+
+class Shift2D:
+    def solve(self, problem: Dict[str, Any]) -> Any:
+        img = problem['image']
+        shift = problem.get('shift', (0., 0.))
+        mode = problem.get('mode', 'constant')
+        cval = problem.get('cval', 0)
+        order = problem.get('order', 3)
+
+        # ensure numpy array
+        arr = np.asarray(img)
+        orig_dtype = arr.dtype
+
+        # perform shift
+        shifted = scipy.ndimage.shift(arr.astype(np.float64), shift=shift,
+                                      order=order,
+                                      mode=mode,
+                                      cval=cval)
+
+        # cast back preserving range
+        if np.issubdtype(orig_dtype, np.integer):
+            # clip before casting
+            info = np.iinfo(orig_dtype)
+            shifted_clipped = np.clip(np.round(shifted), info.min, info.max)
+            return shifted_clipped.astype(orig_dtype)
+        else:
+            return shifted.astype(orig_dtype)
+```
+
+Define run_solver:
+
+```
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+Add docstrings and type hints optional.
+
+Also add guard main test stub maybe not required but fine.
+
+Check edge cases: negative shifts ok; float shifts ok; order default cubic interpolation ensures good quality; user can override order via problem dict; mode default constant ensures zero padding outside boundaries similar baseline probably uses constant mode by default too? Might differ from baseline which may use 'nearest' by default - check typical ndimage.shift default mode is 'constant' I think yes it's 'constant'.
+
+Thus design matches brief: imports include logging random typing numpy scipy.ndimage ; uses scipy function ; no python loops ; vectorised ; final code length ~8712 characters (should be fine).
+
+Now sanity check edge cases:
+
+- If image dtype float32 -> arr.astype(np.float64) then cast back float32 after shifting -> good.
+- If image dtype uint8 -> clip between 0-255 before cast -> good.
+- If image has NaNs or infs -> ndimage.shift will propagate NaNs properly.
+- Problem dict missing keys -> defaults applied.
+- Shift may be scalar or tuple length >2 -> ndimage expects sequence length equal dims; we pass tuple of length 2 works.
+- If shift contains None -> error but not expected.
+- Performance wise ndimage.shift is C-level fast enough; no python loops.
+- Logging not used heavily but imported ok.
+- Random imported but unused - okay.
+- Ensure no python-level loops anywhere else - only function calls inside solve body no loops.
+- No list comprehensions either? They are python-level loops too but none present.
+- All good.
+
+Thus finalize design ready for coding.
+We need to rewrite the `Shift2D` solver so that it runs fast while still producing the same kind of output the reference implementation does.  
+The reference probably takes a dictionary that contains an image array and a few options – at least the amount of pixel shift along each axis – and returns a new array that is the input shifted by that amount (with some interpolation).
+
+The first thing I notice is that the specification explicitly wants us to **use SciPy** somewhere in the solution and also forbid any Python‑level loops – everything has to be vectorised or handed off to a compiled routine inside a library call.  
+That means the natural choice is `scipy.ndimage.shift`, which already implements high‑quality spline interpolation in C/C++ and supports all of the common boundary modes (`constant`, `nearest`, `mirror`, …).  
+If I hand off the work entirely to this function there are no explicit Python loops at all – just a single call – so we satisfy the “no Python‑level loops” rule automatically while keeping the code short and readable.
+
+Next I think about how the input dictionary might look like because I’ll have to pull out the relevant keys safely:
+```python
+problem['image']          # required
+problem.get('shift', ...) # optional – default (0., 0.)
+problem.get('mode', ...)  # optional – default 'constant'
+problem.get('cval', ...)  # optional – default 0
+problem.get('order', ...) # optional – default cubic interpolation order 3
+```
+If any key is missing I’ll fall back on sensible defaults so that callers who only supply an image will still get something reasonable rather than crashing on a KeyError.
+
+I also want the output dtype to match what the caller supplied originally – many callers will feed in an unsigned integer image (`uint8`), expect values clipped between 0 and 255 after shifting, and get back an array of the same type again so they don’t have to do extra casting later on.  
+`ndimage.shift` returns a floating‑point array even when given an integer input because it needs room for interpolation coefficients that can temporarily exceed the integer bounds during computation.  
+Therefore after shifting I’ll:
+1. Round the result (`np.round`) because spline interpolation produces floats close to integers when shifting by an integer amount.
+2. Clip it into the valid range of the original dtype (`np.clip(... , info.min , info.max)`).
+3. Cast it back (`astype(orig_dtype)`).
+
+For floating‑point inputs I’ll simply cast back without clipping – there’s no danger of overflow there anyway except perhaps tiny numerical noise which will be harmless when rounded back anyway.
+
+I also have to keep in mind that SciPy’s `ndimage.shift` accepts either a scalar or a sequence for `shift`. In our case we always pass a two‑tuple `(dx, dy)`. The function handles negative values correctly so there’s nothing special needed there.
+
+Because the brief mentions importing `logging` and `random`, I’ll set up basic logging at module load time (so any future debug prints are captured) and seed `random` even though this particular implementation doesn’t actually make any random choices – it keeps us compliant with “imports should include these modules”.
+
+The final piece is simply wiring everything into an entry point called `run_solver`. The task says “replace its body with a faster implementation”, so I’ll keep the public API identical:
+
+```python
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+That satisfies all constraints:
+* **Imports** – logging, random, typing.Any/Dict/tuple?, numpy as np, scipy.ndimage.
+* **SciPy usage** – direct call to `scipy.ndimage.shift`.
+* **No Python‑level loops** – everything inside `solve` is just calls/array ops.
+* **Vectorised** – handled entirely by SciPy/C routines.
+* **Correctness** – preserves dtype semantics and boundary handling via SciPy’s built‑in modes.
+* **Performance** – one fast C call per solve invocation plus minimal NumPy overhead (< microseconds).
+
+Now I’m ready to write out the full file following this design plan…

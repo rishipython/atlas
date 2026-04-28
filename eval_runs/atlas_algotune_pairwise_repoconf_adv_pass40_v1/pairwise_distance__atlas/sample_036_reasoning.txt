@@ -1,0 +1,27 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. We can use broadcasting or matrix multiplication: D[i,j] = ||X[i] - X[j]||^2 = ||X[i]||^2 + ||X[j]||^2 - 2 X[i]·X[j]. So compute row norms squared and outer sum minus 2 dot product.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    # compute Gram matrix
+    G = X @ X.T
+    # use broadcasting
+    D = norms[:, None] + norms[None, :] - 2*G
+    # numerical errors might produce small negative values; clip to zero
+    D[D < 0] = 0
+    return D
+
+Should be efficient. Use dtype float64. Should handle shape (N,D). Should be fine.
+
+Edge cases: N may be 0? Then output shape (0,0). Norms empty. Outer sum produce shape (0,0). G shape (0,0). D shape (0,0). Works.
+
+Let's produce full file.
+
+Also can use np.dot for Gram matrix. Use np.matmul. Provide docstring.
+
+Return dtype float64.
+
+Let's produce final code.
+

@@ -1,0 +1,40 @@
+We need to replace the slow baseline `Shift2D.solve` with something that still follows the same signature but runs faster and stays fully vectorised – no Python loops at all.  
+
+The problem object will contain a 2‑D NumPy array (let’s call it `data`) and a pair of shift values `(dy, dx)` that may be integers or floating point numbers. The goal is simply to return the shifted array, keeping the same shape as the input (so we’ll pad or crop as necessary).  
+
+First thought: just call `scipy.ndimage.shift`. That’s already a compiled routine written in C/Fortran and handles sub‑pixel shifts with interpolation. It also lets us specify boundary handling (`mode='constant', cval=0` gives zero padding).  
+But `ndimage.shift` is a bit heavier than a pure NumPy roll when the shifts are whole numbers – it still does interpolation even though the result could be exact. So I’ll add a small optimisation: detect whether both shift components are integers (or very close to an integer within machine epsilon). If so, replace the call by a simple `np.roll` followed by slicing if we want zero padding instead of wrap‑around.  
+
+Why not just `np.roll` always? Because `np.roll` wraps around at the edges, which is usually not what you want for image shifting – you’d get wrap‑around artifacts unless you pad first. Padding + slicing is still vectorised and avoids interpolation overhead while giving the desired zero‑border behaviour.  
+
+So the plan for `solve`:
+
+1. Extract `data = problem['data']` (assume it’s a 2‑D NumPy array) and `shift = problem['shift']`.  
+2. Convert `shift` to a NumPy array of shape `(2,)`.  
+3. Check if both components are integers within tolerance (`np.allclose(shift, np.round(shift))`).  
+   - If yes:
+     * Compute integer shifts `dy_int = int(round(shift[0]))`, `dx_int = int(round(shift[1]))`.  
+     * Pad the array on all sides by the absolute value of these shifts (`np.pad`) using constant zeros (`mode='constant', constant_values=0`).  
+     * Slice out the central part that matches the original shape (`pad_data[pad_top:pad_top+H, pad_left:pad_left+W]`).  
+   - If no:
+     * Call `scipy.ndimage.shift(data, shift=[shift[0], shift[1]], order=1, mode='constant', cval=0)` – linear interpolation should be fine for most images.
+4. Return a dictionary `{ 'data': shifted }`.
+
+Why use order=1? It’s bilinear interpolation – fast enough and gives decent quality without being too expensive like cubic (`order=3`).  
+
+Potential edge cases:
+- Negative shifts work fine because padding handles them symmetrically.
+- Very large shifts that exceed image dimensions will result in an all‑zero output – that’s acceptable.
+- If input dtype isn’t float32/float64, we keep it unchanged; both pad and shift preserve dtype except when converting constants (cval=0) which will cast appropriately.
+- The function must be deterministic – no random state needed here, but I’ll import `random` as requested by the brief even if unused.
+
+Finally, wrap this logic inside a class `Shift2D` with a method `solve(problem)`, then expose it via:
+
+```python
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+All imports come from standard packages plus `numpy` and `scipy.ndimage`, satisfying the brief about using SciPy functions somewhere in the solution and keeping everything vectorised without Python loops.  
+
+OK, I think I have the design. Time to write it.

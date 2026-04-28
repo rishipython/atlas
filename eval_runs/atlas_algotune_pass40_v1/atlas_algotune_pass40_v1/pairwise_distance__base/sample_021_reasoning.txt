@@ -1,0 +1,32 @@
+We need to produce efficient implementation of pairwise squared Euclidean distance matrix. Use broadcasting or numpy linear algebra. For large N up to maybe thousands. Use np.dot or np.linalg.norm. Standard formula: D = sum(X^2, axis=1)[:, None] + sum(X^2, axis=1)[None, :] - 2 * X @ X.T. Since squared distances are non-negative; we can ensure non-negative by max with 0. Use float64. Ensure dtype. Return array.
+
+Edge cases: N maybe 0? X shape (0,D). Then sum returns shape (0,). The formula works? Let's test: sum(X^2, axis=1) -> shape (0,). Outer sum results shape (0,0). X @ X.T -> shape (0,0). So D = zeros shape (0,0). Works.
+
+Return dtype float64. Implementation.
+
+But we must keep function signature. Provide imports.
+
+Potential issues: numeric errors may produce negative small values due to floating errors; we can clip with np.maximum(D, 0). Use np.maximum(D, 0, out=D). That ensures non-negative.
+
+Thus produce final code.
+
+Let's produce:
+
+```
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    D = sq_norm[:, None] + sq_norm[None, :] - 2 * X @ X.T
+    np.maximum(D, 0, out=D)
+    return D
+```
+
+Return shape (N,N). Use dtype float64.
+
+We can also use np.dot for performance.
+
+Edge: if D is large, memory. But fine.
+
+Let's produce final answer.

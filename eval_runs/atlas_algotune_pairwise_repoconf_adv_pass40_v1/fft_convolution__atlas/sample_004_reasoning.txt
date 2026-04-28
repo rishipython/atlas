@@ -1,0 +1,32 @@
+We need to implement a fast conv1d using FFT. Must match np.convolve(x, h, mode='full'). Use numpy FFT: np.fft.fft. For real input, we can use rfft? But easiest: use np.fft.fft with appropriate size. Complexity: use next power of two maybe. Use np.fft.ifft. Ensure real output. Use dtype float64.
+
+We need to handle arbitrary length arrays. Use np.fft.fftpack? Use np.fft.fft. For real data, we can use np.fft.rfft. But simpler: use np.fft.fft on combined length L = N+M-1. Need to zero pad to L. But fft requires length at least next power of 2? Not necessary but maybe faster. We'll use np.fft.fft of length L. Compute product, then ifft, take real part.
+
+Implementation:
+
+def conv1d(x, h):
+    N, M = x.shape[0], h.shape[0]
+    L = N + M - 1
+    # next pow of 2 maybe
+    L_fft = 1 << (L-1).bit_length()
+    X = np.fft.fft(x, n=L_fft)
+    H = np.fft.fft(h, n=L_fft)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y[:L]
+
+But need to ensure dtype float64. np.fft.fft returns complex64? For float64 input, returns complex128. Use .real to get float64.
+
+Edge cases: zero-length? Not needed.
+
+Should return same as np.convolve.
+
+Also can use np.fft.fftpack. But this is fine.
+
+We'll include imports: numpy as np.
+
+Return as np.ndarray dtype float64.
+
+Add docstring.
+
+Let's produce final code.

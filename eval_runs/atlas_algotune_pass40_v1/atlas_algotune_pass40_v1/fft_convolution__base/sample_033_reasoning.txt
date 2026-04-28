@@ -1,0 +1,46 @@
+We need to replace with faster FFT convolution. Use scipy.signal.fftconvolve or numpy. But we must keep same signature and return same shape and dtype. We'll implement using numpy. But to be robust to large arrays, use numpy.fft.fft with real input; use np.fft.rfft? The input is float64, we can use np.fft.fft. For large arrays, use np.fft.rfft? But for real output, but we can use np.fft.fft for simplicity.
+
+Compute length L = N + M - 1. Next power of two maybe? But np.fft.fft will compute in O(N log N). We can compute convolution by zero-padding to L.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]; M = h.shape[0]
+    L = N + M - 1
+    # compute next power of 2 for efficient FFT? Not necessary but can help. We'll compute nfft = 1 << (L-1).bit_length()
+    nfft = 1 << (L-1).bit_length()
+    # FFT of padded arrays
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    # truncate to L
+    return y[:L].copy()
+
+But need to ensure dtype float64. rfft returns complex64? For float64 returns complex128. So fine.
+
+Edge cases: if arrays empty? The problem likely expects non-empty. But we can handle: if len==0? Convolution of empty arrays? Not needed.
+
+We must keep import numpy. Provide top-level function conv1d.
+
+Let's produce final code.
+
+Also we might consider using scipy.signal.fftconvolve for simplicity. But it's fine.
+
+Make sure to import numpy. Use np.fft.rfft and irfft. We'll also copy result to ensure no referencing.
+
+Also we might use np.fft.rfft(x, nfft) where nfft is length of zero-padded arrays.
+
+Return dtype float64. The result of irfft is float64.
+
+Edge: if N or M is 0? For zero-length, convolution is empty? According to numpy.convolve, convolving empty array with something returns array of length something? Let's test: np.convolve([], [1,2]) returns array([0])? Actually numpy.convolve expects arrays; if one empty, output empty? Let's check: In numpy, convolve of empty array with something returns array([]). But we may ignore.
+
+Let's just implement.
+
+Also, to ensure that output shape matches np.convolve(x,h,'full'). For large arrays, we should check.
+
+Return y[:L] copy.
+
+Ok.
+
+Let's produce final code.

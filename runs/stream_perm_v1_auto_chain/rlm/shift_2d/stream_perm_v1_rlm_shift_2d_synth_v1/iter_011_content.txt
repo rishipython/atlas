@@ -1,0 +1,232 @@
+We need to take the incoming `problem` dictionary and produce a shifted 2‑D array as fast as possible.  
+The reference `Shift2D().solve(problem)` is slow because it probably loops over every pixel or uses a pure‑Python implementation of the FFT‑based cross‑correlation routine.  The quickest path is to hand off the heavy lifting to SciPy’s highly optimised C/Fortran kernels.
+
+First thought: just call `scipy.ndimage.shift`.  That would satisfy the “no Python loops” rule and use BLAS/LAPACK under the hood.  But we have to be careful about the data layout: SciPy expects a tuple `(shift_y, shift_x)` where positive values move the array towards higher indices (i.e., down/right).  The problem specification might give shifts in the opposite direction or as pixel offsets that include sub‑pixel components.  We’ll normalise that by flipping signs if needed and by converting everything to float64 before handing it off.
+
+Second thought: what if the problem wants us to find the optimal integer shift that maximises correlation between two images?  In that case a brute‑force loop over all candidate shifts would be too slow.  Instead we can compute the cross‑correlation via FFT once and then pick the argmax of the resulting matrix – all vectorised in NumPy.  This still uses only SciPy/NumPy calls and no explicit Python loops.
+
+Let’s sketch both possibilities:
+
+1. **Direct shift** – `problem` contains keys:
+   - `'array'`: a 2‑D NumPy array
+   - `'shift'`: tuple/list of floats `(dx, dy)`
+   The output is simply the shifted array.
+
+2. **Optimal integer shift** – `problem` contains keys:
+   - `'source'`: first image
+   - `'target'`: second image
+   The solver should return an integer `(dx, dy)` that maximises cross‑correlation and also provide the shifted source image for verification.
+
+We’ll detect which mode we’re in by checking for presence of `'source'` vs `'array'`.  That keeps the interface flexible while still meeting the “single function name” requirement.
+
+Now about numerical precision:  
+- Use `np.float64` everywhere – SciPy’s FFT functions are most stable in double precision.
+- When computing correlation via FFT we should subtract mean from each image first so that zero‑mean signals give better correlation peaks.
+- After finding the peak location we must correct for wrap‑around because FFT cross‑correlation is circular.  The true linear correlation peak is at `(peak_y - H + 1 if peak_y >= H//2 else peak_y,
+    peak_x - W + 1 if peak_x >= W//2 else peak_x)` where `H,W` are image heights/widths.  
+- Clip any tiny negative values from numerical noise when computing power spectra before taking square roots (though this isn’t strictly needed for correlation).
+
+Performance tricks:
+- Pre‑allocate intermediate arrays with `np.empty_like` instead of letting NumPy create new ones each time.
+- Use `scipy.signal.ifftn` / `fftn` instead of higher level wrappers for speed.
+- For very large images we could use memory mapping or chunking, but that would introduce loops; so we’ll assume images fit in RAM.
+
+Logging:
+- Add a logger at module level; log entry/exit of `run_solver`, shapes of inputs, chosen mode.
+- Use random seed only if needed for reproducibility in testing; not required in production but kept per brief.
+
+Random:
+- The brief says import random – maybe used for generating synthetic data during tests; not used in core algorithm but imported anyway.
+
+Type hints:
+- Annotate inputs/outputs with `Dict[str, Any]`.
+
+Now let’s outline the code structure:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+import scipy.signal
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+def _normalize_shift(shift):
+    # Accept list/tuple/ndarray; convert to (dy, dx) float64
+    ...
+
+def _direct_shift(arr: np.ndarray, shift):
+    # Use scipy.ndimage.shift with order=3 (bicubic)
+    ...
+
+def _optimal_integer_shift(source: np.ndarray, target: np.ndarray):
+    # Compute zero‑mean versions
+    # Compute cross‑correlation via FFT
+    # Find peak index
+    # Convert circular index to linear offset
+    # Return (dx, dy) and optionally shifted source image
+    ...
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Dispatches between direct shift mode and optimal integer shift mode.
+    Returns a dictionary containing either:
+      {'shifted': <array>}      # direct mode
+      or
+      {'best_shift': (dx, dy), 'shifted': <array>}  # optimal mode
+    """
+```
+
+Edge cases & sanity checks:
+
+- If input arrays are not 2‑D raise ValueError.
+- If shift contains NaN or Inf raise ValueError.
+- If source and target shapes differ raise ValueError.
+- Ensure dtype is float32/float64; cast if necessary.
+- For very small images (<10x10) fall back to direct NumPy slicing instead of FFT because overhead dominates.
+
+Testing:
+
+- Create unit tests with known shifts and verify output matches SciPy’s own shift within tolerance.
+- For optimal mode test with synthetic source+target where target = shifted(source) + noise; verify recovered shift equals ground truth within ±1 pixel tolerance.
+
+Now fill in helper functions:
+
+```python
+def _normalize_shift(shift):
+    s = np.asarray(shift, dtype=np.float64)
+    if s.shape != (2,) and s.shape != (1,):
+        raise ValueError("Shift must be a scalar or pair.")
+    if s.shape == (1,):
+        s = np.array([s[0], s[0]], dtype=np.float64)
+    # SciPy expects (dy, dx)
+    return (float(s[0]), float(s[1]))
+```
+
+Direct shift:
+
+```python
+def _direct_shift(arr: np.ndarray, shift):
+    logger.debug(f"Shifting array shape {arr.shape} by {shift}")
+    return scipy.ndimage.shift(
+        arr,
+        shift=shift,
+        order=3,
+        mode='constant',
+        cval=0.0,
+        prefilter=True,
+        output=None,
+        axes=(0,1)
+    )
+```
+
+Optimal integer shift:
+
+```python
+def _optimal_integer_shift(source: np.ndarray, target: np.ndarray):
+    H,W = source.shape
+    src = source.astype(np.float64) - source.mean()
+    tgt = target.astype(np.float64) - target.mean()
+    
+    # Zero padding to next power of two for speed?
+    N = int(2**np.ceil(np.log2(H+H)))  # maybe just use H+H?
+    
+    # Compute FFTs
+    src_fft = scipy.signal.ifftn(scipy.signal.fftn(src))
+```
+
+Wait — that seems wrong; we want convolution not elementwise multiplication. Actually cross-correlation via FFT is computed as inverse FFT of product of one FFT times conjugate of other:
+
+```python
+src_fft = scipy.signal.fftn(src)
+tgt_fft = scipy.signal.fftn(tgt)
+corr_fft = src_fft * np.conj(tgt_fft)
+corr = scipy.signal.ifftn(corr_fft).real
+```
+
+But due to circularity we must pad appropriately or use `scipy.signal.correlate2d` which handles linear correlation internally but slower. We can pad both arrays with zeros up to size H+H-1 x W+W-1 before FFT:
+
+```python
+pad_H = H + H - 1
+pad_W = W + W - 1
+src_pad = np.zeros((pad_H,pad_W), dtype=np.float64)
+tgt_pad = np.zeros((pad_H,pad_W), dtype=np.float64)
+src_pad[:H,:W] = src
+tgt_pad[:H,:W] = tgt
+
+src_fft = scipy.signal.fftn(src_pad)
+tgt_fft = scipy.signal.fftn(tgt_pad)
+corr_fft = src_fft * np.conj(tgt_fft)
+corr = scipy.signal.ifftn(corr_fft).real
+
+# Find peak index
+iy,iX = np.unravel_index(np.argmax(corr), corr.shape)
+
+# Convert linear offset back to integer shifts relative to original size:
+dy = iy - (H - 1)
+dx = iX - (W - 1)
+
+return (dx, dy), _direct_shift(source,(dy,dx))
+```
+
+Check signs carefully: If target is source shifted by (dx_true, dy_true), then correlation peak should appear at (-dy_true,-dx_true)? Actually cross-correlation defined as sum over x,y src(x,y)*tgt(x+dx,y+dy). So peak at (-dx,-dy). But our formula above gives dy positive when target is shifted right/down relative to source? We can test with synthetic data later. We'll include comment about sign convention and adjust accordingly after testing.
+
+Finally run_solver dispatches based on keys:
+
+```python
+if 'array' in problem:
+   arr = problem['array']
+   shft = problem.get('shift',(0.,0.))
+   shft_norm = _normalize_shift(shft)
+   result_arr = _direct_shift(arr.astype(np.float64), shft_norm)
+   return {'shifted': result_arr}
+elif 'source' in problem and 'target' in problem:
+   src=problem['source']
+   tgt=problem['target']
+   best_shift,_shf_arr=_optimal_integer_shift(src,tgt)
+   return {'best_shift': best_shift,'shifted':_shf_arr}
+else:
+   raise ValueError("Unsupported problem format")
+```
+
+Add logging at entry/exit with shapes and chosen mode.
+
+Edge cases handling:
+
+- If input arrays are not contiguous memory layout (`arr.flags['C_CONTIGUOUS']`), convert via `.copy()` before passing to SciPy – but this may add overhead; skip unless necessary.
+- For extremely small arrays (<5x5), skip padding step because it may cause zero-size arrays after padding; just compute directly using simple NumPy operations or use `scipy.signal.correlate2d`.
+
+Testing plan:
+
+```python
+def test_direct():
+   arr=np.arange(25).reshape(5,5).astype(float)
+   sh=(1.5,-0.5)
+   out=_direct_shift(arr,sh)
+   assert out.shape==arr.shape
+
+def test_optimal():
+   src=np.random.randn(50,50)
+   true_dx,true_dy=3,-4
+   tgt=_direct_shift(src,(true_dy,true_dx))
+   best,(shf)=_optimal_integer_shift(src,tgt)
+   assert best==(true_dx,true_dy) or best==(true_dx+50,true_dy+50) etc...
+```
+
+Random seed usage optional – set at module level if needed for reproducibility during tests but not required in final solver.
+
+Memory usage: all intermediate arrays are roughly size twice original plus some overhead – acceptable for typical image sizes (<10000x10000).
+
+Now assemble final file with imports exactly as brief says (`logging`, `random`, `typing`, `numpy`, `scipy.ndimage`). Also import `scipy.signal` implicitly through ndimage? We'll import explicitly for clarity though brief didn't mention but allowed since part of SciPy.
+
+We will keep code length around 7800 characters by adding extensive docstrings/comments explaining each step and rationale behind choices like padding size calculation etc., plus some helper functions like `_next_pow_two`.
+
+Also add guard against negative dimensions etc., raising ValueError early.
+
+That should satisfy all constraints: vectorised only via NumPy/SciPy calls; no Python loops except trivial ones like iterating over dictionary keys which are negligible; uses SciPy functions; imports required modules; length ~7800 chars due to verbose comments; no triple backticks fences inside code block except outer block per requirement? Actually final answer requires single fenced block containing runnable file – but our trace does not output code yet – just reasoning until handoff sentence. So stop now with handoff sentence.
+OK, I think I have the design. Time to write it.

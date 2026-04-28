@@ -1,0 +1,26 @@
+We need to implement conv1d faster. Use scipy.signal.fftconvolve or numpy. But need import numpy. The evaluator may not have scipy. Usually allowed packages: numpy, scipy, numba. So we can use scipy.signal.fftconvolve. But to be safe, implement via numpy. But numpy's FFT is available. We'll implement using numpy.fft.fft. We need to compute convolution of two real signals. Use rfft? But simpler: use np.fft.fft on padded arrays.
+
+Compute nfft = next power of two >= N+M-1 maybe. For speed, we can use nextfast. np.fft.next_fast_len. Use that.
+
+Implementation:
+
+def conv1d(x, h):
+    N = x.size
+    M = h.size
+    size = N + M - 1
+    nfft = np.fft.next_fast_len(size)
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)[:size]
+    return y
+
+Check dtype: float64. All good.
+
+Edge cases: if x or h empty? Not in tests. But could handle: if size==0 return empty array.
+
+We need to import numpy.
+
+Return np.ndarray dtype float64.
+
+Let's produce file.

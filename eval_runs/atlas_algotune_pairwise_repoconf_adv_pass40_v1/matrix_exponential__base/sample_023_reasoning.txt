@@ -1,0 +1,51 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm or np.linalg functions? We can simply call scipy.linalg.expm(A). That would be fast. But we must ensure no extra imports? We can import scipy.linalg.expm. However the problem says we may import numpy, scipy, numba, or any package from standard scientific-Python distribution. So we can simply call scipy.linalg.expm. But we must keep function signature same. That would be the simplest.
+
+But we must ensure that the output is numerically close to scipy.linalg.expm(A). Using same function would produce identical results (maybe slightly different due to algorithm). But we can just delegate.
+
+However the problem might want a custom implementation maybe using scaling and squaring with Pade approximants. But calling scipy's function is fine. But we need to ensure that we don't import heavy modules incorrectly. We'll just import scipy.linalg.expm.
+
+Also ensure that we don't inadvertently use recursion or heavy loops.
+
+Edge cases: A may not be square? Problem states square. But we can still check shape.
+
+Return type: same dtype float64. SciPy returns float64 if input float64.
+
+Thus implementation:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But we might want to copy to avoid modifying input? expm does not modify input. So fine.
+
+But maybe we need to implement scaling and squaring manually? But simpler is fine.
+
+But maybe the evaluation expects to not call scipy? But problem says we can import. So fine.
+
+However there might be environment constraints: SciPy may not be installed. But they said standard scientific-Python distribution. Usually SciPy is included. But to be safe, we can implement scaling and squaring ourselves using numpy only. That would avoid SciPy dependency. But it's more complex but doable.
+
+But simpler to just call scipy.linalg.expm. Let's assume SciPy available.
+
+But we need to ensure that the function is fast: yes.
+
+Let's produce final code.
+
+Also we might want to add a check for input shape: if not square, raise ValueError. But not required.
+
+Let's produce file:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+Add docstring.
+
+Ok.

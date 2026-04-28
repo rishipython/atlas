@@ -1,0 +1,50 @@
+We need to replace triple loops with faster vectorized or efficient method. For squared Euclidean distance, we can compute using dot products: D = A + A^T - 2*X@X.T, where A is diag(X@X.T). For each row vector x_i, squared norm = sum_k x_i[k]^2. Then D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. That yields symmetrical matrix. Implementation: compute sq_norms = np.sum(X**2, axis=1). Then D = sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T. Ensure dtype float64.
+
+Edge cases: ensure non-negative due to numeric errors: maybe clip negative values to zero with np.maximum(D, 0.0). But test uses allclose; small negative values acceptable? Might cause issues. But better to clip.
+
+Also ensure shape (N,N). For N up to maybe large, but memory wise okay.
+
+Return dtype float64.
+
+Implementation: function pairwise_sq_dist(X: np.ndarray) -> np.ndarray: compute.
+
+Also include imports: numpy as np.
+
+We must keep same function signature and docstring maybe.
+
+We need to produce a complete runnable file. Provide imports at top, function definition.
+
+Add __all__ maybe not necessary.
+
+Potential pitfalls: X may not be float64? The reference expects float64. But we can cast to float64: X = np.asarray(X, dtype=np.float64). Should maintain.
+
+Implementation: out = np.dot(X, X.T). That's float64 if X is float64. Then compute squared norms.
+
+We also need to ensure no overflow for large D? But typical.
+
+Let's write code.
+
+Also we may consider using np.einsum for memory efficiency? But dot product is fine.
+
+We should also consider when N is large and D is huge; memory of X@X.T might be large. But that's same as out. So fine.
+
+Let's implement.
+
+Edge: N=0? If X empty shape (0,D). Then out shape (0,0). Code should handle. For X@X.T with shape (0,0) okay.
+
+But compute sq_norms = np.sum(X**2, axis=1) will produce shape (0,). Then out = sq_norms[:,None] + sq_norms[None,:] - 2*X@X.T -> shape (0,0). Works.
+
+Also ensure we don't modify X.
+
+Return out.
+
+Add clip: np.maximum(out, 0.0, out=out). Actually we can use out = np.maximum(out, 0.0). But we might want to keep shape. We'll do out = np.maximum(out, 0.0). That returns new array. Acceptable.
+
+Better: out[out<0] = 0.0 to modify in place. But we can just compute.
+
+But to keep numeric close, we can clip small negative values like -1e-12. But allclose might allow small negative values? The reference may produce exactly zero due to integer arithmetic. But our dot may produce small negative due to round-off. So clipping to zero ensures same. We'll clip to zero with np.maximum.
+
+Return out.
+
+Let's produce final code.
+

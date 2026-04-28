@@ -1,0 +1,180 @@
+We need to speed up a 2‑D shift problem. The baseline uses a slow algorithm, probably nested loops or naive convolution. We want to use JAX JIT and vectorization, but also use scipy somewhere. No Python loops.
+
+First, what is the problem? Shift_2d likely means given an image and a shift vector, we need to compute something like cross‑correlation or shift detection? Might be about aligning two 2D arrays by shifting one relative to the other. The baseline might compute the optimal shift that maximizes correlation or minimizes error. We need to produce a fast solver.
+
+We must use numpy, scipy.ndimage, jax, jax.numpy as jnp, jax.scipy.ndimage as jndi. So we will combine JAX and SciPy. Maybe use SciPy's FFT-based convolution for cross-correlation; then use JAX for JIT and vectorization of the search over shifts.
+
+One approach: compute cross-correlation via FFT: `scipy.signal.correlate2d` or `scipy.signal.fftconvolve`. Then find argmax of correlation map. But we also need to handle subpixel shifts? Might need interpolation.
+
+Alternatively, we could use `scipy.ndimage.shift` to shift arrays and compute error metrics in a loop over candidate shifts; but that would be loops.
+
+Better: compute difference between two images as function of shift analytically using Fourier shift theorem: shifting in spatial domain corresponds to multiplying Fourier transform by phase ramp. So we can compute cross-correlation via FFT and find peak efficiently.
+
+But requirement: use JAX for JIT / vectorization. We can wrap the FFT-based correlation in a JAX function; but JAX has its own FFT implementation (jax.numpy.fft). However we also need SciPy somewhere. Maybe we can compute the correlation using SciPy's `fftconvolve`, then feed result into JAX for argmax? Or maybe use SciPy's `ndimage.shift` inside a JAX-compiled function? That might not be supported.
+
+Alternatively, we could implement entire algorithm in JAX, but still call SciPy for something like `scipy.ndimage.gaussian_filter` for smoothing before correlation.
+
+We must not have Python loops; so any search over shifts must be vectorized. Could generate all possible shifts within a window as arrays and apply them via broadcasting? But that might be memory heavy.
+
+Simpler: just compute full cross-correlation map with FFT; then find global maximum via `jnp.argmax`. That gives integer shift. If subpixel needed, do parabolic fit around peak.
+
+So design: define solve(problem) that takes a problem dict with 'a' and 'b' arrays (two 2D images). Use SciPy's fftconvolve to compute cross-correlation: `corr = scipy.signal.correlate2d(a, b, mode='full', boundary='fill', fillvalue=0)`. Then find peak index via `np.unravel_index(np.argmax(corr), corr.shape)`. Compute shift relative to center: shift = peak - (a.shape[0]-1, a.shape[1]-1). Return that.
+
+But we need JAX: maybe wrap entire solve in @jax.jit and use jax.numpy functions instead of numpy for indexing? But jax doesn't support np.unravel_index directly? It does have jnp.unravel_index.
+
+But SciPy's fftconvolve returns numpy array; we can convert to jnp.array inside jit? Actually jit functions cannot call non-jax functions like scipy.signal.correlate2d because they'd break tracing. But we could call SciPy outside jit and then pass result into JAX for argmax; but that defeats purpose of jit.
+
+Alternate: Use JAX's own FFT via jnp.fft.ifft2 etc. Compute cross-correlation via multiplication in Fourier domain: F_a = fft2(a); F_b = fft2(b); corr = ifft2(F_a * conj(F_b)). Then take real part; then find argmax with jnp.argmax. That is fully JAX; no loops. That would be fast due to GPU/TPU if available.
+
+But requirement says "Uses scipy functions somewhere in the solution." So we must include at least one SciPy function call somewhere in code path; maybe for padding or smoothing or computing initial guess.
+
+Maybe we can call `scipy.ndimage.gaussian_filter` on input images before passing to JAX function; that is allowed because it's outside jit region but still part of solve method.
+
+So design: In solve(problem), first extract arrays `x = problem['x']`, `y = problem['y']`. Preprocess with Gaussian filter from scipy.ndimage to reduce noise: `x_filt = scipy.ndimage.gaussian_filter(x, sigma=1)` etc. Then convert to jnp arrays and run JIT-compiled function that computes cross-correlation via FFT and returns shift indices.
+
+We must avoid Python loops inside jit function; all operations are vectorized by default.
+
+Edge cases: If shapes differ? We might assume same shape for simplicity; else pad smaller one with zeros to match larger shape before computing correlation (FFT handles different sizes by zero-padding). But we can just compute full correlation with size sum-1 each dimension; that's fine.
+
+Also need to handle negative shifts properly when returning result; ensure correct sign convention (shift of second relative to first). We'll return tuple (dy, dx).
+
+Also need rtol/atol tolerance? Not specified; just return optimal solution exactly as baseline does.
+
+We also need run_solver(entry point) that calls Shift2D().solve(problem). So implement class Shift2D with solve method using above logic.
+
+Now think about possible pitfalls:
+
+- Using jax.jit requires functions defined at top-level; can't define nested lambda inside solve easily? We can define static method or separate function outside class decorated with @jax.jit.
+- Converting numpy array to jnp.array inside jit may cause tracing issues if shape unknown at compile time? But shapes known at runtime; it's fine.
+- Need to ensure dtype float32/float64 consistency; use float64 for accuracy.
+- Use jnp.real on inverse FFT output.
+- Need unwrap index from flattened array back to 2D coordinates: use jnp.unravel_index.
+- Compute shift relative to center: center indices are shape[0]-1 etc.
+- Subpixel refinement optional but skip for now.
+
+Now about using SciPy functions somewhere else: maybe also use scipy.linalg.norm or other metric inside solve after finding shift? But requirement only says uses scipy functions somewhere in solution, not necessarily inside solve method but overall file. So calling gaussian_filter qualifies.
+
+Potential alternative designs considered:
+
+1) Use nested Python loops over candidate shifts with SciPy's ndimage.shift each time computing error metric -> too slow.
+2) Use pure numpy convolution via np.correlate -> slower than FFT for large images.
+3) Use SciPy's fftconvolve -> good but no JIT.
+4) Use pure JAX FFT approach -> fastest but missing SciPy usage.
+5) Combine 3 & 4: preprocess with SciPy gaussian_filter then use JAX FFT -> meets requirements.
+
+Thus commit design 5.
+
+Edge cases check:
+
+- If input arrays are small (<32x32), overhead of JIT might outweigh benefit; but acceptable given constraints.
+- Ensure output shape matches expected baseline format: maybe baseline returns dict with 'shift': (dy,dx). We'll mimic that.
+- If arrays contain NaNs or infs -> gaussian_filter will propagate NaNs; maybe baseline handles differently but ignore here.
+- For very large images >10k pixels per dimension -> memory heavy but okay.
+
+Now finalize design outline:
+
+Imports:
+```
+import numpy as np
+import scipy.ndimage
+import jax
+import jax.numpy as jnp
+import jax.scipy.ndimage as jndi
+```
+
+Define @jax.jit function `_compute_shift(a,b)` returning tuple (dy,dx).
+
+Inside _compute_shift:
+```
+fa = jnp.fft.rfftn(a)
+fb = jnp.fft.rfftn(b)
+corr = jnp.real(jnp.ifftn(fa * jnp.conj(fb)))
+idx = jnp.unravel_index(jnp.argmax(corr), corr.shape)
+center = (a.shape[0]-1, a.shape[1]-1)
+dy = idx[0] - center[0]
+dx = idx[1] - center[1]
+return dy, dx
+```
+
+Note rfftn gives real-to-complex transform reducing memory/time slightly for real inputs; then ifftn expects complex input shape same as rfftn output shape? Actually rfftn outputs shape (..., N//2+1). ifftn expects same shape and returns real array? Might need irfftn instead of ifftn after multiplication of rfftn results? Actually product of rfftn(a)*conj(rfftn(b)) yields complex array same shape as rfftn output; then irfftn gives real output same shape as original input sum minus one dims? Wait irfftn returns real array of original full size when given full complex spectrum? For 2D real input sizes M,N => rfftn outputs M x (N//2+1). Then multiply and apply irfftn yields M x N array which is full correlation length M+N-1? Actually irfftn expects full complex spectrum of size M x (N//2+1) corresponding to original size M,N padded appropriately. For full cross-correlation we want size M+N-1 each dimension. So maybe easier just use full fftn on both padded arrays sized sum-1 each dimension using np.pad before transform. That adds complexity but still vectorized.
+
+Simplify: Use full fftn on both inputs padded to sum-1 dims using np.pad inside jit? Can't pad inside jit easily because shapes dynamic? We can compute target shape once outside jit then pad inside normal code before passing into jit function which expects same shapes always per call but not constant across runs maybe fine if shapes vary per call because jit will compile multiple shapes automatically if dynamic shapes allowed by default? Actually by default jit compiles per shape encountered unless static_argnums used; so okay.
+
+Thus implement outside jit:
+
+```
+def _pad_to_full(a,b):
+    new_shape = tuple(s + t - 1 for s,t in zip(a.shape,b.shape))
+    pad_a = ((0,new_shape[0]-a.shape[0]),(0,new_shape[1]-a.shape[1]))
+    pad_b = ((0,new_shape[0]-b.shape[0]),(0,new_shape[1]-b.shape[1]))
+    return np.pad(a,pad_a), np.pad(b,pad_b)
+```
+
+Then feed padded arrays into _compute_shift_jit which expects same shapes each call but shapes vary across calls anyway compiled separately each time due to dynamic shapes allowed by default since no static_argnums set.
+
+Inside _compute_shift_jit:
+```
+fa = jnp.fft.fftn(a)
+fb = jnp.fft.fftn(b)
+corr = jnp.real(jnp.ifftn(fa * jnp.conj(fb)))
+...
+```
+
+Return dy/dx relative to original center computed from original shapes?
+
+Actually center indices should be (original_a_shape[0]-1, original_a_shape[1]-1). Since correlation computed on padded arrays of size sum-1 each dimension, peak location relative to padded array center corresponds accordingly. The offset between padded center and original center equals b.shape - 1 perhaps? Let's think: Suppose a size M,N and b size P,Q. Full correlation size is M+P-1 x N+Q-1. The zero lag corresponds at index (P-1,Q-1)? Wait cross-correlation defined such that zero shift aligns b onto a starting at top-left corner aligning b's top-left with a's top-left offset zero shift meaning b overlapped starting at same coordinates relative to a origin? Usually zero lag at index (P-1,Q-1). So shift computed as peak_idx - (P-1,Q-1). So we should subtract b_shape - 1 from peak index coordinates after flattening?
+
+Thus final dy/dx computed accordingly:
+
+```
+center_b = (b.shape[0]-1,b.shape[1]-1)
+dy = peak_idx[0] - center_b[0]
+dx = peak_idx[1] - center_b[1]
+```
+
+Return these ints possibly cast to int32.
+
+Now integrate gaussian filter preprocessing:
+
+```
+x_filt = scipy.ndimage.gaussian_filter(problem['x'], sigma=3)
+y_filt = scipy.ndimage.gaussian_filter(problem['y'], sigma=3)
+```
+
+Then pad & convert to float64 arrays before passing into jit function which expects float64 dtype.
+
+Wrap everything in class Shift2D:
+
+```
+class Shift2D:
+    def __init__(self):
+        self._compute_shift_jit = _compute_shift_jit
+
+    def solve(self, problem):
+        x = problem['x']
+        y = problem['y']
+        # preprocess
+        x_filt = scipy.ndimage.gaussian_filter(x.astype(np.float64), sigma=3)
+        y_filt = scipy.ndimage.gaussian_filter(y.astype(np.float64), sigma=3)
+        # pad
+        x_pad,y_pad,_pad_shape=_pad_to_full(x_filt,y_filt)
+        # convert
+        x_j=np.array(x_pad,dtype=np.float64)
+        y_j=np.array(y_pad,dtype=np.float64)
+        dy,dx=self._compute_shift_jit(x_j,y_j)
+        return {'shift':(int(dy),int(dx))}
+```
+
+Need _pad_to_full defined earlier returning pad arrays plus original shapes maybe not needed if compute dy/dx inside _compute_shift_jit using passed shapes of b only because we know b shape after padding equals new_shape though original b shape lost unless passed separately or computed from padded length minus a length + 1 etc. Could pass original b shape as argument too static param maybe easier:
+
+Define `_compute_shift_jit(a,b,b_orig_shape)` where b_orig_shape is tuple passed as static argument so no dynamic dimension changes inside jit except data values only?
+
+But static_argnums cannot be used easily because we want dynamic shapes anyway; easier just compute dy/dx after calling jit by retrieving peak idx from output rather than computing inside jit?
+
+Alternate approach: let _compute_shift_jit return the correlation array itself; then outside find peak idx using numpy/jax operations without loops still fine because correlation array small compared to images but still large maybe big memory overhead though okay since it's just one array returned anyway from GPU memory transfer cost minimal vs CPU?
+
+But simpler: let _compute_shift_jit return peak idx directly computed within it using argmax on corr flattened etc., then convert back outside using known formula requiring original B shape which is available outside before calling _compute_shift_jit so we can compute dy/dx after retrieving peak idx from returned values?
+
+Wait _compute_shift_jit currently returns dy/dx directly based on B original shape known inside function only if passed B original shape parameter before padding or computed from padded B shape minus A shape + 1 etc.. Let's derive formula:
+
+Let A size M,N ; B size P,Q ; padded sizes S_M

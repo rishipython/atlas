@@ -1,0 +1,94 @@
+We need to provide faster implementation of 1D convolution, full mode. Use FFT. For arbitrary lengths, we can use numpy.fft.fft, but careful with complex. Use real FFT: rfft and irfft for speed. But we need full convolution length N+M-1. For real signals, we can do: nfft = nextpow2(N+M-1). Then use np.fft.rfft and irfft. But careful: rfft returns length nfft//2+1. For real convolution, we can do:
+
+n = N+M-1
+nfft = 2**np.ceil(np.log2(n)).astype(int) ??? Actually we can use np.fft.next_fast_len(n). But numpy has np.fft.next_fast_len? Actually numpy.fft has next_fast_len. In numpy 1.20+ maybe. Let's use np.fft.next_fast_len.
+
+So:
+
+nfft = np.fft.next_fast_len(n)
+
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X * H
+y = np.fft.irfft(Y, nfft)[:n]
+Return y.
+
+This yields accurate result. But for large arrays, rfft may be faster.
+
+But to be safe, we can also use scipy.signal.fftconvolve if available. But we can implement ourselves.
+
+Edge cases: if x or h empty? lengths 0? But likely not. But we can handle.
+
+Return dtype float64.
+
+We should import numpy as np. That's fine.
+
+Potential pitfalls: For large arrays, rfft and irfft produce float64 by default. Good.
+
+Make sure that we cast to float64.
+
+Also we may want to use np.fft.fft for complex if needed. But rfft is fine.
+
+Thus implement conv1d accordingly.
+
+We need to produce a single python file.
+
+Let's produce:
+
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    # ensure float64
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    n = N + M - 1
+    # handle trivial cases
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    nfft = np.fft.next_fast_len(n)
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft, norm=None)[:n]
+    return y
+
+We might consider using np.fft.irfft(Y, nfft) but we need to specify nfft. The default length is len(Y)*2 - 2. But we pass nfft. Also we can use norm=None.
+
+Test: For small arrays, compare with np.convolve.
+
+Potential numeric differences: Should be fine.
+
+Edge case: if nfft < n? np.fft.next_fast_len returns >= n. Good.
+
+We also need to handle if x or h not 1-D? The spec says 1-D arrays. But we can ensure they are 1-D: x = np.squeeze(x). But not necessary.
+
+Better to check shape: if x.ndim != 1 or h.ndim != 1: raise ValueError.
+
+But not necessary.
+
+Also we can use np.fft.rfftn for multi-dim but not needed.
+
+Ok.
+
+Let's produce final code.
+
+We need to include imports at top. Use np.fft.next_fast_len. That function is in numpy.fft. So import numpy as np. Then use np.fft.next_fast_len.
+
+Testing: For small arrays, conv1d([1,2,3],[4,5]) should produce [4,13,22,15]. Let's test mentally: x=[1,2,3], h=[4,5]. Convolution: n=3+2-1=4. Use FFT. Should produce.
+
+Edge: if one array length 0? We return empty. But np.convolve returns empty array? np.convolve([], [1]) returns array([], dtype=float64). Good.
+
+But if both empty, length 0? conv1d returns empty. Good.
+
+Also if one zero-length, n=0+M-1? Actually if N=0, M>0, n = M-1? But conv of empty with something is empty. So we handle earlier: if N==0 or M==0 return empty. Good.
+
+Also we need to ensure that output dtype is float64. The irfft returns float64 by default if input is float64. Good.
+
+Thus final.
+
+Check performance: For large arrays, rfft is faster than full fft. Good.
+
+Let's produce final code.
+

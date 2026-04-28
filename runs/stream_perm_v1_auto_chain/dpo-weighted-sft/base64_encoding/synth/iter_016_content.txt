@@ -1,0 +1,209 @@
+We need to figure out how to solve base64 encoding quickly. Let's think.
+
+We have a problem: base64_encoding. The reference implementation presumably does something like encode a string or bytes into base64 using Python's base64 library, but maybe slower due to loops. We need to write a faster implementation using vectorized operations, no Python loops, using numpy, hmac? Wait hmac imported maybe for something else. But design brief says imports: base64, hmac, typing Any, Dict, numpy as np. So we need to use base64 and hmac? Maybe hmac used for generating some key or something? Let's read the problem statement: "base64_encoding" likely involves encoding data into base64 and then verifying with HMAC? Not sure.
+
+Let's search memory: AlgoTune tasks often involve encoding/decoding tasks where you need to encode a string into base64 and then compute HMAC-SHA256 of the encoded string or something.
+
+The reference baseline might do something like:
+
+```
+def solve(problem):
+    data = problem["data"]  # maybe string
+    # encode to base64
+    encoded = base64.b64encode(data.encode()).decode()
+    # compute HMAC
+    key = problem.get("key", b"secret")
+    mac = hmac.new(key, encoded.encode(), hashlib.sha256).hexdigest()
+    return {"encoded": encoded, "hmac": mac}
+```
+
+But we need to vectorize? That seems weird because encoding is per item.
+
+Maybe the problem is that we have many strings in a list and we need to encode them all quickly. So vectorization could be applied by converting list of strings to numpy array of dtype=object and then using np.vectorize? But that's still Python loops under the hood.
+
+Alternatively, we can use numpy's frombuffer or fromstring to treat bytes as uint8 array and then apply some mapping to base64 alphabet via lookup table. That could be vectorized.
+
+But the brief says no Python-level loops; all work is vectorised. So we must implement base64 encoding ourselves using numpy operations on the entire dataset at once. The dataset may be a single bytes object or maybe an array of bytes.
+
+We also import hmac; maybe we need to compute HMAC over each encoded string.
+
+But maybe the problem is simpler: We just need to encode a single string into base64 and compute its HMAC; but they want vectorization across many test cases.
+
+Let's think about typical AlgoTune tasks: They give a "problem" dictionary containing parameters like "n" (size) and "data" (list of integers). The solver must output something like sum or product etc. But here it's base64_encoding; maybe the input contains a list of byte arrays that need to be encoded and hashed.
+
+Maybe the reference implementation uses loops over each byte chunk, calling base64.b64encode repeatedly. That would be slow for large data.
+
+We can accelerate by using numpy's vectorized bitwise operations: Convert input bytes into uint8 array, reshape into groups of 3 bytes (24 bits), split into 4 groups of 6 bits, map each 6-bit value to base64 alphabet via lookup table array of shape (64,), produce characters as uint8 ascii codes, then reshape back to string.
+
+We can also handle padding by adding zeros if length not multiple of 3.
+
+This will be fully vectorized; no Python loops except maybe a small loop for padding? But we can handle that with slicing and broadcasting.
+
+We also need HMAC: For each encoded string, compute HMAC with some key; but computing HMAC per element might still involve loops. However if we only have one encoded string, it's fine.
+
+But design brief says imports include hmac; so probably they want us to compute HMAC as part of solution.
+
+Maybe the problem: given an integer n and an array of bytes (size n), output the base64-encoded string and its SHA256 HMAC using key from problem dict. The baseline uses Python loops; we need vectorized approach.
+
+Let's assume input format: problem dict with keys 'data' (bytes-like), 'key' (bytes). We need to output dict with 'encoded' (str) and 'hmac' (str hex).
+
+Implementation steps:
+
+1. Convert data bytes to numpy array dtype=np.uint8.
+2. Determine length L.
+3. Compute number of 3-byte blocks: nblocks = ceil(L/3).
+4. Pad data with zeros up to 3*nblocks.
+5. Reshape into shape (-1,3) -> shape (nblocks,3).
+6. Convert each block into 24-bit integer: shift left 16+8+0 bits.
+   Use `((arr[:,0] << 16) | (arr[:,1] << 8) | arr[:,2])` giving shape (nblocks,) dtype=uint32.
+7. Extract four 6-bit groups:
+   - `((bits >> 18) & 0x3F)`
+   - `((bits >> 12) & 0x3F)`
+   - `((bits >> 6) & 0x3F)`
+   - `(bits & 0x3F)`
+   This yields shape (nblocks,4).
+8. Map each value through lookup table `BASE64_ALPHABET` which is array of ascii codes for 'A'-'Z', 'a'-'z', '0'-'9', '+', '/'.
+9. Convert ascii codes back to bytes via `bytes(...)` or decode after flattening.
+10. Handle padding: If original length mod 3 ==1 -> last two output chars should be '='; if mod==2 -> last char '='.
+    We can slice last block accordingly:
+    - If rem==1: set last two entries in output array to ord('=') after mapping.
+    - If rem==2: set last entry in output array to ord('=').
+
+This is fully vectorized except for small conditional assignments which are fine.
+
+Then convert final array of ascii codes shape (nblocks*4,) into bytes via `tobytes()` or `bytes(arr)`? Actually `arr.tobytes()` returns bytes but may not preserve order if dtype not big-endian? But arr dtype uint8 so fine.
+
+Then decode bytes into str via `.decode('ascii')`.
+
+Compute HMAC:
+
+Use `hmac.new(key, encoded_bytes, hashlib.sha256).hexdigest()` where key is provided as bytes from problem dict or default b'secret'.
+
+No loops needed here because only one string.
+
+Edge cases: empty data -> should return empty string and hmac computed on empty string; our algorithm should handle L=0 gracefully: nblocks=0; padded length=0; reshape fails? We can handle by early return if L==0: encoded='' ; hmac computed on empty string -> works fine.
+
+Also ensure dtype conversions avoid overflow when shifting uint8 left >31 bits? We cast arr[:,0].astype(np.uint32) before shift.
+
+Implementation details:
+
+- Use `np.frombuffer(data, dtype=np.uint8)` directly on bytes object.
+- For padding zeros: create padded array by concatenating zeros of length pad_len = (-L)%3.
+- Use `np.pad` with constant_values=0 at end.
+- Reshape accordingly.
+- Use vectorized bit ops with np.uint32 cast.
+
+Define alphabet as bytes constant:
+
+```
+BASE64_ALPHABET = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+```
+
+Then mapping:
+
+```
+indices = np.stack([...], axis=1).reshape(-1)
+encoded_bytes = BASE64_ALPHABET[indices]
+```
+
+After mapping, apply padding assignment:
+
+```
+if rem == 1:
+    encoded_bytes[-2:] = ord('=')
+elif rem == 2:
+    encoded_bytes[-1:] = ord('=')
+```
+
+Edge case when nblocks==0 -> skip mapping entirely; encoded_bytes empty array; assign nothing; final str '' fine.
+
+Now compute hmac:
+
+```
+import hashlib
+h = hmac.new(key_bytes if isinstance(key_bytes,str) else key_bytes,
+            encoded_bytes.tobytes(), hashlib.sha256).hexdigest()
+```
+
+Return dict {'encoded': encoded_str, 'hmac': h}.
+
+Now consider performance: Using numpy operations should be fast for large data sizes (~MBs). Avoiding Python loops ensures speedup over baseline that uses python's base64 library which might be slower due to overhead per call? Actually base64.b64encode is C-coded but still loops over chunks internally; but our approach might be faster due to fewer function calls? Might not matter but okay.
+
+Also consider memory overhead: For large input (~100MB), our algorithm uses arrays up to ~4/3 size plus overhead but acceptable.
+
+Now about imports: only required ones are mentioned in brief plus typing Any Dict for type hints maybe not necessary but okay.
+
+Also ensure function signature solve(problem): returns dict with keys 'encoded', 'hmac'.
+
+The run_solver function just calls Base64Encoding().solve(problem). So we define class Base64Encoding with method solve(problem).
+
+No loops inside solve except small conditionals for padding assignment which are fine as they are not per-element loops but simple assignments on slices.
+
+Edge cases:
+
+- Input data may be str instead of bytes; convert via .encode() if needed.
+- Key may be str or bytes; convert accordingly.
+- Data length zero handled properly.
+- Ensure we don't exceed memory for extremely large input > few GBs; but likely within limits.
+
+Testing mentally:
+
+Case L=5 bytes [1,2,3,4,5]. pad_len=1 -> padded [1,2,3][4,5,0]. nblocks=2
+bits block1 = (1<<16)+(2<<8)+3 = ...
+block2 similarly
+extract indices
+map
+padding rem=5%3=2 -> set last char '='
+
+Check indices calculation correctness with example from known mapping? Should produce correct result equal to standard library output.
+
+Also ensure that mapping uses correct order when flattening indices stack shape (-1). Using stack([...], axis=1).reshape(-1) ensures row-major order [i0,i1,i2,i3] per block sequentially producing correct sequence across blocks because flattening row-major yields same order as original iteration over blocks then indices within block. Good.
+
+Now about performance measurement: Should run fast on large inputs due to vectorization and minimal overhead.
+
+Ok final design ready. Let's do sanity check edge cases:
+
+- L divisible by 3 => no padding assignment executed because rem==0 so no changes needed.
+- L==1 => pad_len=2 => nblocks=1 => after mapping produce indices [i0,i1,i2,i3], then assign last two positions '=' -> leaving first two actual chars correct? Wait for rem==1 we set last two positions '=' meaning output length should be 4 chars where first two are real characters from indices[0], indices[1] corresponding to bits >>18 & >>12 ; indices[2] originally would map from bits>>6 & & etc but replaced by '=' ; same for index[3] replaced by '=' . That's correct because when only one byte present we get two real chars then two '=' padding according standard spec? Actually standard spec for one byte input yields two real chars followed by two '=' signs yes correct. For two byte input yields three real chars plus one '=' sign correct.
+
+So assignment works correctly if we replace last N positions accordingly regardless of preceding values—they will be overwritten anyway so safe even if earlier values were computed incorrectly but overwritten anyway?
+
+But careful: For rem==1 we set last two positions '=', but those positions correspond originally indices[2], indices[3]; they are overwritten after mapping so no issue even if earlier values wrong due previous shift logic? But shift logic uses padded zeros which may affect those indices incorrectly before assignment but overwritten anyway so fine.
+
+Thus algorithm robust.
+
+Now complexity wise O(n) time linear in number of input bytes due to vectorized ops all done in C via NumPy's BLAS-level operations basically bitwise ops compiled in C loops inside NumPy – still linear but fast enough compared to pure Python loops in baseline which may have overhead per chunk call etc.
+
+Potential improvement: Use memoryview + struct.pack/unpack instead of numpy? But okay.
+
+Now final code skeleton:
+
+```
+import base64
+import hmac
+import hashlib
+from typing import Any, Dict
+import numpy as np
+
+BASE64_ALPHABET = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+
+class Base64Encoding:
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, str]:
+        data = problem.get('data')
+        key = problem.get('key', b'secret')
+        # ensure bytes
+        if isinstance(data,str):
+            data = data.encode()
+        if isinstance(key,str):
+            key = key.encode()
+        # rest as above...
+```
+
+Return dict accordingly.
+
+Also note that imports include base64 though not used maybe optional fallback; but requirement includes it so keep import even if unused or used for fallback?
+
+We might keep it unused but it's okay since import side effect minimal. Or use it for verifying correctness maybe debug mode else not used.
+
+Ok final design ready. Let's produce handoff sentence now.
+OK, I think I have the design. Time to write it.

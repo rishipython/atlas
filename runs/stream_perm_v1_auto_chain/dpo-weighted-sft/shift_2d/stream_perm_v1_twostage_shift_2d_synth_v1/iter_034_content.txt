@@ -1,0 +1,203 @@
+We need to design a fast solver for shift_2d. Let's think what shift_2d is: likely an image shifting problem? Probably given an image and a shift vector, we need to compute something? Let's imagine the baseline uses naive loops and we want vectorized SciPy. Maybe use scipy.ndimage.shift. We need to avoid Python loops. Use numpy vectorization. Also use time for profiling.
+
+We need imports: from __future__ import annotations; import logging; from typing import Any, Dict; import numpy as np; import scipy.ndimage; import time.
+
+So design: run_solver(problem) returns solution. Problem likely a dict with 'image' and 'shift' keys. We need to apply shift to image using ndimage.shift which uses interpolation. But maybe we need to compute something else? Could be computing cross-correlation or shift estimation? The name shift_2d suggests shifting a 2D array by some offset.
+
+Let's assume problem dict contains 'data': 2D numpy array, 'shift': tuple of floats (dy, dx). Solve returns shifted array.
+
+Baseline might be using nested loops to fill output manually. We can replace with scipy.ndimage.shift.
+
+Edge cases: negative shifts, subpixel shifts, boundary handling. Use mode='constant', cval=0.
+
+Also maybe need to return additional info like error metrics.
+
+Let's think about alternative designs: manual convolution with FFT? But simpler: ndimage.shift handles subpixel interpolation.
+
+We also consider using numba for manual loop but banned loops. So just use ndimage.
+
+Also maybe use np.roll for integer shifts then linear interpolation for fractional part.
+
+But ndimage.shift already does that.
+
+We also might need to handle multiple images or batch processing: problem could contain list of images and shifts.
+
+But we keep simple.
+
+Let's think about speed: ndimage.shift is C-coded and uses spline interpolation (order=1 by default). Might be okay.
+
+Alternative: use scipy.signal.warp or warp_polar? No.
+
+We also consider using SciPy's map_coordinates for arbitrary shift mapping. That also uses C code and is fast.
+
+So design: In solve, extract image and shift, call scipy.ndimage.shift(image, shift, order=1, mode='constant', cval=0.0). Return result.
+
+Wrap in run_solver that logs time start and end, maybe prints duration if debug level set.
+
+Also ensure no Python loops anywhere else.
+
+Edge cases: input may be list of images; handle by applying vectorized operation across stack using np.stack then reshape? But ndimage.shift can handle 3D arrays with axis param? It will treat first dimension as separate images? Actually shift applies same shift to all axes; for 3D it will shift each slice along all axes; but we want independent shifts per image maybe not needed.
+
+Simplify: assume single 2D array.
+
+Also ensure dtype float64 for precision; cast if needed.
+
+Now think about performance: use time.perf_counter for timing inside run_solver or solve? The brief includes time import so maybe used for profiling inside solve to log durations of key steps. We'll add logging at debug level before and after calling shift. Use logger = logging.getLogger(__name__).
+
+Also include __future__ annotations at top as required.
+
+Now think about potential pitfalls: If shift values are large causing out-of-bounds, ndimage.shift will pad with zeros accordingly. That's fine.
+
+Edge case of zero shift should return original array quickly; we can short-circuit if both shifts are zero. That saves overhead of calling function but negligible overhead relative to C call anyway; but can add if statements in Python (no loops). That's fine.
+
+Also ensure we don't inadvertently create Python-level loops in any comprehension or map; just straightforward calls.
+
+Now think about potential memory usage: ndimage.shift returns new array same shape as input; that's fine.
+
+Now consider alternative design: Use np.roll for integer part then apply fractional part via linear interpolation manually using slicing and weighted sum. That would involve vectorized operations but still loops over two directions? Actually could compute via broadcasting weights on rows/cols. Might be faster than ndimage if only nearest neighbor needed but we want quality maybe order=1 is fine.
+
+But ndimage likely optimized enough; no loops needed anyway.
+
+Thus final design:
+
+- imports
+- logger
+- class Shift2D:
+    def solve(self, problem):
+        img = problem['data']
+        dy, dx = problem['shift']
+        start = time.perf_counter()
+        if dy == 0 and dx == 0:
+            result = img.copy()
+        else:
+            result = scipy.ndimage.shift(img, shift=(dy, dx), order=1, mode='constant', cval=0.0)
+        elapsed = time.perf_counter() - start
+        logger.debug(f"Shifted image in {elapsed:.6f}s")
+        return result
+
+- run_solver(problem): return Shift2D().solve(problem)
+
+That matches brief: imports include all required modules including time, logging etc. No loops present except trivial if statements which are not loops. All work vectorized via SciPy function call. Good.
+
+Check char count ~12094? Might be around that depending on code length plus comments maybe not necessary but brief says final solution ~12094 characters which is large; but we don't have to match exactly here because it's trace only not code output. But design should align with that size maybe due to many comments or docstrings etc. We can include docstrings explaining function usage etc., adding lines of comments to reach size but not necessary for trace reasoning though mention that final code will have many lines of comments maybe not needed but okay.
+
+Edge cases: If problem dict missing keys -> raise KeyError automatically good enough. If dtype not float64 -> works anyway but may cast internally; fine.
+
+Now consider potential numeric issues: Subpixel shifts cause small rounding errors but acceptable within tolerance because algorithm likely expects approximate result; no clipping needed unless negative values appear due to interpolation leading negative intensities slightly below zero due to rounding errors in order=1? For linear interpolation it shouldn't produce negative values if input non-negative and cval=0 constant padding non-negative; but due to floating errors could produce -1e-16 maybe clip with np.maximum(result, 0) if needed but not necessary unless strict tests check for non-negative values exactly equal zero at boundaries; we could clip small negatives by np.maximum(result, 0). Might add small epsilon check: result[result < 0] = 0 if any negative found? That would add loop though? Actually indexing assignment is fine no loop overhead at Python level but still uses C loop inside numpy; acceptable since it's vectorized operation (no Python-level loops). So we can include optional clipping step:
+
+    result = np.maximum(result, 0)
+
+But careful about performance overhead negligible compared to shift call though adds extra memory copy maybe okay.
+
+However the brief didn't mention clipping requirement so might not need it; keep simple without clipping unless tests fail later.
+
+Also check that using order=1 may produce slightly different results than baseline which might use bilinear interpolation too; likely okay within tolerance rtol/atol typical e.g., 1e-5 relative tolerance etc.; should pass tests if baseline uses same interpolation method or close enough because difference small relative magnitude of pixel values >1e-6 etc.; We'll trust this works.
+
+Alternative design considered earlier: use numba JIT compiled function performing manual shifting via slicing and weighted sum - would require loops inside numba compiled code which is fine but still considered "Python-level loops"? It's inside numba compiled function so allowed maybe but simpler use SciPy anyway as required by brief "Uses scipy functions somewhere".
+
+Thus final design settled on above approach with SciPy's ndimage.shift plus optional clipping step removed unless necessary. Logging debug info included for profiling as requested by time import usage maybe used inside solve method or run_solver wrapper logs start/end times of entire solve process including creation of Shift2D instance etc.; We'll log at debug level before calling solve and after returning result perhaps in run_solver:
+
+    start_total = time.perf_counter()
+    result = Shift2D().solve(problem)
+    elapsed_total = time.perf_counter() - start_total
+    logger.debug(f"Total solve time {elapsed_total:.6f}s")
+    return result
+
+That covers timing usage requirement too since brief said "import time". Good.
+
+Now final sanity check edge cases:
+
+- Problem dict contains 'data' as None -> error.
+- Problem dict contains 'shift' as list [dy, dx] -> works because tuple accepted.
+- Shift values large -> zeros padded.
+- Negative shifts -> handled.
+- Input dtype int -> SciPy will cast to float64 internally perhaps produce float output; that's fine.
+- If problem dict has extra keys no issue.
+- If multiple calls sequentially performance good due to reuse of Shift2D instance each call new instance but overhead minimal.
+- Logging may slow down if debug level high but usually off so negligible.
+- Ensure __future__ annotations imported first line else syntax error.
+- Ensure all imports present as specified.
+- Ensure no python-level loops anywhere else except trivial if statements (not considered loops).
+- Ensure final file contains only one function run_solver defined at top-level returning solution.
+- Ensure file runnable standalone with imports available from environment (scipy available yes).
+
+All good. Let's produce chain-of-thought accordingly with some dead ends discussion like considering numba vs scipy etc., exploring alternative designs before converging on SciPy approach.
+We need a fast implementation of the `solve` method for the `Shift2D` algorithm that avoids any Python‑level loops and relies on a highly optimised library call from SciPy somewhere in the code path – the brief explicitly wants us to use SciPy functions somewhere in the solution and keep everything vectorised.  
+
+Let’s first sketch what “shift_2d” actually means in this context. The reference implementation probably takes a dictionary containing a 2‑D NumPy array (the image or data field) under a key such as `"data"` and a pair of floating‑point offsets under `"shift"`. The goal is simply to translate the array by that offset – potentially fractional – using bilinear interpolation so that sub‑pixel accuracy is preserved while keeping the output shape unchanged (padding with zeros where necessary).  
+
+The naive baseline most likely iterates over every pixel in Python, computes its source coordinate via inverse mapping `(x−dx,y−dy)`, samples from the input array (maybe with linear interpolation) and writes into an output array – all done in pure Python nested loops or list comprehensions – which is painfully slow on anything larger than a few hundred pixels per dimension.  
+
+To speed this up we should delegate the heavy lifting entirely to compiled C/Fortran code in SciPy/Numpy rather than reimplementing it ourselves in Python or NumPy alone (NumPy’s broadcasting won’t help here because we need sub‑pixel sampling).  
+
+### Candidate libraries / functions
+
+* **`scipy.ndimage.shift`** – built exactly for this job; it accepts an array, a tuple of offsets `(dy,dx)` (note the order), an `order` parameter controlling spline interpolation (`order=1` gives bilinear), a `mode` controlling border handling (`mode='constant', cval=0`) which pads zeros outside the original bounds – exactly what we want for a “shift” operation without cropping.
+* **`scipy.ndimage.map_coordinates`** – more general mapping tool that could implement any arbitrary coordinate transform via spline interpolation (`order=1`). It requires us to build coordinate grids explicitly which introduces extra memory traffic compared with `shift`.
+* **Numba JIT** – could write our own looped version that gets compiled away, but this still involves writing a loop body even though it runs in machine code – against the brief’s “no Python‑level loops” rule (the rule applies at source‑code level).
+* **FFT convolution** – would be overkill here because shifting is a simple translation operation that doesn’t benefit from frequency domain tricks unless you’re doing many different shifts on the same data repeatedly – not our case here.
+* **Custom Cython** – again unnecessary complexity given `ndimage.shift` already does what we need efficiently in C/C++ under the hood.
+  
+So the cleanest choice is `scipy.ndimage.shift`. It’s already vectorised internally and does exactly what we want without any explicit looping in our own code path.  
+
+### Handling edge cases & numerical niceties
+
+* **Zero shift** – calling `shift` when both offsets are zero still incurs overhead of entering the C routine and allocating a new array copy even though nothing changes. We can guard against this trivial case with a quick `if dy == 0 and dx == 0:` branch that simply returns `img.copy()` (or even `img` itself if immutability isn’t an issue). This branch contains no loop – just a couple of comparisons.
+* **Data type** – `ndimage.shift` promotes integer arrays up through float64 internally when doing spline interpolation so there’s no risk of overflow or truncation errors on integer inputs.
+* **Negative / large offsets** – handled automatically by padding zeros (`cval=0`) when sampling outside bounds.
+* **Clipping tiny negatives** – linear interpolation between non‑negative pixels should never produce negative values unless there’s floating‑point round‑off below machine epsilon (~1e‑16). If tests are extremely strict about exact zeros at padded borders one could do `np.maximum(result, 0)` afterwards – this is still vectorised because NumPy applies the comparison over the whole array in C without any Python loop.
+  
+### Timing / logging
+
+The brief mentions importing `time`, so it’s reasonable to instrument our solver with simple timing hooks so that debug logs show how long each major step takes without affecting production performance when logging is disabled:
+
+```python
+import time
+import logging
+
+logger = logging.getLogger(__name__)
+
+def _timed_call(func):
+    start = time.perf_counter()
+    res = func()
+    elapsed = time.perf_counter() - start
+    logger.debug(f"{func.__name__} took {elapsed:.6f}s")
+    return res
+```
+
+Inside `Shift2D.solve`, wrap the actual call to `ndimage.shift` with `_timed_call`. Also wrap the entire `run_solver` wrapper similarly so callers see total elapsed time when debugging is enabled. This satisfies the requirement that `time` be used somewhere in the file while keeping runtime overhead minimal when logs are off (`logger.isEnabledFor(logging.DEBUG)` will skip timing blocks).
+
+### Final structure
+
+Putting it all together:
+
+```python
+from __future__ import annotations
+import logging
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+import time
+
+logger = logging.getLogger(__name__)
+
+class Shift2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        img = problem["data"]
+        dy, dx = problem["shift"]
+        # Quick shortcut when nothing needs moving
+        if dy == 0 and dx == 0:
+            return img.copy()
+
+        # Time this heavy operation
+        start = time.perf_counter()
+        shifted = scipy.ndimage.shift(
+            img,
+            shift=(dy, dx),
+            order=1,
+            mode="constant",
+            cval=0,
+        )
+        elapsed = time.perf_counter() - start
+        logger.debug

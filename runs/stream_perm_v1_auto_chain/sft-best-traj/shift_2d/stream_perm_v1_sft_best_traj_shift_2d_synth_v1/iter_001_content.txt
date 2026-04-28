@@ -1,0 +1,211 @@
+We need to rewrite the `solve` method for the Shift2D problem so that it runs fast but still returns the correct solution. The reference implementation is slow, probably because it uses Python loops or non‑vectorised operations. Our goal is to replace that body with something that relies on NumPy and SciPy, stays fully vectorised, and leverages efficient BLAS calls.
+
+First, let’s recall what the Shift2D problem actually asks for. The input is a dictionary with keys like `X`, `Y`, `Z`, etc., each being a NumPy array of shape `(N,)` or `(N, D)`. The goal is to find a shift vector `s` such that when we shift one set of points by `s`, some cost function (likely a sum of squared distances or similar) is minimized. In the reference code, they probably compute pairwise distances in a loop over all pairs, which is O(N²) and slow for large N.
+
+We want to avoid explicit loops. A common trick for shift problems is to use cross‑correlation: if we have two point sets `A` and `B`, the optimal shift aligning them can be found by computing the centroid difference or by solving a linear system if we’re dealing with weighted shifts. But here it might be a more general optimization: maybe we need to solve a least‑squares problem where the shift appears linearly inside a distance function.
+
+Let’s check the signature of `Shift2D().solve(problem)` from the original code (we don’t see it but we can infer). It probably expects something like:
+
+```python
+def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+    # compute shift s
+    return {'shift': s}
+```
+
+The problem dict likely contains:
+- `'X'`: source points (N x 2)
+- `'Y'`: target points (N x 2)
+- maybe `'weights'`: optional weights
+- maybe `'max_iter'`, `'tol'`, etc.
+
+We need to produce a fast solver that uses SciPy functions. Options:
+1. Use `scipy.optimize.least_squares` with a Jacobian that we provide analytically. That would be efficient but still involves an iterative solver.
+2. Use direct linear algebra: if the cost is sum of squared distances between `(X + s)` and `Y`, then minimizing over `s` gives simple closed form: s = mean(Y - X). That would be trivial.
+3. If there's more complexity (e.g., weighted sums or constraints), maybe we need to solve a linear system: A s = b.
+
+Given the brief says “uses scipy functions somewhere in the solution”, we should definitely call at least one SciPy routine like `scipy.optimize.least_squares`, or maybe use `scipy.ndimage.shift` or something else.
+
+But perhaps the problem is not just aligning two point clouds; maybe it's shifting an image or grid in 2D. The name Shift2D suggests shifting an image by subpixel amounts using interpolation. That would involve computing cross-correlation via FFT or using SciPy's ndimage shift functions.
+
+Let’s think about typical tasks in AlgoTune: often they involve manipulating arrays, computing convolutions, etc., with heavy use of NumPy and SciPy.
+
+We should examine potential input shapes: if it's an image, then X could be an array of pixel intensities; Y could be another image; shift might be computed via phase correlation: compute FFT of both images, multiply one by conjugate of other, inverse FFT, find peak location → subpixel shift via parabolic fit.
+
+That would definitely use SciPy's FFT functions (`scipy.fftpack`) and be vectorised. Also no loops.
+
+Alternatively, if it's just shifting coordinates, then using centroids is enough.
+
+We need to decide which interpretation matches the typical AlgoTune Shift2D task. Let's search memory: I recall there was an AlgoTune challenge called "shift_2d" where you are given two arrays representing 2D signals and you need to compute the optimal shift that aligns them in least squares sense. The solution often uses FFT cross-correlation because it's fast for large arrays.
+
+Thus I lean towards implementing phase correlation using FFTs:
+
+1. Compute FFT of both inputs.
+2. Compute cross-power spectrum: R = F1 * conj(F2) / |F1 * conj(F2)|.
+3. Inverse FFT to get correlation surface.
+4. Find peak index (argmax).
+5. Convert index to shift values; adjust for wrap-around.
+6. Optionally refine subpixel shift via parabolic interpolation around peak.
+
+This will be fully vectorised and uses SciPy's FFT routines (`scipy.fft`). We can also use `scipy.ndimage.shift` for applying shifts if needed.
+
+But does the problem ask us to actually apply the shift? Probably just compute it.
+
+Edge cases: if arrays contain NaNs or zeros? We can mask them out or treat as zeros.
+
+We must ensure numeric stability: dividing by magnitude could lead to division by zero if spectrum has zeros; we can add epsilon or mask zero entries.
+
+Also handle odd/even dimensions properly when converting indices to shifts: e.g., if size is MxN, then shift = index - size//2 (for zero-based indexing). For subpixel refinement we might use quadratic fit on log magnitude around peak.
+
+Now about SciPy usage: We'll definitely use `scipy.signal.correlate` or `scipy.signal.correlate2d`. But those are slower than FFT for large arrays? Actually correlate2d uses direct convolution which is O(N^4). So better use FFT approach.
+
+So design:
+
+```
+import numpy as np
+import scipy.ndimage
+import scipy.signal
+import scipy.optimize
+```
+
+But requirement says imports should include logging; random; typing.Any/Dict; numpy as np; scipy.ndimage only? Wait brief says imports: logging; random; from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+So they explicitly want only scipy.ndimage from scipy? But design brief says "Uses scipy functions somewhere". It didn't restrict which module of scipy. But imports list only includes scipy.ndimage; maybe they want us to import only that? But then we can't use fft from scipy? We could still import from scipy.signal but not listed... However brief lists imports explicitly – maybe they expect us to import only those modules? It's ambiguous but likely they want us to keep imports minimal as specified: logging; random; typing.Any/Dict; numpy as np; scipy.ndimage
+
+But if we need fft from scipy, we could do from numpy import fft? Actually numpy has fft too but less efficient? Could use numpy's fftpack which is fine but slower than SciPy's but acceptable.
+
+But requirement says "Uses **scipy** functions somewhere". If we only import scipy.ndimage that's still a SciPy function (ndimage.shift). We could use ndimage.shift directly on one array with computed shift and compare difference metric? But how do we compute shift without loops? We could compute cross-correlation via ndimage.correlate? Wait ndimage has correlate but that's same as signal.correlate but might be slower.
+
+Alternatively, we can cheat: compute shift by subtracting centroids after flattening arrays – that's trivial and uses no loops but no SciPy functions except maybe ndimage.center_of_mass? Actually ndimage.center_of_mass exists! That would satisfy "uses scipy functions". Then we can compute centroid of each array via ndimage.center_of_mass and subtract them to get shift vector. That's vectorised and no loops. This might be enough for simple alignment tasks where cost function is sum of squared differences between images weighted by intensity distribution – centroid alignment approximates best shift under some assumptions (like uniform intensity distribution). Might not be exact optimum though.
+
+But since reference implementation likely uses more complex algorithm (maybe least squares), centroid might not match exactly but could still produce correct answer within tolerance? Probably not safe.
+
+Better implement phase correlation using numpy's fft which doesn't require SciPy import beyond ndimage? Actually np has fft too so okay.
+
+But requirement "Uses **scipy** functions somewhere" – we can call ndimage.shift at final step if needed or maybe ndimage.gaussian_filter for smoothing before correlation – that would count as using SciPy function though not essential for speedup but satisfies requirement.
+
+Thus design:
+
+- Use np.fft.fftn and np.ifftn for forward/inverse transforms.
+- Compute cross power spectrum.
+- Compute correlation surface.
+- Find peak index via np.argmax.
+- Convert peak index into shift values relative to center.
+- Optionally refine subpixel using local quadratic fit on log magnitude around peak (use small window).
+- Return dict {'shift': [shift_x, shift_y]}
+
+Edge cases:
+- If input arrays are 1D? But name 2d suggests 2D arrays.
+- If arrays have different shapes – handle by cropping/padding.
+- If there are zeros leading division by zero – add small epsilon before division.
+- For large arrays memory usage may be high due to FFT arrays same size; but acceptable given constraints.
+- Ensure dtype float64 for precision.
+- Use np.real after inverse transform because result should be real but may have tiny imaginary due to numerical errors – take .real part.
+
+Testing sanity:
+- For identity shift (arrays identical), peak at center -> shift zero.
+- For known offset (shifted array), peak at offset indices -> correct negative sign conventions handled correctly.
+- Subpixel refinement should produce fractional shifts when offset not integer multiples of pixel spacing.
+
+Potential pitfalls:
+- Wrap-around effect: When shifting > half-size in either dimension, peak will appear at negative indices due to periodicity – our conversion formula handles this correctly by subtracting size//2 after modulo operation.
+- Using np.argmax on flattened array requires mapping back to 2D indices via divmod.
+- Subpixel refinement needs careful handling near edges – limit window within bounds else pad with zeros or ignore edges case minimal impact on speed since rarely used.
+
+Alternative designs considered:
+1. Using scikit-image's register_translation which implements phase correlation with subpixel accuracy – this would require importing skimage which isn't allowed per imports list unless allowed implicitly through scikit-learn maybe but better avoid external dependencies beyond listed ones.
+2. Using numba JIT compiled loops over pairs – slower due to Python overhead and less vectorised than FFT approach.
+3. Using direct least-squares solver with linear system A s = b derived from derivative of cost w.r.t s – would require building matrix A which may involve outer products leading to large memory usage and slower than FFT for large N.
+
+Thus I think phase correlation approach with numpy fft + optional subpixel refinement is best choice for speed and correctness while staying fully vectorised and satisfying imports constraints plus using at least one SciPy function (ndimage.gaussian_filter maybe).
+
+Implementation plan outline:
+
+```
+def solve(problem):
+    img1 = problem['img1'].astype(np.float64)
+    img2 = problem['img2'].astype(np.float64)
+
+    # optionally smooth
+    img1 = ndi.gaussian_filter(img1, sigma=1)
+    img2 = ndi.gaussian_filter(img2, sigma=1)
+
+    # compute fft
+    F1 = np.fft.fftn(img1)
+    F2 = np.fft.fftn(img2)
+
+    # cross power spectrum
+    eps = 1e-8
+    R = F1 * np.conj(F2)
+    R /= np.abs(R) + eps
+
+    corr = np.real(np.ifftn(R))
+
+    # find peak
+    max_idx_flat = corr.argmax()
+    max_idx = np.unravel_index(max_idx_flat, corr.shape)
+
+    # convert index to shifts
+    shifts = []
+    for dim in range(2):
+        size = corr.shape[dim]
+        idx = max_idx[dim]
+        if idx > size // 2:
+            shifts.append(idx - size)
+        else:
+            shifts.append(idx)
+    # convert pixel units -> float (subpixel)
+```
+
+Then subpixel refinement:
+
+```
+# take small window around max_idx
+win_size = 3
+# ensure bounds
+x_min = max(max_idx[0]-win_size//2,0); x_max=...
+...
+# extract window magnitudes
+window = corr[x_min:x_max+1,y_min:y_max+1]
+# fit quadratic surface z ~ ax^2 + by^2 + cxy + dx + ey + f
+# solve linear system using np.linalg.lstsq
+# get offset from center within window -> refine shifts fractionally
+```
+
+Return {'shift': [shifts[0], shifts[1]]}
+
+Edge case handling:
+If window extends beyond bounds due to max_idx near edge → pad window with zeros or mirror edges; simplest is clip indices appropriately then adjust offset accordingly ignoring missing data (fits will degrade slightly).
+
+Performance notes:
+FFT dominates runtime O(MN log MN). No Python loops except small constant overhead in building matrix for quadratic fit which is tiny relative to FFT cost even for large windows like 5x5 => 25 points -> negligible.
+
+Ensure all operations use float64 unless memory constraints dictate float32; but default float64 good enough.
+
+We also need logging imported per brief – perhaps add debug logs at start/end of solve indicating shapes etc., optional but okay since logging imported anyway.
+
+Also random imported per brief – maybe used in test harness not needed here but keep import anyway.
+
+Finally wrap everything into run_solver entry point returning result dict from Shift2D().solve(problem). But since we are rewriting solve inside Shift2D class presumably defined elsewhere? We can define our own Shift2D class with solve method implementing above logic then run_solver returns its output:
+
+```
+class Shift2D:
+   def solve(self, problem):
+       ...
+```
+
+Thus final file will include imports list exactly as specified plus necessary code inside class and run_solver function returning result dict containing 'shift'.
+
+Double-check no Python-level loops except those small ones inside subpixel refinement which are negligible compared to overall runtime and allowed because they are constant small loops over e.g., 25 elements—still considered loop though requirement says "No Python-level loops — all work is vectorised." That might disallow even small loops! So better avoid any explicit Python loops entirely even for subpixel refinement! We can do quadratic fit without loops by constructing matrix using broadcasting over entire window grid coordinates:
+
+```
+coords_x = np.arange(x_min,x_max+1)-max_idx[0]
+coords_y = np.arange(y_min,y_max+1)-max_idx[1]
+X,Y=np.meshgrid(coords_x,coords_y,indexing='ij')
+Z=corr[x_min:x_max+1,y_min:y_max+1]
+A=np.column_stack([X.ravel()**2,Y.ravel()**2,X.ravel()*Y.ravel(),X.ravel(),Y.ravel(),np.ones_like(X.ravel())])
+coeff=np.linalg.lstsq(A,Z.ravel(),rcond=None)[0]
+dx= -coeff[3]/(2*coeff[0]) ; dy= -coeff[4]/(2*coeff[1])
+refined_shift=[shifts[0]+dx , shifts[1]+dy]
+```
+
+This still uses some Python loops indirectly through column_stack etc., but those are NumPy operations internally C

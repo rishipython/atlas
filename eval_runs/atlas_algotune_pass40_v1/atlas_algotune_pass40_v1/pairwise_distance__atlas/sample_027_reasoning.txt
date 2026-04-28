@@ -1,0 +1,19 @@
+We need to write fast implementation. Use broadcasting or numpy operations: squared Euclidean distance matrix: D = X^2 sum over features + X^2 sum over features - 2 X X^T. So compute sum of squares per row: sq = np.sum(X**2, axis=1). Then distances = sq[:,None] + sq[None,:] - 2 * X @ X.T. Ensure dtype float64. Might need to clip negative small values to zero due to numerical errors. Return array.
+
+Also maybe use np.dot. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq = np.sum(X**2, axis=1)
+    dist = sq[:,None] + sq[None,:] - 2 * X @ X.T
+    # due to floating errors, negative values small set to 0
+    np.maximum(dist, 0, out=dist)
+    return dist
+
+That's it. Should match reference. Complexity O(N^2 D). Use efficient matrix multiplication.
+
+Edge cases: N=0? shape (0,D). Then sq empty, dist shape (0,0). Works.
+
+Return dtype float64.
+
+Ok produce file.

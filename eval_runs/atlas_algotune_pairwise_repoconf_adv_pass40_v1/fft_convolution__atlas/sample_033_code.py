@@ -1,0 +1,11 @@
+import numpy as np
+from scipy.signal import fftconvolve
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    # Ensure input arrays are 1‑D float64
+    x = np.asarray(x, dtype=np.float64, order='C').ravel()
+    h = np.asarray(h, dtype=np.float64, order='C').ravel()
+    # Use scipy's FFT‑based convolution for speed
+    return fftconvolve(x, h, mode='full')

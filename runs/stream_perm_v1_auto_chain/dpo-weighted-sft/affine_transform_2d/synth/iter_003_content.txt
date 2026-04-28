@@ -1,0 +1,90 @@
+We need to rewrite the solve method to be faster. Let's think: current uses scipy.ndimage.affine_transform directly. That's already vectorized and uses C. But maybe we can reduce interpolation order or use float32. But we must keep correctness: test compares with reference using same order=3. So we can't change order.
+
+Maybe we can precompute inverse matrix? scipy expects matrix as transformation from output to input coordinates? Actually affine_transform expects matrix that maps output coordinates to input coordinates. We can compute inverse ourselves? But using scipy is fine.
+
+But speedup: maybe use numba or JAX? But scipy's C implementation is already fast. However, maybe the overhead of converting Python lists to numpy arrays each call is high. The problem input has image as list of lists, matrix as list of lists. In solve, they pass image directly to affine_transform; if image is a list, scipy will convert to array each time. We can convert once at start: image_np = np.asarray(image, dtype=np.float32). That might help.
+
+Also mode constant uses padding zeros; we could pre-allocate output array and pass it? affine_transform has output argument? It returns array; no output param.
+
+Could use scipy.ndimage.map_coordinates with precomputed grid? That might be slower.
+
+Alternatively, use OpenCV cv2.warpAffine which is faster but not allowed? We only have numpy and scipy.
+
+Maybe we can use scipy.ndimage.affine_transform with order=3 but specify prefilter=False? No, for cubic interpolation prefilter is required; default True.
+
+Could use numba to implement own bilinear interpolation but that's complex.
+
+Given constraints, the main speed gain might be converting to float32 and using dtype= np.float32 for intermediate arrays to reduce memory traffic.
+
+Also we can avoid creating the full grid by using ndimage.affine_transform's internal efficient implementation.
+
+Thus design: in solve, cast image to np.float32; cast matrix to np.float32; call affine_transform with order=3 and mode='constant', cval=0.0 (default). Return transformed_image as list of lists (or keep array?). The is_solution expects list or array; but they convert anyway. So we can return array directly; but returning array might cause conversion overhead later but fine.
+
+Also ensure shape matches input shape: by default output_shape same as input shape, but we can explicitly set output_shape=image.shape to avoid confusion.
+
+So final code will have imports: logging, typing.Any, Dict, numpy as np, scipy.ndimage. Use no loops.
+
+Edge cases: if image empty? Then return empty list? But likely not needed.
+
+Check rtol/atol tolerance: 1e-5 relative, 1e-7 absolute; float32 may produce slightly larger errors but still within tolerance? Might be borderline. Could convert back to float64 after transform to improve precision before returning. So cast back: transformed = transformed.astype(np.float64). That ensures comparison passes.
+
+Thus design: in solve:
+
+- Convert image and matrix to np.ndarray float64 or float32.
+- Call affine_transform with order=3.
+- Convert result back to float64.
+- Return dict with 'transformed_image': result (np.ndarray).
+
+No loops.
+
+We also need run_solver function unchanged.
+
+Now check performance: converting lists to arrays cost O(n^2) but minimal relative to transform cost for large images. Using float32 reduces memory bandwidth by half, improving speed slightly.
+
+We also need ensure dtype compatibility: if image has dtype int or float, conversion ok.
+
+Edge case: if input contains values >255? It's fine.
+
+Potential numeric issues: converting back to float64 may introduce rounding error due to conversion from float32 intermediate; but should be within tolerance since original reference uses double precision by default (numpy default float64). Our intermediate uses float32 then cast back; could produce small differences >1e-7 maybe but relative difference small. Might fail tolerance if difference >1e-7 absolute on values up to 255 -> difference ~0.0001 maybe okay. But safe enough.
+
+Alternatively keep everything in float64 for correctness; then no error. But speed tradeoff minimal; we can keep float64 for simplicity and rely on underlying C code which uses double precision anyway. So maybe no need for float32 conversion; just convert input list->array dtype=float64 once; that's enough vectorization.
+
+Thus final design: just convert input lists once and call affine_transform; no loops.
+
+But why mention BLAS-backed multiplication? affine_transform uses matrix multiplication internally via CBLAS for mapping coordinates; so that's covered.
+
+Hence final code minimal changes:
+
+```
+def solve(self, problem):
+    image = np.asarray(problem["image"], dtype=np.float64)
+    matrix = np.asarray(problem["matrix"], dtype=np.float64)
+    transformed = scipy.ndimage.affine_transform(image, matrix, order=self.order,
+                                                 mode=self.mode)
+    return {"transformed_image": transformed}
+```
+
+This satisfies constraints and likely faster due to single conversion step instead of repeated conversions inside function calls for each pixel maybe?
+
+But original code passes image directly which may cause conversion inside ndimage each time anyway; our change reduces overhead slightly.
+
+Also we might set output_shape=image.shape explicitly:
+
+```
+transformed = scipy.ndimage.affine_transform(image, matrix,
+                                             output_shape=image.shape,
+                                             order=self.order,
+                                             mode=self.mode)
+```
+
+Better explicit.
+
+Ok final design ready. Let's do sanity check edge cases:
+
+- Empty image -> shape (0,0) -> transform returns empty array -> fine.
+- Non-square images? Problem says n x n but code works for any shape.
+- Matrix not 2x3 -> error thrown by ndimage -> propagate -> is_solution will catch exception? It tries ref solution too so both fail -> accept empty solution? Might be okay.
+- Input lists contain non-numeric -> conversion raises ValueError -> exception caught in try block returns empty list -> is_solution will compare with ref failing similarly => accept empty solution. Good.
+
+Now handoff sentence.
+OK, I think I have the design. Time to write it.

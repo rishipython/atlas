@@ -1,0 +1,33 @@
+We need to produce a faster implementation. We can use scipy.signal.fftconvolve or numpy.fft.fft. But we must keep same function signature. We need to handle arbitrary lengths, ensure float64 dtype. The result should be numerically close. Using np.fft.rfft maybe. But easiest is to use scipy.signal.fftconvolve. However not sure if SciPy available. The problem states we may import scipy. We'll use scipy.signal.fftconvolve.
+
+But we must ensure that the function returns full convolution. The reference uses mode='full'. So just use that. But we need to ensure output dtype float64. fftconvolve returns dtype of input. If both inputs are float64, output is float64. Good.
+
+Edge cases: if inputs are 1D arrays. We can assert shapes. But not necessary.
+
+Implementation:
+
+```
+import numpy as np
+from scipy.signal import fftconvolve
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    return fftconvolve(x, h, mode='full')
+```
+
+But we might want to ensure dtype float64. Could cast: out = fftconvolve(x, h, mode='full').astype(np.float64). But if inputs are float64, output will be float64. But we can cast anyway.
+
+Potential difference: If x or h is not contiguous or not float64? But test inputs likely float64. We'll cast anyway.
+
+Also can use np.fft.fft. Let's implement manually for generality: compute next power of 2 length >= N+M-1. Use rfft. But easier to use fftconvolve.
+
+Let's produce final code.
+
+But also ensure to import necessary modules.
+
+Return out.
+
+Also we may need to handle shape 0? But input arrays length >0.
+
+Ok.
+
+Let's produce final answer.

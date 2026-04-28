@@ -1,0 +1,55 @@
+We need to provide a faster implementation. Use numpy FFT convolution. But must be numerically close. Use np.fft.fft with real inputs: use rfft? For full convolution: size = N+M-1. Compute next power of 2 maybe. Use np.fft.fft with size L >= N+M-1. Then multiply. Then inverse FFT, real part, round? Should be fine.
+
+Edge cases: x and h may be 1D float64 arrays. Use np.fft.fft; but careful with dtype float. Use np.fft.rfft? For speed maybe. But easiest: compute L = 1 << (N+M-1-1).bit_length() or use nextpow2. Then do FFT. Then multiply, then ifft, take real part, slice to length N+M-1. Ensure dtype float64.
+
+Also, for small lengths, direct convolution might be faster. But we just need to be fast for large. But we can just always use FFT; it's fine.
+
+Make sure to import numpy.
+
+Also, ensure that we don't produce extra imaginary due to rounding errors; use np.real. Use np.fft.fft; but if arrays are real, we can use rfft to be efficient. But to keep simple, use fft. Use np.fft.fft. L may be large; but okay.
+
+We need to produce full code file: imports, function. We'll provide docstring.
+
+Edge: if one of arrays empty? Problem likely not. But we can handle. If N==0 or M==0, return empty. But conv of empty array maybe empty. But we can just return empty.
+
+Implement:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size; M = h.size
+    if N==0 or M==0:
+        return np.array([], dtype=np.float64)
+    out_len = N+M-1
+    L = 1 << (out_len-1).bit_length()
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    Y = X*H
+    y = np.fft.ifft(Y).real
+    return y[:out_len]
+
+But to avoid small errors, maybe round? Use np.allclose.
+
+We can also use np.fft.rfft to reduce memory: Y = np.fft.rfft(x, L)*np.fft.rfft(h, L); y = np.fft.irfft(Y, L).real; slice.
+
+Let's implement with rfft. That yields real output.
+
+Use np.fft.rfft.
+
+Implementation:
+
+X = np.fft.rfft(x, L)
+H = np.fft.rfft(h, L)
+Y = X*H
+y = np.fft.irfft(Y, L)
+return y[:out_len]
+
+This returns real array.
+
+Return dtype float64.
+
+Test with reference? Should match.
+
+Add __all__? Not needed.
+
+Ok. Provide code.

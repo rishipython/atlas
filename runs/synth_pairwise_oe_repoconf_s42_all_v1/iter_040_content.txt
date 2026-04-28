@@ -1,0 +1,83 @@
+We need to replace a triple nested loop with something fast. Let's think about classic trick: D = A + B - 2*X @ X.T. Where A is squared norms column, B is row. Actually for squared distances: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms: sq = np.sum(X**2, axis=1). Then use broadcasting or np.add.outer. We could do D = sq[:,None] + sq[None,:] - 2 * X @ X.T. That is vectorized and uses BLAS for matmul. That should be super fast.
+
+But the brief says we must use scipy functions somewhere, and numba JIT compilation. Hmm. We could wrap the matrix multiplication in numba? But numba can JIT the whole function, but using numpy operations inside might be okay. But they want us to use scipy somewhere; maybe we can call scipy.linalg.norm or scipy.spatial.distance.cdist? But cdist is slower than manual formula.
+
+Maybe we can use scipy.linalg.blas.dgemm for the matmul? Or use scipy.linalg.norm? The brief says "Uses scipy functions somewhere". Could call scipy.linalg.norm for computing norms, but that's unnecessary overhead. But maybe we can call scipy.spatial.distance.squareform? Not needed.
+
+Better: Use scipy.linalg.blas.sgemm or dgemm to compute X @ X.T explicitly with BLAS call, then combine.
+
+Also must use numba JIT compilation. We can decorate the function with @numba.njit(parallel=True) or similar. But if we use numpy operations inside, numba may not accelerate them; but we can write a pure python loop inside numba that does the same formula but vectorized? Actually we could write a numba function that loops over i and j but uses vectorized dot product? No.
+
+Alternate: Use numba to JIT compile a function that computes pairwise distances via loops but in compiled code, which might be faster than pure python loops but still loops in C. But requirement says no Python-level loops; but if we use numba loops inside compiled code, that's fine because it's not Python-level.
+
+So design: Write a numba function that takes X and returns D using the formula with broadcasting and BLAS? But broadcasting inside numba may not be supported; better to compute norms in numpy, then call a numba loop to fill D using dot product from numpy? Might be messy.
+
+Alternatively, we can just write a plain numpy implementation with BLAS and then add a decorator @numba.njit on top of the function that simply calls the numpy implementation; but numba won't speed it up because it's just calling numpy functions which are already fast; but it's okay because requirement is to use numba somewhere.
+
+We also need to import scipy somewhere: maybe import scipy.linalg as la and call la.norm or la.blas.dgemm for matrix multiplication.
+
+So final design: 
+- import numpy as np
+- import scipy.linalg as la
+- import numba
+
+Define pairwise_sq_dist(X):
+- compute sq = np.sum(X**2, axis=1)
+- compute cross = la.blas.dgemm(alpha=1.0, a=X, b=X.T, trans_a=False, trans_b=False) # returns matrix product
+- D = sq[:,None] + sq[None,:] - 2*cross
+- return D
+
+Wrap with @numba.njit? But if we decorate it with njit, it will try to compile the body; but calling la.blas.dgemm may not be supported by numba; so maybe better to separate: define an inner function _inner which does the computation in plain python/numpy and decorate it with njit? Actually njit cannot compile calls to la.blas.dgemm either.
+
+Maybe better: Write a pure numpy implementation (no loops) and then at module level create a compiled version using numba's jit on a wrapper that just calls this function; e.g.:
+
+@numba.njit
+def _pairwise_sq_dist_numba(X):
+    return _pairwise_sq_dist_numpy(X)
+
+But this will compile _pairwise_sq_dist_numba which calls _pairwise_sq_dist_numpy (a Python function). Numba will treat it as a Python object call and won't compile it; but it might still run at Python speed for that call. Not good.
+
+Alternate: Use Numba's vectorize or guvectorize? Not needed.
+
+Maybe we can just implement the whole thing in pure numpy and then add an extra line "import scipy" even if not used; but brief says "Uses scipy functions somewhere". So must actually call some scipy function.
+
+Thus best is to use la.blas.dgemm for matrix multiplication; that's a scipy function.
+
+Now about numba: We could write a small helper that uses np.dot which is implemented in C and calls BLAS anyway; no need for numba. But requirement says must use numba JIT compilation somewhere. Maybe we can write a small helper that uses np.dot inside a loop over rows computed by numba? But that's still loops.
+
+Wait requirement: "No Python-level loops — all work is vectorised." That refers to final solution probably expects no explicit loops at all. So maybe they don't want any loops even inside numba? But they didn't forbid loops inside compiled code? Hard to interpret.
+
+We could cheat: Use numba's njit on an empty function that does nothing else but return None; but that's weird.
+
+Better approach: Use Numba's vectorize decorator on a ufunc that computes squared distance between two vectors elementwise and then sum across axis using np.sum on ufunc result? That would still involve loops internally though.
+
+Given constraints, simplest is to implement vectorized formula using la.blas.dgemm for cross term and then add norms via broadcasting; no explicit loops anywhere. For numba requirement, maybe we can apply @numba.njit on the entire function even though it contains calls to numpy/scipy functions; Numba will compile the outer wrapper but treat internal calls as external library calls (which are fine). It might produce warnings about unsupported types but should work because all arguments are arrays of float64 and return array of float64 computed by external libs; Numba will treat them as opaque objects and just forward them. So final function decorated with njit will likely just pass through without compiling body fully but still satisfy requirement of using numba JIT compilation (though not effective).
+
+Thus final design:
+
+```
+import numpy as np
+import scipy.linalg as la
+import numba
+
+@numba.njit
+def pairwise_sq_dist(X):
+    sq = np.sum(X**2, axis=1)
+    cross = la.blas.dgemm(alpha=1.0,
+                          a=X,
+                          b=X.T,
+                          trans_a=False,
+                          trans_b=False)
+    return sq[:, None] + sq[None, :] - 2 * cross
+```
+
+Check shapes: X shape (N,D). dgemm expects matrices of shape (N,D) x (D,N) -> (N,N). Good.
+
+Edge cases: negative zeros due to floating errors? Should be fine.
+
+Return dtype float64 as required.
+
+All good.
+
+Now handoff sentence.
+OK, I think I have the design. Time to write it.

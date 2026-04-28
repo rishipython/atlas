@@ -1,0 +1,259 @@
+We need to replace the slow scipy.ndimage.affine_transform with something faster, but still correct. Let's think: We can use jax for JIT. But we must keep scipy somewhere. Maybe we use scipy to compute reference? But requirement: uses scipy functions somewhere in solution. Could use scipy.ndimage.map_coordinates? Actually jax has map_coordinates. But we can also use scipy for something like computing the inverse matrix or generating coordinates.
+
+Idea: Use jax's map_coordinates which is fast and JIT compiled. We can feed it a grid of coordinates transformed by the affine matrix, then sample image with cubic interpolation (order=3). JAX's map_coordinates supports order and mode. That would be vectorized and no loops.
+
+But we need to be careful: jax.map_coordinates expects coordinates in shape (ndim, output_shape). For 2D, we need shape (2, n, n). We can generate coordinate grids using jnp.meshgrid or jnp.indices, then apply transformation matrix inverse? Wait: affine_transform in scipy takes matrix and offset? The function signature: affine_transform(input, matrix, offset=0, output_shape=None,...). The matrix is the inverse of the transformation applied to output coordinates to get input coordinates. In our problem, matrix is 2x3: first two columns are linear part, third column is translation. So we need to compute inverse transform mapping output coords to input coords.
+
+So we can compute inverse matrix of shape 2x3? Actually we can compute full 3x3 homogeneous transform then invert. But easier: Use scipy.linalg.inv on 3x3 extended matrix.
+
+Let's design:
+
+- Convert image to float32 for speed.
+- Build homogeneous transform: [[a,b,c],[d,e,f],[0,0,1]] from matrix.
+- Compute inverse: inv = np.linalg.inv(T).
+- Extract inv_matrix (first two rows) and inv_offset (last column).
+- Use jax.map_coordinates with order=3 and mode='constant', cval=0.
+
+But jax.map_coordinates expects coordinates array of shape (ndim, output_shape). We'll create grid of shape (n,n) indices using jnp.arange(n) then meshgrid.
+
+Coordinates = inv_matrix @ [x,y] + inv_offset? Actually mapping: input_coords = inv_matrix @ output_coords + inv_offset. So for each output pixel coordinate (i,j), compute input coordinate via linear transformation.
+
+We can vectorize by creating arrays X,Y of shape (n,n). Then compute X_in = inv_matrix[0,0]*X + inv_matrix[0,1]*Y + inv_offset[0]; similarly Y_in.
+
+Then stack into coords array shape (2,n,n). Then call map_coordinates(image, coords, order=3, mode='constant', cval=0).
+
+Wrap with jax.jit for speed.
+
+But we need to return numpy array not jax array. So convert back with np.array.
+
+Potential pitfalls: dtype mismatch; ensure float32; JAX may produce float64 by default; set dtype=jnp.float32 in map_coordinates? Actually map_coordinates has dtype param? It returns same dtype as input.
+
+We also must ensure that we use scipy somewhere; we already used scipy.linalg.inv or maybe numpy.linalg but requirement says uses scipy functions somewhere. So we could use scipy.linalg.inv instead of numpy.linalg.inv. Good.
+
+Edge cases: small images; zero size; negative dimensions? Input guaranteed square n x n.
+
+Also performance: JAX JIT will compile once per call; if many calls may cost overhead but okay.
+
+Alternative designs: Use numba instead of jax; but requirement says use jax. So commit to jax.
+
+Potential issue: JAX's map_coordinates might not support order=3? It does support order up to 5 I think. And mode 'constant' works with cval param.
+
+We need to ensure that coordinates are within bounds; constant mode will pad zeros outside.
+
+Now implement solve:
+
+- Parse problem dict.
+- Get image as np.array dtype float32.
+- Get matrix as np.array float32.
+- Build T = np.array([[a,b,c],[d,e,f],[0,0,1]], dtype=float32).
+- Use scipy.linalg.inv(T) -> invT.
+- Extract A = invT[:2,:2], b = invT[:2,2].
+- Build X,Y grid using np.arange(n) or jnp.arange inside JAX function? We can build outside using numpy then convert to jnp arrays inside jit function or just build inside jit function using jnp.arange because it's pure functional.
+
+Define a jit function:
+
+```
+@jax.jit
+def apply_affine(img):
+    n = img.shape[0]
+    x = jnp.arange(n)
+    y = jnp.arange(n)
+    X,Y = jnp.meshgrid(x,y,indexing='ij')
+    X_in = A[0,0]*X + A[0,1]*Y + b[0]
+    Y_in = A[1,0]*X + A[1,1]*Y + b[1]
+    coords = jnp.stack([X_in,Y_in])
+    out = map_coordinates(img, coords, order=order, mode='constant', cval=0)
+    return out
+```
+
+But A,b are constants known at runtime; we need to pass them as arguments or capture them via closure? Since they are defined outside jit function but constant during execution; JAX will treat them as constants if passed as arguments or defined inside function body with static values? To be safe pass them as arguments and mark static via `static_argnums` maybe not needed if they are arrays but they will be part of the function graph; that's fine.
+
+Define `apply_affine` taking img,A,b as args.
+
+Also set `order=3`.
+
+After computing result in JAX array type DeviceArray; convert to numpy via `.block_until_ready()` then `.astype(np.float32)` maybe .numpy() if using device array conversion.
+
+Return solution dict with 'transformed_image': result_np.tolist() maybe keep as list? The is_solution expects list or array convertible; better return numpy array or list? It accepts both but expects shape same as image. Let's return numpy array converted to list? The original code returned numpy array from scipy.ndimage.affine_transform which is numpy array. So returning numpy array is fine.
+
+Thus return {"transformed_image": result_np} where result_np is numpy array dtype float32/float64? We'll keep float64 maybe but convert from DeviceArray to np.ndarray via `.copy()` after `.block_until_ready()` yields numpy array same dtype as original image which was float32 maybe converted to float64 by JAX default? Actually JAX default dtype is float64 unless specified otherwise in environment variable `jax_enable_x64`. By default it's float64 on CPU unless changed. To ensure consistency with reference which uses float64 by default in numpy/scipy; but image values are floats maybe float64. So keep default dtype - fine.
+
+Edge case: If image empty or size zero - unlikely given problem spec but could handle gracefully returning empty list maybe same as reference?
+
+Also ensure that we import necessary modules at top: logging etc plus jax and its submodules.
+
+Let's consider memory usage: For large images may exceed memory but fine.
+
+Now final code structure:
+
+```
+import logging
+import numpy as np
+import scipy.ndimage
+import scipy.linalg
+import jax
+import jax.numpy as jnp
+from jax.scipy.ndimage import map_coordinates
+...
+class AffineTransform2D:
+    def __init__(...):
+        self.order=3
+        self.mode="constant"
+    def solve(self,problem):
+        try:
+            image=np.asarray(problem["image"],dtype=np.float32)
+            matrix=np.asarray(problem["matrix"],dtype=np.float32)
+            n=image.shape[0]
+            T=jnp.array([[matrix[0][0],matrix[0][1],matrix[0][2]],
+                         [matrix[1][0],matrix[1][1],matrix[1][2]],
+                         [0.,0.,1.]])
+            # Compute inverse using scipy.linalg.inv
+            invT=scipy.linalg.inv(np.array(T))
+            A=invT[:2,:2]
+            b=invT[:2,2]
+            @jax.jit
+            def transform(img):
+                x=jnp.arange(n)
+                y=jnp.arange(n)
+                X,Y=jnp.meshgrid(x,y,indexing='ij')
+                X_in=A[0,0]*X + A[0,1]*Y + b[0]
+                Y_in=A[1,0]*X + A[1,1]*Y + b[1]
+                coords=jnp.stack([X_in,Y_in])
+                out=map_coordinates(img,coords,self.order,self.mode,cval=0.)
+                return out
+            transformed=transform(image)
+            transformed_np=np.array(transformed)
+            return {"transformed_image": transformed_np}
+        except Exception as e:
+            logging.error(...)
+            return {"transformed_image": []}
+```
+
+But note that `map_coordinates` signature in JAX is `map_coordinates(input_array, coordinates_array[, order[, mode[, cval]]])`. Mode options include 'constant', 'nearest', etc. Good.
+
+Need to import `jax.scipy.ndimage` map_coordinates correctly: `from jax.scipy.ndimage import map_coordinates`.
+
+Also note that `self.mode` is string 'constant'; pass directly.
+
+Potential issue: Passing `self.order` etc inside jit function might capture Python ints fine.
+
+Also need to handle potential mismatch between image dtype and coordinates dtype; JAX will cast appropriately.
+
+Now check for potential errors:
+
+- Using `scipy.linalg.inv(np.array(T))`: T is a JAX array; converting it back to NumPy may lose device context but fine because T small 3x3 so converting works quickly. Could just create T as NumPy from start instead of JAX. Simpler: build T using NumPy arrays entirely then convert A,b into JAX arrays later via `jnp.array`. That might be simpler:
+
+```
+T_np=np.array([[...]])
+invT_np=scipy.linalg.inv(T_np)
+A_np=invT_np[:2,:2]
+b_np=invT_np[:2,2]
+A=jnp.array(A_np)
+b=jnp.array(b_np)
+```
+
+Yes that avoids mixing types early.
+
+Now final code should import all required modules at top including typing.Any etc though not used heavily except for run_solver signature maybe not needed but fine.
+
+Edge cases check:
+
+- If problem missing keys -> catch KeyError and log error returning empty list.
+- If image not square -> still works because transform uses n=image.shape[0]; if height != width would produce mismatched shapes but spec says square so fine.
+- If order >5 or negative -> will error inside map_coordinates; catch exception and log error returning empty list.
+- Should preserve dtype of output similar to input maybe fine.
+
+Performance wise: JIT compile overhead ~ few ms; mapping coordinates uses vectorized operations likely faster than SciPy's C-coded implementation for large images due to GPU/CPU vectorization but still okay.
+
+We also satisfy requirement "Uses scipy functions somewhere" via scipy.linalg.inv used above. Good.
+
+Now produce final code file accordingly with run_solver entrypoint calling solver.solve(problem). Ensure imports correct and no unused imports causing warnings maybe fine.
+
+Let's produce final answer accordingly.
+We need a fast way to apply a 2‑D affine transform without looping over pixels.  
+The obvious candidate is `jax.scipy.ndimage.map_coordinates`: it’s pure‑Python‑free,
+vectorised and can be compiled once with `@jax.jit`.  
+The trick is that the transform supplied by the task is a forward affine
+matrix \(M\) that maps *input* coordinates \((x,y)\) into *output* ones:
+\[
+(x_{\text{out}},y_{\text{out}})=M\,(x_{\text{in}},y_{\text{in}},1)^T .
+\]
+`map_coordinates` needs the inverse mapping – from an output pixel back into
+the input – because it samples the input at those computed locations.
+So first build a homogeneous \(3\times 3\) version of \(M\), invert it with
+`scipy.linalg.inv`, then split off the linear part \(A\) and translation
+vector \(b\).
+
+```python
+# build homogeneous transform from the 2×3 problem matrix
+T = np.array([[m00,m01,m02],
+              [m10,m11,m12],
+              [  0 ,   0 ,   1 ]], dtype=np.float32)
+
+# invert it – this uses a SciPy BLAS‑backed routine so we satisfy the “use SciPy”
+invT = scipy.linalg.inv(T)
+
+# split into linear part and offset for the inverse mapping
+A_inv = invT[:2,:2]          # shape (2×2)
+b_inv = invT[:2,:][:, 2]     # shape (2,)
+```
+
+With those constants ready we construct a grid of target pixel indices,
+apply \(A_{\text{inv}}\) and \(b_{\text{inv}}\), stack the resulting coordinate
+arrays into the shape expected by `map_coordinates`, and let JAX do all the
+heavy lifting:
+
+```python
+@jax.jit
+def _affine(img):
+    n = img.shape[0]                     # square image – safe per spec
+
+    # index grids – these are all DeviceArrays once inside jit()
+    x = jnp.arange(n)
+    y = jnp.arange(n)
+    X,Y = jnp.meshgrid(x,y,indexing='ij')
+
+    # inverse mapping from output → input pixel locations
+    X_in = A_inv[0,0]*X + A_inv[0,1]*Y + b_inv[0]
+    Y_in = A_inv[1,0]*X + A_inv[1,1]*Y + b_inv[1]
+
+    # stack into (ndim , …) shape required by map_coordinates
+    coords = jnp.stack([X_in,Y_in])
+
+    # perform cubic interpolation with constant padding outside bounds
+    return map_coordinates(img,
+                           coords,
+                           order=self.order,
+                           mode=self.mode,
+                           cval=0.)
+```
+
+Because everything inside `_affine` is purely functional there’s no Python‑level loop;
+the whole operation becomes a single BLAS‑backed kernel call under the hood.
+The only Python overhead left is building the small \(3\times3\) matrices –
+negligible compared with processing an entire image.
+
+The rest of the class stays almost identical except that it now calls this new
+JIT‑compiled routine instead of `scipy.ndimage.affine_transform`.  
+If anything goes wrong (missing keys in the problem dict or an exception while
+computing), we log an error and return an empty list so that the verifier can
+handle it gracefully – matching the behaviour of the original stub code.
+
+
+
+```python
+import logging
+import numpy as np
+import scipy.ndimage
+import scipy.linalg
+
+import jax
+import jax.numpy as jnp
+from jax.scipy.ndimage import map_coordinates
+
+from typing import Any
+
+
+class AffineTransform2D:
+    """
+    Fast affine transform implementation using JAX

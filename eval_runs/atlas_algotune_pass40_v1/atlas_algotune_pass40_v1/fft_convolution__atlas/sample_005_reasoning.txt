@@ -1,0 +1,37 @@
+We need to provide a faster implementation. Use numpy FFT. For real arrays, use numpy.fft.fft with real->complex. Use next power of two or size N+M-1. Use numpy.fft.fft, multiply, inverse. Use np.fft.fft to compute.
+
+We need to preserve dtype float64, return array of length N+M-1. Use np.fft.fft with n = N+M-1 or next power of two. For performance, use n = next power of 2 maybe faster. But easier: use np.fft.fft with length = N+M-1. That might be fine. Use np.fft.ifft.
+
+But must ensure numerical closeness. Use np.real.
+
+Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.size
+    M = h.size
+    size = N + M - 1
+    # Use next power of two for speed
+    nfft = 1 << (size-1).bit_length()
+    X = np.fft.fft(x, nfft)
+    H = np.fft.fft(h, nfft)
+    Y = X*H
+    y = np.fft.ifft(Y).real
+    return y[:size]
+
+Should be fine.
+
+Edge cases: zero-length? If one array is empty? Then conv of zero length? np.convolve returns array of length M? Actually if x empty, result length M? Let's test: np.convolve([], [1,2]) -> array([0.])? Wait. Let's quickly think: In numpy, convolve expects arrays of at least length 1? Let's test mentally: np.convolve([], [1])? I think it returns array([], dtype=float64). Actually can't recall. But we can handle: if N==0 or M==0 return np.array([], dtype=np.float64). But spec maybe not tested.
+
+Better to handle. If size==0: return np.array([], dtype=np.float64).
+
+Also if nfft==0? But if size==0, skip.
+
+Also we need to handle dtype float64. We'll cast.
+
+Also note that for large arrays, using np.fft.fft might produce complex numbers with small imaginary parts due to rounding; we take real part.
+
+Ok.
+
+Let's produce final code.

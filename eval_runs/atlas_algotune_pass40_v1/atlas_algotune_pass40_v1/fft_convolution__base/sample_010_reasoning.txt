@@ -1,0 +1,19 @@
+We need to implement conv1d with FFT. Must be correct on float64 arrays. Use numpy. Use np.fft.fft. For linear convolution, we can zero-pad both to length L >= N+M-1, compute FFT, multiply, inverse FFT, take real part. For float64, we can use np.fft.rfft maybe. But simplest: use np.fft.fft of length L. Use np.fft.ifft. Need to cast to float64. Might need to round small imaginary parts due to numerical errors. Use np.real. Use np.fft.fft and ifft. Use np.fft.fftshift? No. Just compute.
+
+Also, for small arrays, maybe use direct? But not necessary.
+
+Edge cases: N or M zero? Probably not.
+
+Return dtype float64.
+
+Implementation: compute L = 1 << (N+M-1-1).bit_length() maybe to next power of two for speed. Or just N+M-1. But next power of two may be faster. Use np.fft.next_fast_len from numpy 1.20+. Use np.fft.next_fast_len. We'll import numpy as np. Use np.fft.fft with n=fftlen. Multiply, ifft, real part, slice to N+M-1.
+
+Let's produce code.
+
+Also might use np.fft.rfft to speed up real input. But let's keep simple.
+
+We'll also handle case where either array empty: return empty array.
+
+Return np.asarray(result, dtype=np.float64). Should be fine.
+
+Let's code.

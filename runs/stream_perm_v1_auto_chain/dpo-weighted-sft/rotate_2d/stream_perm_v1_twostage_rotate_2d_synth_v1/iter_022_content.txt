@@ -1,0 +1,32 @@
+We need to take the incoming `problem` dictionary and pull out the image data and the rotation angle it wants us to apply. The baseline `Rotate2D` class probably just does a simple 2‑D rotation and returns the resulting array – nothing fancy – so our `run_solver` should do the same thing but in a much faster way by leveraging SciPy’s highly optimised routines instead of looping over pixels in Python or even NumPy loops that would be slow on large images.
+
+First thought is to just call `scipy.ndimage.rotate`. That function is already vectorised and fast because it’s written in C/Fortran under the hood and uses efficient interpolation kernels. However `rotate` has a couple of quirks that can bite us: it pads the image so the whole rotated rectangle fits (`reshape=True` by default), which changes the output shape compared to a simple “keep‑the‑same‑size” rotation that many baselines use. Also `rotate` internally does some extra work around handling the bounding box which can add overhead when we’re simply rotating an image in place and don’t care about extra padding or cropping back out afterwards. To avoid all that extra plumbing we should go straight for `affine_transform`, which takes an explicit linear transform matrix and an offset – exactly what we need for a rigid body rotation – and lets us specify whether we want the output shape to stay the same (`output_shape` defaults to input shape). That means no extra memory allocation for a larger canvas and no post‑processing crop step.
+
+So I’ll write a small helper called `rotate_image`. It will:
+
+* Accept an image array (`np.ndarray`) and an angle in degrees.
+* Compute the centre of the image so we rotate around its geometric centre.
+* Build a 2×2 rotation matrix `R`. Because `affine_transform` applies an *inverse* mapping (output → input), we’ll pass `R.T` as the matrix argument.
+* Compute the appropriate offset so that after applying the inverse transform the centre stays fixed.
+* Call `scipy.ndimage.affine_transform` with those parameters.
+* Use bilinear interpolation (`order=1`) – fast enough yet accurate enough for most tests – but expose it as an optional argument so callers could bump it up if they really want higher fidelity.
+* Keep all other parameters at their defaults (`mode='constant', cval=0.`) which mimics zero‑padding around the edges – something most baselines do implicitly when they clip outside values during a manual loop implementation.
+* Return an array of the same dtype as the input (by casting back after transformation).
+
+Because everything inside `rotate_image` is just NumPy arithmetic followed by one call into SciPy’s C code there are no Python‑level loops at all – fully vectorised from start to finish.
+
+The entry point `run_solver(problem)` will then:
+
+* Grab `problem['data']`, ensuring it’s a 2‑D NumPy array (raise if not).
+* Grab `problem.get('angle', 0)` – defaulting to zero if missing.
+* Grab optional `problem.get('order', 1)` so callers can tweak interpolation fidelity without touching our code.
+* Call `rotate_image`, cast back to original dtype if needed, and return that result directly (the baseline seems to return just the rotated image rather than wrapping it in another dict).
+
+I’ll also sprinkle in a tiny amount of logging so if someone passes an unexpected shape or datatype they’ll get a clear message without silently failing or producing garbage – this keeps debugging straightforward while still being lightweight enough not to hurt performance on normal runs.
+
+With this design we satisfy all constraints:
+
+* Imports are exactly what was asked (`logging`, `math`, typing types, `numpy`, `scipy.ndimage`).
+* No Python loops – everything is handled by NumPy/SciPy primitives.
+* We rely on SciPy’s fast low‑level code for the heavy lifting.
+* The code remains short enough that adding any additional helper functions would keep us well below the target character count while still being clear and maintainable.\n\nOK, I think I have the design. Time to write it.\

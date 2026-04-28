@@ -1,0 +1,21 @@
+We need to implement faster pairwise squared Euclidean distances. Standard approach: compute Gram matrix. D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute row norms squared, outer sum, subtract 2 dot product.
+
+Implementation: X dot X.T gives dot product matrix. Compute norms: (X**2).sum(axis=1). Then out = norms[:,None] + norms[None,:] - 2*dot.
+
+Ensure dtype float64. Use np.dot or X @ X.T.
+
+Edge cases: shape (N, D). Should handle N=0? but fine.
+
+Return np.array.
+
+Also ensure shape (N,N). Use np.maximum to clip negative due to numeric errors? Not necessary but may be safe: out = np.maximum(out, 0.0). But not required.
+
+Let's produce code.
+
+Also note: we might use np.linalg.norm? But no.
+
+We'll implement pairwise_sq_dist.
+
+Also ensure that input dtype float64. Use X.astype(np.float64) maybe.
+
+Let's produce final code.

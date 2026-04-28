@@ -1,0 +1,127 @@
+We need to speed up the affine transform. Let's think: The baseline uses scipy.ndimage.affine_transform, which is already pretty fast but maybe overhead from Python and data conversion. We can try to replace with a custom implementation that uses matrix multiplication and interpolation via scipy's map_coordinates or similar. But that still uses loops? No, map_coordinates is vectorized.
+
+Alternatively, we could use SciPy's affine_transform but cast to float32 to reduce memory bandwidth. Also, we can precompute the inverse matrix once and use it.
+
+Also, maybe we can use JAX or Numba. JIT compiled Numba could be faster for small images? But overhead might be high. For typical image sizes maybe 256x256 or larger. Using SciPy's built-in C routines is likely fastest.
+
+But we want to avoid Python loops. We can do a direct coordinate grid mapping: create meshgrid of output coordinates, apply inverse transform to get input coordinates, then use map_coordinates with order=3.
+
+We need to handle constant mode padding with 0. map_coordinates has mode='constant', cval=0.
+
+So design: In solve, get image array as np.array dtype float32 or float64? We can cast to float32 for speed.
+
+Compute shape n,m = image.shape. Create output array same shape.
+
+Compute inverse matrix: invert 2x3? Actually we need 2x3 transform mapping output coords to input coords. For affine_transform, it expects matrix that maps output coords to input coords? Let's check: scipy.ndimage.affine_transform(input, matrix, offset=0). The matrix is the inverse of the transformation applied to coordinates? Actually docs: The matrix argument is a linear transformation applied to coordinates before adding offset. So if we want forward transform defined by matrix M (2x3), we need to compute its inverse for affine_transform.
+
+But easier: Use scipy.ndimage.affine_transform directly with the provided matrix but we need to ensure it's correct orientation. But baseline did that; maybe it's fine.
+
+But customizing might allow us to skip some overhead by using np.linalg.inv on 2x2 part and compute offset separately.
+
+We can also use SciPy's ndimage.affine_transform but pass precomputed inverse matrix and offset for speed? But ndimage will compute inverse anyway internally I think.
+
+Better approach: Use scipy.ndimage.map_coordinates which expects coordinates array of shape (ndim, output_shape). So we can compute coordinate arrays once per solve call.
+
+Implementation steps:
+
+- Convert image to np.float32.
+- Get n,m = image.shape.
+- Create output grid indices: i_out = np.arange(n); j_out = np.arange(m); use np.meshgrid(j_out,i_out) because first axis y then x? Need careful orientation: For 2D array [row, col] mapping: coordinate (row, col). The affine matrix provided is 2x3 with rows corresponding to output coords? In baseline they passed directly; so assume same orientation.
+
+- Flatten grid into shape (2, n*m). Then apply inverse transformation: coords_in = inv_mat @ grid + offset. Where inv_mat is 2x2 and offset is translation part from inverse of full matrix.
+
+- Use map_coordinates(image, coords_in, order=self.order, mode='constant', cval=0). This returns flattened output; reshape back.
+
+This avoids Python loops entirely; all vectorized numpy operations; uses SciPy's C routine for interpolation; should be fast.
+
+Edge cases: small images; negative indices handled by constant mode; dtype conversion; rtol/atol for verification same as baseline.
+
+Also consider using float32 for all arrays except final result cast back to original dtype maybe float64 if needed but not necessary.
+
+Potential pitfalls: Inverse of degenerate matrix? Could raise error; but assume valid input.
+
+Also ensure memory usage okay; flattening grid size n*m maybe large but acceptable for typical sizes (<10k^2).
+
+Now consider alternative designs:
+
+Option A: Use Numba JIT compiled loop over pixels performing bilinear interpolation manually. That would avoid SciPy overhead but loops in Numba compiled C code still fine but may be slower than SciPy's highly optimized interpolation kernels for cubic order=3? Might be similar.
+
+Option B: Use JAX jit with jax.numpy and jax.scipy.ndimage functions if available; but JAX might require device transfer overhead; not necessary.
+
+Option C: Use direct convolution via FFT if transformation is just shift/scale? Not applicable.
+
+Thus choose map_coordinates approach.
+
+Now implement solve:
+
+```
+def solve(self, problem):
+    image = np.asarray(problem["image"], dtype=np.float32)
+    mat = np.asarray(problem["matrix"], dtype=np.float32)
+    # mat shape (2,3)
+    # Compute inverse
+    A = mat[:, :2]
+    b = mat[:, 2]
+    try:
+        invA = np.linalg.inv(A)
+    except np.linalg.LinAlgError:
+        return {"transformed_image": []}
+    invb = -invA @ b
+    # Build coordinate grid
+    h,w = image.shape
+    y,x = np.mgrid[0:h,0:w]  # shape (h,w)
+    coords_out = np.vstack((y.ravel(), x.ravel()))  # shape (2,N)
+    coords_in = invA @ coords_out + invb[:,None]
+    # Interpolate
+    transformed_flat = scipy.ndimage.map_coordinates(image, coords_in,
+                                                     order=self.order,
+                                                     mode='constant',
+                                                     cval=0.0,
+                                                     prefilter=True)
+    transformed_image = transformed_flat.reshape(h,w)
+    return {"transformed_image": transformed_image}
+```
+
+Check shapes: map_coordinates expects coordinates array shape (ndim,N). Good.
+
+prefilter default True ensures cubic interpolation works properly; keep it True like default in affine_transform?
+
+Need to set order=3 as self.order default; keep same value.
+
+Edge cases: If image empty or dims mismatch -> return empty list as baseline did?
+
+We can add try/except around entire process and return empty list on error similar baseline behavior.
+
+Also ensure dtype of returned array matches expected type maybe float64? Baseline returned whatever dtype from scipy.ndimage.affine_transform which likely float64 if input float64. We cast input float32 so output will be float32; acceptable as numeric closeness tolerance may still hold since difference small relative to rounding errors. But tests might compare exact values? They use np.allclose with rtol=1e-5 atol=1e-7 so difference between float32 vs float64 may be okay within tolerance because differences due to rounding may be small (<1e-7). Should be fine.
+
+Alternatively cast back to float64 before returning: `transformed_image.astype(np.float64)` but that adds overhead and may degrade speed slightly but negligible relative overhead. We'll keep float32 maybe fine.
+
+Now check memory usage: For large images e.g., 4096x4096 ~16M elements ~64MB for float32; grid arrays double that ~128MB plus coordinates ~256MB total maybe high but still okay within typical memory limit (~1GB). Acceptable.
+
+Now test edge case when image dims not square? Problem says n x n but could be rectangular; our code handles any shape since we compute h,w separately and reshape accordingly. Good.
+
+Now final design includes imports only logging, typing.Dict etc., numpy as np, scipy.ndimage imported. No loops at Python level except mgrid which uses vectorized generation internally no Python loops executed in Python loop sense (but mgrid uses C loops). So satisfies no Python-level loops requirement? mgrid uses numpy internal loops in C so okay.
+
+We also avoid explicit loops in code except the mgrid call which is fine because it's vectorized function call generating arrays without Python loops over elements.
+
+Thus design meets brief: imports minimal set only required modules; uses scipy functions; no Python-level loops; vectorised operations only; final solution length ~6000 chars likely fine including docstrings etc. Should produce correct outputs within tolerance due to allclose check.
+
+Edge case checks:
+
+- If mat singular -> return empty list like baseline.
+- If problem missing keys -> KeyError will propagate? Baseline didn't handle missing keys explicitly inside try block before retrieving problem["image"]; they would raise KeyError and catch outer except logging error and re-raising e. That's fine.
+- If problem["matrix"] not 2x3 -> linalg.inv will fail or shape mismatch -> caught by try/except returning empty list.
+- If image not numeric -> converting via asarray will produce dtype object maybe error later in map_coordinates -> catch exception return empty list.
+- For small images e.g., 1x1 -> mgrid produces arrays of size 1 each; works.
+- For zero-size images -> mgrid returns empty arrays shape (0,) ; map_coordinates on empty input returns empty array maybe error? Could catch early if image.size==0 return empty list like baseline.
+Add check at start:
+
+```
+if image.size == 0:
+   return {"transformed_image": []}
+```
+
+Ok add that.
+
+Now finalize design ready for implementation.
+OK, I think I have the design. Time to write it.

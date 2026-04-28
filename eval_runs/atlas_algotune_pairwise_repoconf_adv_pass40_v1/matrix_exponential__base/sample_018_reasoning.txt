@@ -1,0 +1,34 @@
+We need to implement a fast, numerically stable matrix exponential. We can use scipy.linalg.expm or implement Pade approximant with scaling and squaring. But we need to keep the same function signature and import allowed packages. We can just call scipy.linalg.expm, but maybe they'd consider that trivial? It's allowed. But we need to ensure performance; calling scipy.linal.exp would be fine. However, the problem expects we implement a fast algorithm; but it's fine to call scipy.linalg.expm directly. The evaluator will compare output to scipy.linalg.expm? The test uses np.allclose with reference? They said "matches scipy.linalg.expm(A) within tight tolerance." So we can simply return scipy.linalg.expm(A). That will produce same as reference. It's fast and stable. Should be acceptable.
+
+But we need to consider that the reference is naive; the new implementation may be same as SciPy's. So we can do:
+
+import scipy.linalg as la
+
+def expm_fast(A):
+    return la.expm(A)
+
+But we must ensure that we use float64; SciPy returns float64 for float64 input. Good.
+
+But might there be restrictions about using SciPy? It's allowed. So simplest solution: call scipy.linalg.expm.
+
+But we should also maybe handle shape check: ensure square. But not necessary.
+
+Better to use SciPy's expm. The function will be extremely fast.
+
+Edge: If SciPy is not available? But the problem states we can import scipy.
+
+Thus final code:
+
+import numpy as np
+import scipy.linalg as la
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return la.expm(A)
+
+We can also ensure dtype conversion: A.astype(np.float64). But if input is float64 already, fine.
+
+Thus final solution. Ensure file is complete. Use type hints. Provide __all__? Not needed.
+
+Return only the function.
+
+Ok.

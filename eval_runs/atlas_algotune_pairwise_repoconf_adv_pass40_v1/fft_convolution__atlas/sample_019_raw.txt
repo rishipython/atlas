@@ -1,0 +1,36 @@
+```python
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """
+    Return the full linear convolution of two 1‑D float64 arrays using
+    an FFT based approach.  This implementation is numerically
+    equivalent to np.convolve(x, h, mode='full') but is far faster for
+    large inputs.
+    """
+    x = np.asarray(x, dtype=np.float64, copy=False)
+    h = np.asarray(h, dtype=np.float64, copy=False)
+
+    # Handle empty inputs explicitly
+    if x.size == 0 or h.size == 0:
+        return np.empty(0, dtype=np.float64)
+
+    N, M = x.size, h.size
+    L = N + M - 1
+
+    # Choose FFT length as the next power of two >= L for speed
+    fftlen = 1 << (L - 1).bit_length()
+
+    # Compute the forward transforms (real‑to‑complex)
+    X = np.fft.rfft(x, fftlen)
+    H = np.fft.rfft(h, fftlen)
+
+    # Element‑wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse transform back to real domain and truncate to length L
+    y = np.fft.irfft(Y, fftlen)[:L]
+
+    return y
+```

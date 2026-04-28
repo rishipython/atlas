@@ -1,0 +1,22 @@
+We need to replace slow implementation with fast one using FFT. We need to keep same function name and signature. We can use numpy. The straightforward solution: use numpy.fft.fft or scipy.signal.fftconvolve. But we should implement ourselves to avoid SciPy dependency maybe. But allowed to import SciPy. But safe to use numpy. Use real FFT. Compute length L = next power of two >= N+M-1. Compute FFTs, multiply, inverse. Use np.fft.rfft? For real inputs, rfft gives efficient. But we need full convolution. We can do:
+
+L = N+M-1
+nfft = 1 << (L-1).bit_length()
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X*H
+y = np.fft.irfft(Y, nfft)[:L]
+
+Return y. That yields float64. Use dtype np.float64.
+
+Edge cases: empty arrays? In test maybe N, M >= 1. But handle zero length: if len(x)==0 or len(h)==0: return np.array([], dtype=np.float64). But convolution of empty arrays maybe length 0? Actually np.convolve([], [], mode='full') returns array([], dtype=float). So we can handle.
+
+Return dtype float64. Should match.
+
+Also we should keep import numpy.
+
+Let's produce code.
+
+Also maybe we can use np.fft.fft with complex? But rfft is fine.
+
+Let's produce final code.

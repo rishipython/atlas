@@ -1,0 +1,19 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm. But can't use that? We can import scipy.linalg.expm as reference, but we need to produce fast implementation. But we can just call scipy.linalg.expm inside function. That would be fast enough and numerically correct. But the problem states "Your solution must define the same top-level function name and signature as the reference. Do not rename it, do not add required arguments." It doesn't forbid using scipy.linalg.expm. The reference is naive, but we can replace with efficient call. So simplest is:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But maybe they want no external call? It's fine. Use SciPy's expm. That is fast. Provide full file. Ensure import. That should pass. They might test for speed. SciPy's expm uses scaling and squaring with Pade approximants. Good.
+
+Edge: If SciPy not available? But allowed. Provide.
+
+We also need to ensure dtype float64. expm returns same dtype as input. Good.
+
+Return result.
+
+Let's produce final code.

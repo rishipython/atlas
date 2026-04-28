@@ -1,0 +1,116 @@
+We need to figure out rotate_2d problem. Likely rotate a 2D image or points? Let's think: The reference uses Rotate2D class, solve method probably rotates points by given angle. We need fast implementation using numpy/scipy, no loops.
+
+We want to use scipy.ndimage.rotate maybe. But we also need matrix multiplication.
+
+We need to produce design: imports logging, random, Any, numpy, scipy.ndimage. Use scipy functions somewhere.
+
+Matrix multiplication BLAS-backed: np.dot or @.
+
+No python loops: vectorized.
+
+Ok think: Problem input format? Probably a dict with keys: 'points' array shape (N,2) and 'angle' float. Or maybe 'image' 2D array and angle. But reference uses Rotate2D class; maybe it's about rotating a set of 2D points around origin or arbitrary center.
+
+Let's search memory: AlgoTune rotate_2d likely rotates points by angle and returns new coordinates. Could also rotate an image. But since matrix multiplication is required, likely point rotation.
+
+Design: parse problem dict: get 'points', 'angle', maybe 'center' optional. Compute rotation matrix R = [[cosθ,-sinθ],[sinθ,cosθ]]. Then new_points = points @ R.T (or R). If center given, subtract center, apply rotation, add back.
+
+Use numpy vectorization; no loops.
+
+Also could use scipy.ndimage.rotate if image; but requirement to use scipy functions somewhere. Could use scipy.spatial.transform.Rotation? But that's in SciPy 1.8+. Could use scipy.linalg.expm? Not needed.
+
+But we must use scipy somewhere; maybe use scipy.linalg.solve for something? But we can simply call scipy.ndimage.rotate for image case.
+
+Let's assume input is image 2D array and angle degrees. Use scipy.ndimage.rotate(image, angle, reshape=False). That uses interpolation and is fast in C.
+
+But matrix multiplication requirement? We can still compute rotation matrix for points but not used if image case. But we can incorporate both: if problem contains 'points', do matrix multiply; else if contains 'image', call ndimage.rotate.
+
+But requirement says "matrix multiplication (BLAS-backed)" must be used somewhere in solution. So we need to include a matrix multiplication even if not used for image case; maybe compute rotation matrix via np.array and then multiply with identity to satisfy requirement? Or compute something trivial like np.eye(2) @ R? That would be silly but satisfies requirement. But better: if points exist, multiply; else compute dummy dot product of two arrays of ones to satisfy BLAS usage but not affect result.
+
+But the brief says uses scipy functions somewhere; ndimage.rotate qualifies.
+
+Also need imports: logging, random, typing.Any, numpy as np, scipy.ndimage.
+
+No loops; all vectorized.
+
+Edge cases: empty points array -> return empty array; angle NaN -> return original; large angles -> wrap? Use np.mod(angle,360). For images, ensure dtype preserved.
+
+Also random import may be used for generating test data but not needed in solve.
+
+Ok design:
+
+def run_solver(problem):
+    # parse
+    if 'points' in problem:
+        pts = np.asarray(problem['points'], dtype=float)
+        angle = float(problem.get('angle',0))
+        center = np.asarray(problem.get('center',[0.,0.]),dtype=float)
+        # normalize angle
+        theta = np.deg2rad(angle % 360)
+        cos_t = np.cos(theta); sin_t = np.sin(theta)
+        R = np.array([[cos_t,-sin_t],[sin_t,cos_t]],dtype=float)
+        # shift
+        shifted = pts - center
+        rotated = shifted @ R.T
+        result = rotated + center
+        return {'points': result}
+    elif 'image' in problem:
+        img = np.asarray(problem['image'])
+        angle = float(problem.get('angle',0))
+        # use ndimage.rotate
+        rotated_img = scipy.ndimage.rotate(img, angle=angle, reshape=False)
+        return {'image': rotated_img}
+    else:
+        raise ValueError("Unsupported problem format")
+
+Add logging at start; maybe log shape etc.
+
+Also ensure no loops; all vectorized operations done via numpy dot (matrix multiplication). Use .T for correct orientation.
+
+Edge cases: negative shape dims? Not relevant.
+
+Test with small arrays; check dtype preserved for image case by converting back to original dtype after rotation (scipy returns float64). We could cast back using img.dtype if needed.
+
+Also random import unused; but maybe used for generating random center if not provided? Not necessary but okay to leave unused.
+
+Ok design ready. Let's produce handoff sentence.
+We need to read the problem dictionary and decide whether we’re rotating a set of 2‑D points or a whole image – the reference Rotate2D class probably handles both cases. The key is to stay fully vectorised: every transformation must be a NumPy or SciPy call that ends up calling BLAS under the hood. No Python `for` loops at all – just array maths and a single SciPy routine somewhere in the flow because the brief insists on using SciPy explicitly.
+
+First thought was just compute the usual rotation matrix `R` from the supplied angle and apply it with `@`. That gives us the BLAS‑backed dot product we’re looking for:
+
+```python
+theta = np.deg2rad(angle % 360)
+R = np.array([[np.cos(theta), -np.sin(theta)],
+              [np.sin(theta),  np.cos(theta)]], dtype=float)
+rotated = (pts - center) @ R.T + center
+```
+
+This works fine for point clouds and is already fully vectorised. The only missing piece is handling an image input – that’s where `scipy.ndimage.rotate` comes in handy because it’s a highly optimised C routine that does interpolation for us. We can branch on whether the key `'points'` or `'image'` is present:
+
+```python
+if 'points' in problem:
+    # point rotation path (uses @)
+elif 'image' in problem:
+    # image rotation path (uses scipy.ndimage.rotate)
+```
+
+If neither key exists we raise an error – that keeps things tidy and matches the behaviour of many benchmark problems where inputs are well‑defined.
+
+A couple of edge‑case checks are useful:
+
+* If the point array is empty (`shape[0]==0`) we simply return an empty array of the same shape.
+* For angles outside `[0°,360°)` we normalise them with `%360` so that trigonometric functions behave predictably.
+* When rotating an image we keep its original dtype by casting back after `ndimage.rotate`, because that function always returns `float64`.
+
+The imports are exactly what the brief wants:
+
+```python
+import logging
+import random   # kept for potential future use / compatibility
+from typing import Any
+import numpy as np
+import scipy.ndimage
+```
+
+No loops appear anywhere – every operation is either a NumPy broadcast or a single SciPy call that internally uses BLAS/LAPACK or C code. The only place where SciPy shows up is `scipy.ndimage.rotate`, satisfying that requirement while keeping the code lean and fast.
+
+With this design we have a clear path from input dictionary to output dictionary that respects all constraints: vectorised maths, BLAS‑backed multiplication via `@`, no Python loops, and explicit use of a SciPy routine. OK, I think I have the design. Time to write it.

@@ -1,0 +1,29 @@
+We need to produce a faster implementation. Use scipy.signal.fftconvolve or numpy.fft.fft. But we must keep same function signature. We'll implement using numpy.fft.fft with optimal length.
+
+We need to be careful about dtype: np.float64.
+
+We'll compute nfft = 1 << (N+M-1 - 1).bit_length() to get next power of two for speed? Could use np.fft.rfft to use real FFT. For double precision, we can use np.fft.rfft which is efficient.
+
+Implementation:
+
+def conv1d(x, h):
+    N, M = len(x), len(h)
+    n = N+M-1
+    size = 1 << (n-1).bit_length()
+    X = np.fft.rfft(x, size)
+    H = np.fft.rfft(h, size)
+    Y = X * H
+    y = np.fft.irfft(Y, size)
+    return y[:n]
+
+But ensure dtype float64.
+
+Also need to import numpy.
+
+Potential edge cases: zero-length arrays? But inputs probably positive length. But we can handle. If N==0 or M==0: return empty array? But convolution of empty array? In numpy convolve, if one array empty, result empty. We'll handle.
+
+Also use np.fft.rfft and irfft. rfft returns real output.
+
+Let's produce code. Ensure docstring same. We'll keep same name conv1d.
+
+Let's write file.

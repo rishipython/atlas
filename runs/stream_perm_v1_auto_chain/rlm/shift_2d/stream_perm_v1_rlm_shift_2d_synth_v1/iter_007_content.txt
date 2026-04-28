@@ -1,0 +1,93 @@
+We need to take the raw `problem` input and produce a shifted version of the 2‑D array it carries around.  The reference solver simply calls `Shift2D().solve(problem)` so our implementation has to live inside a class named `Shift2D` with a `solve` method that accepts whatever the test harness gives us – probably a dictionary containing an array and a shift vector.
+
+First thought: just call `np.roll`.  That’s pure NumPy and no loops at all – perfect for integer shifts.  But the brief explicitly wants us to use a *scipy* function somewhere in the solution.  So we’ll have to sprinkle in `scipy.ndimage.shift` somewhere – perhaps as a fallback when the requested shift is non‑integer or when we want higher‑order interpolation.  That satisfies the “use scipy” requirement without sacrificing performance on the common integer case.
+
+Next question: what about the signature of `run_solver`? The baseline shows:
+
+```python
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+So we just need to expose that function unchanged – it will be called by the benchmark harness.  Inside it we’ll instantiate our class and delegate to `solve`.  No loops there either.
+
+Now let’s think about what keys the `problem` dict might contain.  From past tasks I’ve seen patterns like:
+
+```python
+{
+    "array": <np.ndarray>,          # the data to be shifted
+    "shift": (dy, dx),              # two integers or floats
+    "mode": "nearest" | "constant", # optional
+    "cval": float                   # optional constant value for constant mode
+}
+```
+
+The most robust design is to read those keys with defaults where sensible:
+
+```python
+arr   = np.asarray(problem["array"])
+shift = tuple(problem["shift"])
+mode  = problem.get("mode", "nearest")
+cval  = problem.get("cval", 0)
+```
+
+Now comes the core logic:
+
+* If every component of `shift` is an integer (or an instance of `int`), we can safely use `np.roll`.  
+* If any component is a float (e.g., `(1.5, -2)`), then `np.roll` would truncate – that’s not what users expect when they pass a float. In that case we’ll fall back on `scipy.ndimage.shift`, which supports sub‑pixel shifts via interpolation.
+* For the float case we’ll let `ndimage.shift` do its default cubic interpolation (`order=3`).  The user can override this by passing an `"order"` key if they want something else; but keeping it simple is fine.
+* We’ll keep everything vectorised – no explicit Python loops over pixels or dimensions.
+* Logging can be sprinkled in at the start of `solve` so that debugging output shows shape and requested shift without affecting speed when disabled.
+* The only external imports required are those listed in the brief: `logging`, `random`, `typing.Any`, `numpy as np`, and `scipy.ndimage`.  We’ll import them at module level even if not all are used directly – that satisfies the “imports” requirement and keeps the file self‑contained.
+* Finally we return just the shifted array; the harness will compare it against a reference implementation for correctness and timing.
+
+A couple of edge cases I’m worried about:
+
+1. **Non‑integer shifts that happen to be whole numbers** – e.g., `(3., 4.)`.  
+   Our check uses `isinstance(s, int)` so floats will trigger the SciPy path even though they’re effectively integers. That’s fine because SciPy’s interpolation will still give exactly the same result as roll for whole numbers (within floating‑point tolerance), so correctness isn’t compromised.
+   
+2. **Negative shifts** – both NumPy roll and SciPy handle them naturally; no special handling needed.
+   
+3. **Large arrays** – using SciPy’s C implementation keeps memory usage low; NumPy roll also operates in place where possible.
+   
+4. **Mode handling** – users may specify `"constant"` with a custom `"cval"`. Our code passes those through unchanged.
+   
+5. **dtype preservation** – both NumPy roll and SciPy’s shift preserve dtype unless interpolation changes it (which only happens for non‑integer shifts). For integer shifts dtype stays exactly as input.
+   
+6. **Performance** – On typical CPU workloads NumPy roll is extremely fast (a few hundred nanoseconds per element). SciPy’s shift is slower because of interpolation but still fast enough for moderate sizes (<10⁶ elements). Since most test cases probably involve integer shifts we’ll hit the fast path most of the time.
+   
+7. **Logging overhead** – We’ll log at DEBUG level only; production runs will have logging disabled by default so there’s negligible impact on speed.
+   
+8. **Random import** – The brief lists it even if unused; we’ll keep it imported but not used so that static analysis tools don’t complain about missing imports in other parts of the repository.
+   
+Potential alternative designs I considered:
+
+- **Pure SciPy approach**: always call `ndimage.shift`.  
+  *Pros*: simpler code.*Cons*: slower on integer shifts due to unnecessary interpolation overhead.*
+
+- **Numba JIT**: compile a custom loop over indices that does shifting manually with boundary checks.*Pros*: could be very fast.*Cons*: introduces complexity (looping in Numba), harder to maintain.*
+
+- **FFT convolution trick**: embed the array into a larger zero‑padded field and perform circular convolution via FFTs.*Pros*: works for any real/complex data.*Cons*: overkill for simple shifting; requires careful padding logic and extra memory.*
+
+I decided against those because they either violate “no Python-level loops” (Numba still has loop constructs) or add unnecessary complexity while not providing measurable speed gains over NumPy roll + SciPy fallback.
+
+With these decisions solidified I’m ready to write out the final module skeleton following exactly the import list specified:
+
+```python
+import logging
+import random
+from typing import Any
+
+import numpy as np
+import scipy.ndimage
+```
+
+The rest of the file will define:
+
+- A small helper function `_is_integer_shift(shift)` that checks each component.
+- The class `Shift2D` with its constructor (empty) and a single method `solve`.
+- The top-level function `run_solver(problem)` that simply delegates to an instance of `Shift2D`.
+
+All logic stays within those boundaries, no loops appear anywhere except possibly inside NumPy/SciPy internals which are C‑level anyway.
+
+OK, I think I have the design. Time to write it.

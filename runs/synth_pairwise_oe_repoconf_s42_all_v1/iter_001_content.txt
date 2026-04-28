@@ -1,0 +1,182 @@
+We need to compute pairwise squared Euclidean distances. The naive triple loop is slow. We want a vectorised solution, maybe using Gram matrix trick: D = a + b - 2*X @ X.T. Also want to use scipy functions somewhere. And numba JIT compiled loops? But requirement says no Python-level loops, all work vectorised. But we can still use numba to accelerate something? Maybe use numba for a small helper? But we can't have loops in Python, but we can use numba to compile a small function that does the matrix multiplication? But BLAS is already fast. Maybe we want to use scipy.linalg.blas.sgemm or dgemm? But that's just a wrapper around BLAS.
+
+We also need to keep final code ~975 characters, so we need to be concise.
+
+Also need to import numpy as np only? The brief says imports: import numpy as np. But also uses scipy functions somewhere. So we need to import scipy too. The brief says imports: import numpy as np. But also uses scipy functions somewhere in the solution. So maybe import scipy.linalg as la or something.
+
+Also uses numba JIT compilation.
+
+So design: Use numba to JIT compile a function that takes X and returns distance matrix using broadcasting? But broadcasting would still be Python-level loops? Actually broadcasting with np.add.outer etc might be fine.
+
+Maybe use numba to compute the dot product X @ X.T quickly? But BLAS is already efficient; numba can compile loops too.
+
+But requirement: no Python-level loops — all work vectorised. That means we cannot have any explicit for loops in Python code. We could have a numba JIT compiled function that contains loops, but that's not Python-level loops; it's compiled.
+
+But we can also use scipy's pdist or cdist functions which compute pairwise distances efficiently. For squared distances, we can do scipy.spatial.distance.cdist(X, X, 'sqeuclidean'). That would be simplest and uses SciPy's C implementation.
+
+But the brief wants us to use matrix multiplication and numba JIT compilation. So maybe we combine: compute dot product via BLAS (numpy), then compute distances via formula, then maybe apply numba on something like clipping negative small values due to floating errors.
+
+But why need numba at all if we rely on BLAS? We could still add a small function that does the distance formula but with some extra safety; but that's trivial.
+
+Maybe we do this: compute Gram matrix G = X @ X.T (via np.dot). Then compute diag = np.diag(G). Then D = diag[:, None] + diag[None, :] - 2*G. Then clip negative zeros: D = np.maximum(D, 0). That yields correct distances.
+
+Now where does numba come in? Could write a small function that does the clipping or the whole formula via numba for speed? But the heavy part is dot product; BLAS will dominate.
+
+Alternatively, we could use scipy.linalg.blas.sgemm or dgemm for dot product and then do rest with numpy. That uses SciPy's BLAS wrapper.
+
+Also maybe use numba's njit on a function that calls np.dot and does the formula; but that's just wrapping.
+
+We must keep code short (~975 chars). So maybe do:
+
+import numpy as np
+import scipy.linalg as la
+from numba import njit
+
+@njit
+def _sq_dist(X):
+    G = X @ X.T
+    diag = np.diag(G)
+    D = diag[:,None] + diag[None,:] - 2*G
+    return np.maximum(D, 0)
+
+def pairwise_sq_dist(X):
+    return _sq_dist(X)
+
+But inside _sq_dist we used X @ X.T which is fine; but that uses numpy's dot, not SciPy's BLAS wrapper? Actually @ uses numpy's dot which calls BLAS if available (numpy uses its own BLAS). But requirement says uses scipy functions somewhere in solution. So we should explicitly call la.blas.dgemm or something.
+
+So modify: G = la.blas.dgemm(alpha=1.0, a=X, b=X.T, trans_a=False, trans_b=False) . That returns dot product using SciPy's BLAS interface.
+
+Then rest same.
+
+Now about numba: _sq_dist decorated with njit will compile the body including call to la.blas.dgemm? Not sure if numba supports calling SciPy functions; likely not. So maybe can't call SciPy inside njit function because it's not supported. So perhaps we can't combine them like that.
+
+Alternative: Use SciPy's cdist inside pairwise_sq_dist directly; no need for numba at all. But brief demands numba usage somewhere.
+
+Maybe use numba on a small loop that fills an array of shape (N,N) by reading from precomputed Gram matrix computed via SciPy's dgemm? That seems unnecessary overhead.
+
+Alternatively, skip SciPy for dot product and just use numpy dot; then use numba on a small loop that sets negative values to zero (but that's trivial). Could still satisfy "uses scipy functions somewhere" by calling scipy.spatial.distance.cdist on some subset or using other SciPy function like pdist?
+
+Better: Use scipy.spatial.distance.squareform? No.
+
+Maybe just call scipy.linalg.norm on each row difference inside a vectorised way? Not efficient.
+
+We could call scipy.stats.norm.pdf etc but irrelevant.
+
+Simplify: Use SciPy's pdist or cdist for computing squared distances directly; no need for manual formula. That uses C code under the hood and is fast. Then add a tiny bit of code with numba: maybe define an alias function that simply calls cdist but decorated with njit for some reason; but calling cdist inside njit might not work because it's not supported by Numba either.
+
+Alternatively, write a simple loop with Numba that fills out distance matrix by calling np.linalg.norm on differences computed via broadcasting within each iteration; but that's still loops in Numba which is okay but not Python-level loops. That might satisfy both requirements: uses SciPy for something else (maybe for computing norms?), uses Numba JIT compilation for loop over i and j inside compiled function; uses matrix multiplication? Not really though.
+
+But requirement says "Makes use of matrix multiplication (BLAS-backed)". So we must incorporate matrix multiplication somewhere in solution; so using cdist alone doesn't involve explicit matrix multiplication in our code though it may internally use it but not visible.
+
+Thus better approach: Use numpy.dot or la.blas.dgemm for G; then compute distances via formula; optionally clip negatives using Numba JIT compiled function that iterates over array elements and sets negative values to zero (but that's just one pass). This satisfies all requirements:
+
+- Uses scipy functions somewhere: la.blas.dgemm
+- Uses numba JIT compilation: define _clip_zero with njit that sets negative entries to zero.
+- Makes use of matrix multiplication: G = dgemm
+- No Python-level loops
+
+We can write:
+
+import numpy as np
+import scipy.linalg as la
+from numba import njit
+
+@njit
+def _clip_zero(arr):
+    n = arr.shape[0]
+    for i in range(n):
+        for j in range(n):
+            if arr[i,j] < 0:
+                arr[i,j] = 0
+
+def pairwise_sq_dist(X):
+    G = la.blas.dgemm(alpha=1., a=X, b=X.T)
+    diag = np.diag(G)
+    D = diag[:,None] + diag[None,:] - 2*G
+    _clip_zero(D)
+    return D
+
+This has two nested loops inside _clip_zero which are Numba compiled; no Python-level loops elsewhere. Good.
+
+Now check size: Should be within ~975 chars including imports and code lines. Let's estimate:
+
+import lines ~30 chars each => ~60.
+Function definitions etc maybe ~200-300 chars total -> within limit.
+
+Edge cases: For very large N might overflow memory but that's expected anyway. Need dtype float64 consistent with input dtype float64 (default). dgemm returns float64 if inputs are float64 else double precision if alpha is float64 etc. Should be fine.
+
+Clip zero ensures non-negative distances due to rounding errors causing tiny negative values like -1e-16 -> set to zero.
+
+Test with random arrays should pass np.allclose against reference implementation within default tolerances rtol=1e-5 atol=1e-8 probably fine because our method yields exact same results except clipping negative zeros won't change positive ones significantly.
+
+Also consider when N=0 or D=0 shape zero arrays? Should handle gracefully: G shape (0,0), diag empty, D empty -> clip_zero works fine because n=0 loop skip -> return empty array shape (0,0).
+
+Thus final design ready.
+We need an efficient pairwise squared Euclidean distance routine without any Python‑level loops – everything has to be vectorised or compiled away by NumPy/BLAS/Numba/Scipy under the hood.
+Let’s start from the classic Gram‑matrix trick:
+```
+D[i,j] = ||x_i||² + ||x_j||² – 2·x_i·x_jᵀ .
+```
+The heavy lifting is the dot product `X @ Xᵀ`.  
+If I just write `G = X @ X.T` I’ll get NumPy’s own BLAS call – good enough,
+but the brief explicitly wants us to “use **scipy** functions somewhere”.  
+Scipy offers a thin wrapper around BLAS (`scipy.linalg.blas`), so I’ll replace
+the NumPy dot with `scipy.linalg.blas.dgemm`.  
+That gives me an explicit matrix multiplication step backed by BLAS,
+and I still keep the rest of the computation vectorised:
+```
+diag   = np.diag(G)
+D      = diag[:,None] + diag[None,:] - 2*G
+```
+Because of floating‑point round‑off there might be tiny negatives (`–1e‑16`)
+in `D`.  A single pass setting anything below zero back to zero fixes this.
+I’ll put that pass into a small Numba‑compiled routine so it runs at C speed,
+and it satisfies “uses **numba** JIT compilation”.
+
+Putting it together:
+
+```python
+import numpy as np
+import scipy.linalg as la
+from numba import njit
+
+@njit
+def _clip_negative_to_zero(arr):
+    n = arr.shape[0]
+    for i in range(n):
+        for j in range(n):
+            if arr[i,j] < 0:
+                arr[i,j] = 0
+
+def pairwise_sq_dist(X):
+    """
+    Return the (N,N) squared Euclidean distance matrix.
+    
+    Parameters
+    ----------
+    X : ndarray of shape (N,D), dtype float64
+    
+    Returns
+    -------
+    D : ndarray of shape (N,N), dtype float64
+        D[i,j] == sum_k (X[i,k]-X[j,k])**2 .
+    """
+    # Matrix multiplication via Scipy’s BLAS wrapper.
+    G   = la.blas.dgemm(alpha=1., a=X, b=X.T)
+    
+    # Gram‑matrix trick.
+    d   = np.diag(G)
+    D   = d[:,None] + d[None,:] - 2*G
+    
+    # Remove any tiny negative values caused by round‑off.
+    _clip_negative_to_zero(D)
+    
+    return D
+```
+
+The routine has no Python‑level loops – all heavy work goes through BLAS,
+NumPy’s vectorised ops or Numba‑compiled inner loops.
+It uses `scipy.linalg.blas` for the core matrix multiply,
+`numba.njit` for the tiny clipping pass,
+and keeps everything fast while staying numerically close to the reference implementation.
+OK, I think I have the design. Time to write it.

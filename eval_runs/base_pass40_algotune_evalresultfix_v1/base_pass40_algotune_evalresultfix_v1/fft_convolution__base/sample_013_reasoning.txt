@@ -1,0 +1,21 @@
+We need to provide improved solve. Use numpy. We can use np.fft.rfft for real signals. We need to handle modes. We can implement efficient linear convolution: compute length L = len_x + len_y -1; compute next power of 2 or nearest efficient size. Use np.fft.rfft to compute real FFTs. Then multiply. Then inverse via irfft. For mode 'full', return full. For 'same', take center part of length max(len_x,len_y). For 'valid', return only overlapping parts: length max(len_x, len_y) - min(len_x, len_y) + 1. For empty signals return empty array.
+
+We also need to consider small signals: if len_x * len_y < threshold maybe use direct convolution via np.convolve.
+
+Also we should avoid creating huge arrays if inputs small. We'll implement threshold maybe 2000? We'll just use np.convolve for small.
+
+Implement zero padding to next power of two for FFT. Use rfft and irfft. Use np.fft.rfft, np.fft.irfft.
+
+Also handle empty signals: if either empty return empty array.
+
+Implement solve returning {"result": array.tolist()}. But reference expects "convolution" key? In is_solution they check for "convolution". But we can keep "convolution". Let's keep same key. In solve we produce "convolution". But the doc says result. But tests expect "convolution". We'll use "convolution".
+
+Let's implement.
+
+Also need to import numpy as np.
+
+We also need to use np.fft.fft? rfft.
+
+Edge cases: negative indices? no.
+
+Let's code.

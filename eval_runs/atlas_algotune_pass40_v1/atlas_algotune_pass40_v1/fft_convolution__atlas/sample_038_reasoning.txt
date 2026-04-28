@@ -1,0 +1,15 @@
+We need to implement conv1d faster. Use scipy.signal.fftconvolve or numpy. But we need to import numpy and maybe scipy. Use np.fft.fft for convolution. Must return float64 array. Use zero padding to next power of two. Use real FFT for speed? Use np.fft.rfft. Use rfft for real data. Steps: compute length L = N + M - 1. Find next power of two >= L. Use rfft of length L_fft = nextpow2(L). Compute X = rfft(x, L_fft), H = rfft(h, L_fft). Multiply, then irfft to length L_fft. Then slice first L. Return as float64.
+
+Edge cases: small arrays? Works fine.
+
+Also for very small sizes, maybe direct sum may be faster but not needed. But we can choose threshold.
+
+Implement next power of two: 1 << (L_fft-1).bit_length().
+
+Also ensure dtype float64.
+
+Return np.real of irfft.
+
+Ok.
+
+Let's produce final code.

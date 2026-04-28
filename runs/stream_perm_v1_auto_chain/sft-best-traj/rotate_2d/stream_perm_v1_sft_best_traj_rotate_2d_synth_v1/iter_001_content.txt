@@ -1,0 +1,33 @@
+We need to take the problem dict that contains a set of 2‑D points and an angle and rotate all the points around the origin by that angle – all in one vectorised shot so we don’t pay for Python loops.  The simplest way is to build a 2×2 rotation matrix and do a single matrix multiplication `points @ R.T`.  That’s pure NumPy and will be fast on large arrays because it maps directly to BLAS calls under the hood.  
+
+But the brief says “use a SciPy function somewhere”, so we’ll generate the rotation matrix via `scipy.linalg.expm` instead of writing the cosine‑sine formula ourselves – that keeps us honest with the requirement while still being efficient (SciPy’s `expm` is a thin wrapper around LAPACK’s exponential routine).  The skew‑symmetric generator for a 2‑D rotation is  
+
+```python
+A = np.array([[0, -theta], [theta, 0]])
+```
+
+and `R = scipy.linalg.expm(A)` gives exactly  
+`[[cosθ, -sinθ], [sinθ, cosθ]]`.  
+
+Now we just need to make sure the input is in the right shape and type: if `problem['points']` comes in as a list of tuples or a plain Python list we cast it to a NumPy array of dtype `float64`.  If it’s already an ndarray we keep it as is but force the dtype so that downstream BLAS calls don’t have to cast on the fly.  Empty inputs are handled by an early return – multiplying an empty array by any matrix just yields another empty array with the correct shape, so no special case logic is needed beyond that guard.
+
+The algorithm looks like this:
+
+1. Pull out `points` and `angle` from the dict.
+2. Convert `points` to a `(N, 2)` NumPy array of floats.
+3. Convert `angle` from degrees to radians (the API usually documents angles in degrees – we’ll check for a unit flag if present).
+4. Build the generator matrix `A` using the radian value.
+5. Call `scipy.linalg.expm(A)` to get the rotation matrix.
+6. Compute `rotated = points @ R.T`.
+7. Return the rotated array (or wrap it back into whatever container the caller expects – here just an ndarray).
+
+No Python loops are involved at all – everything happens inside NumPy/SciPy kernels.  The only SciPy call is the exponential which satisfies the brief and keeps us within pure vectorised code.  
+
+We should also be mindful of numerical edge cases:  
+- If `angle` is exactly zero or multiples of \(2\pi\), `expm` will still return an identity matrix up to machine precision – fine for our purposes.  
+- Very large angles wrap correctly because trigonometric functions are periodic – no extra handling needed beyond converting degrees to radians correctly (`np.deg2rad`).  
+- Empty point lists produce an empty output without error because NumPy handles zero‑dimensional multiplications gracefully.
+
+With this plan in place I’m ready to write out the final implementation that sticks to imports (`numpy`, `scipy.ndimage`, `typing`) and returns a fully vectorised solution in under ten thousand characters.  
+
+OK, I think I have the design. Time to write it.

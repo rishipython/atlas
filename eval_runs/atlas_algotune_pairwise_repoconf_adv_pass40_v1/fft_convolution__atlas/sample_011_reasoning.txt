@@ -1,0 +1,41 @@
+We need to provide a faster implementation. Use numpy's fft. Ensure result same as np.convolve. Use np.fft.rfft or fft. For real data, we can use rfft for speed. But we need to compute full convolution. For 1-D arrays of length N and M. Use np.fft.fft of length L = next power of two >= N+M-1. Or use np.fft.fft directly. Simpler: L = N+M-1; fft length L. Then conv = ifft(fft(x, L) * fft(h, L)). real part. But need to cast to float64. Use np.fft.fft. Ensure dtype float64. Use np.fft.fft on real arrays returns complex. The result will be complex with tiny imaginary due to numerical error; take real part.
+
+Better use np.fft.rfft to reduce cost: rfft of length L. Then product, then irfft. But rfft expects length L. Compute L = N+M-1. Use rfft. Then conv = irfft(product, n=L). Works. But must ensure dtype. Use np.fft.rfft(x, n=L). rfft returns complex.
+
+Edge cases: if x or h empty? Problem says lengths N and M but could be zero? Convolution with empty array should be zero-length? In numpy, convolve of empty with something returns empty? Let's test: np.convolve([], [1,2,3]) returns array([], dtype=float64). So need to handle. For zero-length, return empty array. Implementation: if x.size == 0 or h.size == 0: return np.array([], dtype=np.float64). Also if both empty -> empty.
+
+Also need to ensure dtype float64; input may be other dtypes. Convert to float64.
+
+Use np.fft.rfft; but rfft of length L may require L >= size. For empty, L=0, but rfft with n=0? Might error. So handle empty separately.
+
+Also for very small arrays, direct convolution might be faster but not needed.
+
+Implement conv1d:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    if x.size == 0 or h.size == 0:
+        return np.empty(0, dtype=np.float64)
+    L = x.size + h.size - 1
+    # Use rfft
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    y = np.fft.irfft(X * H, n=L)
+    return y
+```
+
+But we need to ensure that the result shape matches N+M-1. For real signals, irfft returns length n. So fine.
+
+Check numeric: use np.allclose. Should be fine.
+
+Also may want to cast to float64. Irfft returns float64.
+
+Edge: if L=1? That's fine.
+
+We should also handle case when h is longer than x but fine.
+
+Thus final code with imports. Provide docstring same. Provide function. No other code. Ensure file is runnable.
+
+Let's produce final code.

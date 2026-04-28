@@ -1,0 +1,36 @@
+```python
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    # Ensure inputs are 1-D float64 arrays
+    x = np.asarray(x, dtype=np.float64, order='C')
+    h = np.asarray(h, dtype=np.float64, order='C')
+    if x.ndim != 1 or h.ndim != 1:
+        raise ValueError("inputs must be 1-D arrays")
+
+    N = x.shape[0]
+    M = h.shape[0]
+    out_len = N + M - 1
+
+    # If either input is empty, return empty array
+    if out_len <= 0:
+        return np.empty(0, dtype=np.float64)
+
+    # Compute the next power of two for efficient FFT
+    n_fft = 1 << (out_len - 1).bit_length()
+
+    # Forward real FFTs
+    X = np.fft.rfft(x, n=n_fft)
+    H = np.fft.rfft(h, n=n_fft)
+
+    # Element-wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse real FFT to get convolution result
+    y = np.fft.irfft(Y, n=n_fft)
+
+    # Trim to the exact convolution length
+    return y[:out_len]
+```

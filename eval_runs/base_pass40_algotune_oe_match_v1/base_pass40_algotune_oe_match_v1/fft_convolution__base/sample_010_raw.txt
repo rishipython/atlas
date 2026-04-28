@@ -1,0 +1,81 @@
+```python
+import numpy as np
+from typing import Dict, Any
+
+class FFTConvolution:
+    """
+    Fast FFT based convolution solver.
+    """
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two real-valued signals using FFT.
+
+        Parameters
+        ----------
+        problem : dict
+            Must contain keys 'signal_x', 'signal_y' and optional 'mode'.
+            The mode can be 'full', 'same', or 'valid'.
+
+        Returns
+        -------
+        dict
+            Dictionary with a single key 'convolution' whose value is a
+            list of floats containing the convolution result.
+        """
+        # Extract inputs
+        signal_x = np.asarray(problem.get("signal_x", []), dtype=np.float64)
+        signal_y = np.asarray(problem.get("signal_y", []), dtype=np.float64)
+        mode = problem.get("mode", "full")
+
+        # Handle empty inputs
+        if signal_x.size == 0 or signal_y.size == 0:
+            return {"convolution": []}
+
+        len_x = signal_x.size
+        len_y = signal_y.size
+
+        # Full convolution length
+        n_full = len_x + len_y - 1
+
+        # Fastest FFT length (next optimal length for FFT)
+        n_fft = np.fft.next_fast_len(n_full)
+
+        # Compute FFTs using real FFT for speed
+        fft_x = np.fft.rfft(signal_x, n_fft)
+        fft_y = np.fft.rfft(signal_y, n_fft)
+
+        # Element‑wise multiplication in frequency domain
+        fft_prod = fft_x * fft_y
+
+        # Inverse FFT to get linear convolution
+        conv_full = np.fft.irfft(fft_prod, n_fft)[:n_full]
+
+        # Slice according to mode
+        if mode == "full":
+            result = conv_full
+        elif mode == "same":
+            max_len = max(len_x, len_y)
+            start = (n_full - max_len) // 2
+            result = conv_full[start : start + max_len]
+        elif mode == "valid":
+            if len_x >= len_y:
+                start = len_y - 1
+                length = len_x - len_y + 1
+            else:
+                start = len_x - 1
+                length = len_y - len_x + 1
+            result = conv_full[start : start + length]
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+        return {"convolution": result.tolist()}
+
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Entry point used by the evaluator.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)
+```

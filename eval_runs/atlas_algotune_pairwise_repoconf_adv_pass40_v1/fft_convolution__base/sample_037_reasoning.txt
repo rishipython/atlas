@@ -1,0 +1,44 @@
+We need to replace the slow double loop with efficient FFT-based convolution. Use numpy. Use np.fft.fft. For real arrays, we can use np.fft.rfft. But simpler: use np.fft.fft with length L = next power of 2 >= N+M-1. Compute FFT of x padded to L, h padded to L, multiply, inverse FFT, take real part, truncate to N+M-1. Use np.fft.rfft for efficiency? Use np.fft.rfft for real input, but need to handle lengths. We can use np.fft.fft, simpler.
+
+We should also consider using scipy.signal.fftconvolve if available. But to keep minimal dependencies, use numpy.
+
+Implement conv1d(x, h). Validate that x and h are 1D float64. Use np.asarray. Use np.fft.fft.
+
+Edge cases: one of arrays empty? Input arrays length >0 presumably. But handle zero length? Might return empty array.
+
+We should ensure dtype float64.
+
+Implementation:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    out_len = N + M - 1
+    L = 1 << (out_len - 1).bit_length()  # next power of two >= out_len
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:out_len]
+
+We should ensure output dtype float64. Use np.asarray.
+
+Return y.
+
+Also might use np.fft.fft2? But no.
+
+We can also use np.fft.fft on complex arrays, but rfft is faster.
+
+Edge: if out_len is 1, L=1. Works.
+
+Now produce a single file with imports and function.
+
+Also ensure we preserve name conv1d.
+
+Test with examples.
+
+Return final code.

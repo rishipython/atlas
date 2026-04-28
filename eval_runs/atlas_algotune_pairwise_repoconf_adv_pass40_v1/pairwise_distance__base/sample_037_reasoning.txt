@@ -1,0 +1,24 @@
+We need to replace the triple loop with efficient vectorized or broadcasting approach.
+
+The standard formula: pairwise squared distance matrix D = (X**2).sum(axis=1)[:,None] + (X**2).sum(axis=1)[None,:] - 2*X.dot(X.T). For numerical stability, ensure dtype float64.
+
+Edge cases: N could be 0? But shape (0,D). Should return shape (0,0). The formula works: sum axis1 yields shape (0,), broadcasting works.
+
+Need to ensure dtype float64. So compute X as float64.
+
+Implementation: def pairwise_sq_dist(X): convert to float64? Input already float64.
+
+Compute sq_norm = np.sum(X * X, axis=1).reshape(-1,1) + np.sum(X * X, axis=1).reshape(1,-1) - 2 * X.dot(X.T). Then maybe clip negative zeros to zero: np.maximum(sq_norm, 0.0). But due to floating errors negative small numbers may appear. Should we? Might not be needed.
+
+Return result.
+
+Let's produce file.
+
+Also we can use np.einsum for dot product: X @ X.T.
+
+Let's produce final code.
+
+Also we can optionally use numba for speed but vectorized is fine.
+
+Let's produce final answer.
+

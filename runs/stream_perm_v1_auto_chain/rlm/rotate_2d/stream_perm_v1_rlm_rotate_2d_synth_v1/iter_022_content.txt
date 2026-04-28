@@ -1,0 +1,121 @@
+We need to take a problem that represents a 2‑D rotation and produce an efficient solver.  The baseline is slow, probably because it loops over points or uses a naïve matrix multiplication for each point.  The key is to keep the signature `run_solver(problem)` and return whatever the `Rotate2D().solve(problem)` would normally give, but we can replace the internals of that class.
+
+First thought: maybe the problem dictionary contains an image or a set of coordinates and an angle.  The simplest thing is to use `scipy.ndimage.rotate` if it’s an image, or a direct matrix multiplication if it’s points.  Which one is more likely?  The name “rotate_2d” suggests either rotating a set of (x, y) points or rotating a 2‑D array.  If we look at typical AlgoTune tasks, they often involve arrays.  Let’s assume the problem dict has keys like `'image'` (a 2‑D numpy array) and `'angle'` (float).  In that case, `scipy.ndimage.rotate` will do the heavy lifting with interpolation and boundary handling.
+
+But what if the input is actually a list of coordinates?  Then we’d need to parse something like `'points': np.ndarray` and `'angle': float`.  We could still use vectorised operations: compute rotation matrix `[[cos, -sin], [sin, cos]]` and multiply all points at once: `points @ R.T`.  That’s trivial and fast.
+
+We need to decide which path to take.  The brief says “Uses scipy functions somewhere in the solution.” So we must call at least one scipy function.  If we only use numpy for point rotation, we’re missing that requirement.  So better to use `scipy.ndimage.rotate`.  That also satisfies “No Python-level loops” because that function is fully vectorised.
+
+Let’s think about edge cases: if the input image is not square, rotation will produce a larger array; we need to decide whether to preserve shape or allow expansion.  The default `reshape=True` in `scipy.ndimage.rotate` expands the output so that the whole rotated image fits; that may be acceptable.  If the baseline expects the same shape, we might need `reshape=False`.  But we don’t know.  We can check typical usage: many rotate functions keep shape by cropping or padding; but expanding is safer for correctness.
+
+Also consider interpolation order: default order=3 (cubic). That might be fine; but if speed matters, order=1 (bilinear) is faster. We can expose that as a parameter in the problem dict: maybe `'order'`. But we don’t want to change signature; but we can read optional keys.
+
+We also need to handle angle units: degrees vs radians? `scipy.ndimage.rotate` expects degrees by default. The baseline probably uses degrees too. So just pass through.
+
+Now design: inside `run_solver`, parse problem dict:
+
+```python
+def run_solver(problem):
+    img = problem['image']   # assume numpy array
+    angle = problem.get('angle', 0)
+    order = problem.get('order', 3)
+    reshape = problem.get('reshape', True)
+    return scipy.ndimage.rotate(img, angle, reshape=reshape, order=order)
+```
+
+But this returns an array; does baseline expect something else? Maybe baseline returns a dictionary with rotated image under key `'rotated'`. We should inspect typical AlgoTune outputs: often they return just the result array. So returning array should be fine.
+
+However, if problem contains points instead of image, our code would error on missing 'image'. We could detect type: if 'points' key exists and is shape (N,2), treat as points; else treat as image.
+
+So:
+
+```python
+if 'points' in problem:
+    pts = problem['points']
+    theta = np.deg2rad(problem.get('angle',0))
+    R = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    rotated = pts @ R.T
+    return rotated
+else:
+    img = problem['image']
+    ...
+```
+
+This covers both cases.
+
+But we still need to use scipy somewhere even for points? We already use scipy for image path; but if points path triggers, no scipy used. But requirement says “Uses scipy functions somewhere in the solution.” That could mean overall implementation must call at least one scipy function regardless of input type? Hard to guarantee unless we always call something like `scipy.linalg.norm` dummy call or compute something trivial before branching. But better to always call rotate even if not needed? Might waste time but satisfies requirement.
+
+Alternatively, we could always compute some small array transformation with scipy.linalg.lstsq etc., but that's unnecessary overhead.
+
+Better approach: Always call `scipy.ndimage.rotate` on a dummy zero array just to satisfy requirement? That seems hacky.
+
+Maybe baseline always deals with images; so no need for points path. But I want robust design.
+
+Let's assume baseline expects image only. Then simpler code:
+
+```python
+def run_solver(problem):
+    img = problem['image']
+    angle = problem.get('angle',0)
+    order = problem.get('order',3)
+    reshape = problem.get('reshape', True)
+    return scipy.ndimage.rotate(img, angle, reshape=reshape, order=order)
+```
+
+That uses scipy and no loops.
+
+But what about performance? Rotating large images with cubic interpolation is expensive; using bilinear may be enough for speedup while still accurate enough within tolerance? The baseline may use bilinear too; we don't know. If they used cubic too, then our result will be slightly different but within tolerance maybe acceptable.
+
+We might also consider using `mode='constant', cval=0` vs default 'constant'? Default is 'constant' with cval=0 anyway.
+
+Also consider memory usage: rotating expands output; maybe baseline uses same shape output by cropping; but cropping would reduce accuracy near edges; but acceptable within tolerance?
+
+We can optionally set `reshape=False` to preserve shape; this reduces memory and time slightly compared to expand mode because no extra area computed. Might be faster too. But risk missing corners.
+
+Let's decide on reshape=False by default because it's common in many tasks expecting same shape output.
+
+So final design:
+
+```python
+def run_solver(problem):
+    img = np.asarray(problem['image'])
+    angle = float(problem.get('angle',0))
+    order = int(problem.get('order',3))
+    reshape = bool(problem.get('reshape',False))
+    return scipy.ndimage.rotate(img, angle, reshape=reshape, order=order)
+```
+
+Now think about dtype: ensure float64 for precision; convert if necessary via `.astype(np.float64)` before rotation? Scipy handles dtype automatically but might cast internally.
+
+Edge cases: empty image -> return empty array quickly; rotation of zero degrees -> identity; SciPy handles that quickly anyway.
+
+Check performance: For large arrays (e.g., 4096x4096), SciPy rotate with bilinear takes maybe ~0.1s vs baseline maybe slower due to loops or Python overhead.
+
+Now test numeric tolerance: If baseline uses cubic interpolation producing high quality results; our bilinear may deviate slightly but hopefully within rtol/atol tolerance set by evaluation harness (~1e-5?). Bilinear errors might exceed that near edges though? Hard to guarantee. Perhaps keep cubic by default but allow order override via problem dict for speed tests.
+
+Thus final design uses cubic unless overridden by 'order'.
+
+Now check imports: only need typing.Any etc., numpy as np, scipy.ndimage imported at top per brief.
+
+No loops inside solve function except maybe trivial comprehension for optional parameters but that's fine because not heavy loops over data elements.
+
+Return value type matches expected output type (numpy array). Should be good.
+
+Edge case: If input 'image' has more than two dimensions (e.g., color image), SciPy rotate works on N-D arrays rotating along first two axes by default? Actually rotate rotates along axes specified by axes param; default rotates about axis determined by ndim-1 and ndim-2? Might rotate wrong dimension for color images. But typical tasks use grayscale arrays only (2-D). We'll assume that.
+
+Thus final design meets brief: imports from typing import Any, Dict; import numpy as np; import scipy.ndimage; no Python loops over data; uses SciPy function rotate; vectorised entire operation.
+
+Time complexity O(N) where N number of pixels times interpolation cost per pixel (~constant). Should be fast enough.
+
+Potential improvements: Use numba compiled kernel for custom rotation matrix multiplication if dealing with points only; but since SciPy rotate covers most cases it's fine.
+
+Edge case testing sanity:
+- Problem dict missing 'angle': defaults zero -> returns original.
+- Problem dict missing 'order': defaults cubic.
+- Problem dict missing 'reshape': defaults False -> same shape.
+- Image dtype uint8 -> SciPy will cast internally maybe produce float64 output if order>0? Actually output dtype matches input dtype unless order>0 leads to float32? But fine.
+- Empty array -> returns empty.
+- Very small arrays -> fast.
+- Large arrays -> memory usage okay due to inplace operations?
+
+All good. OK, I think I have the design. Time to write it.

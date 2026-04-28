@@ -1,0 +1,19 @@
+We need to replace the triple loop with efficient numpy operations. Standard formula: pairwise squared distance matrix: D = (X**2).sum(axis=1)[:,None] + (X**2).sum(axis=1)[None,:] - 2*X.dot(X.T). This yields shape (N,N). Works with float64.
+
+But must ensure non-negative due to numerical errors. Use np.maximum(D, 0.0). But not necessary.
+
+Let's implement:
+
+def pairwise_sq_dist(X):
+    # check shape, dtype
+    X = np.asarray(X, dtype=np.float64)
+    # compute
+    sq = np.sum(X**2, axis=1)
+    D = sq[:,None] + sq[None,:] - 2*np.dot(X, X.T)
+    # ensure numeric stability
+    D = np.maximum(D, 0.0)
+    return D
+
+That's it. Should be fine. Provide imports. Ensure we don't modify input.
+
+Let's produce final file.

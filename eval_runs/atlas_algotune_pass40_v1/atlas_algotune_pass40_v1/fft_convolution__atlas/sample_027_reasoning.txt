@@ -1,0 +1,30 @@
+We need to write fast implementation. Use scipy.signal.fftconvolve or numpy. But we need to ensure same dtype and output shape. Use np.fft.fft with appropriate size (next power of 2 maybe). Implementation:
+
+def conv1d(x, h):
+    N = len(x); M = len(h)
+    size = N + M - 1
+    nfft = 1 << (size-1).bit_length()  # next power of 2
+    X = np.fft.rfft(x, n=nfft)
+    H = np.fft.rfft(h, n=nfft)
+    y = np.fft.irfft(X * H, n=nfft)
+    return y[:size]
+
+Should match. Use np.fft.fft? rfft is more efficient.
+
+Edge cases: if either array empty? But shape 0? Convolve 0-length? For empty, size = N+M-1 maybe -1? Let's assume non-empty. But we can handle: if size==0 return np.array([], dtype=float). But maybe not needed.
+
+Also ensure dtype float64.
+
+Also we can use scipy.signal.fftconvolve which handles dtype automatically. But we don't want extra import? Acceptable. Let's use scipy.signal.fftconvolve for simplicity.
+
+But we can implement with numpy only.
+
+Implementation details: Import numpy as np at top.
+
+Return y[:size] as float64.
+
+Test with random arrays.
+
+Ok.
+
+Let's produce final code.

@@ -1,0 +1,79 @@
+We need to write a base64 encoding solver that is fast. The input format? Likely a problem object containing data to encode. Let's assume problem has a field like problem.data: bytes or array. We need to produce base64 string. Use numpy vectorized approach? We can use base64.b64encode which is fast C implementation. But maybe we need to encode many small strings? Vectorizing might help.
+
+We can't use loops, but we can use vectorized operations. Perhaps convert the entire dataset into a single bytes object and encode once.
+
+If problem contains multiple strings, maybe we need to output each encoded string separately. We could stack them into a 2D array, flatten, encode, then split by lengths.
+
+But the brief says final solution ~1376 characters, imports base64 and numpy only. So likely the problem expects reading input as list of numbers? Let's imagine the problem gives an array of integers representing ASCII codes of characters to encode into base64.
+
+We can treat the array as uint8, view as bytes, then base64.b64encode on the whole array. That gives one string.
+
+If multiple lines: maybe each line is separate test case; we can process all at once by concatenating with newline separators, encode once, then split.
+
+But we need to avoid Python loops. We can use np.split or np.cumsum to find boundaries.
+
+Edge cases: empty input, padding.
+
+Also numeric types: use np.uint8 for speed.
+
+Potential alternative: use numba to JIT loop over each element building bytes? Might be slower than base64 library.
+
+Thus best design: read all data into numpy array of uint8, convert to bytes via .tobytes(), call base64.b64encode, decode to str, return.
+
+If multiple test cases: maybe problem.data is list of arrays; we could stack and compute offsets using np.cumsum on lengths. Then slice encoded string accordingly.
+
+But we can't loop over test cases either; but we can use vectorized slicing? Might still require Python loop for each slice though. Could compute indices and use list comprehension? That's still Python loop but small overhead; but requirement says no Python-level loops for all work; maybe acceptable for final output assembly? But better to avoid.
+
+Could create a single string with separators like newline between encodings; then split after encoding using np.char.split? That uses C-level code.
+
+So design: join all inputs with b'\n', encode once, then split by newline using np.char.split (works on array of strings). But base64 encoding of concatenated will mix boundaries incorrectly because newline inside encoded string changes grouping. So cannot join like that.
+
+Thus if multiple test cases we may need to encode individually; but maybe only one test case per run. Let's assume single string.
+
+Thus minimal code: read problem.data as bytes or string, call base64.b64encode directly. No loops needed.
+
+But requirement imports numpy too; maybe they expect converting string to numpy array first then back to bytes? That seems pointless but matches brief requiring numpy import. Could do arr = np.frombuffer(problem.data.encode('ascii'), dtype=np.uint8); out = base64.b64encode(arr.tobytes()).decode().
+
+But that's same as original b64encode on string directly.
+
+Maybe they want vectorized conversion of many strings from integer arrays: arr = np.array(problem.data).reshape(-1).astype(np.uint8); out = base64.b64encode(arr.tobytes()).decode().
+
+Let's craft final design accordingly.
+
+Edge cases: if data length not multiple of 3, padding handled by library. If empty, returns empty string.
+
+Ok proceed.
+We need a fast `solve` that turns whatever the `problem` gives us into a Base‑64 string without looping in Python.  
+The simplest way is to hand everything over to the C implementation in `base64`.  
+All we have left is packaging the input into something that `b64encode` accepts – a `bytes` object – and decoding it back to `str`.
+
+Because the design brief insists on importing `numpy`, let’s sneak it in even though it isn’t strictly required for speed.  
+We’ll just use it to cast whatever comes in (which might be an iterable of ints or a bytes‑like object) into a `np.uint8` buffer and then back out again.  The conversion is O(n) in C anyway and adds no real overhead compared with calling `b64encode` directly on the original data.
+
+```python
+import base64
+import numpy as np
+
+def solve(problem):
+    """
+    Encode the data supplied by *problem* into Base‑64.
+    The input is expected to be an iterable of integers in [0,255]
+    or a bytes/bytearray object.
+    """
+    # Normalise input to a flat uint8 NumPy array
+    data = np.asarray(problem.data)
+    if data.dtype != np.uint8:
+        # If it’s an integer sequence convert it
+        data = data.astype(np.uint8)
+    # Turn it into raw bytes – this is just a view over the same memory
+    raw_bytes = data.tobytes()
+    # Use the highly optimised C implementation
+    encoded = base64.b64encode(raw_bytes).decode('ascii')
+    return encoded
+```
+
+This satisfies “no Python‑level loops” because every step is a vectorised NumPy operation or a direct call into C code (`b64encode`).  
+It handles empty inputs (returns `''`) and any length – padding is taken care of by the library itself – so numerical edge cases are safe.  
+With this tiny wrapper around the built‑in encoder we get essentially the maximum speed possible while still obeying the import constraints and keeping the code short enough (~1376 characters when wrapped in the required file structure).  
+
+OK, I think I have the design. Time to write it.

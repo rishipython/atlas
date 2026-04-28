@@ -1,0 +1,37 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. The straightforward vectorized approach uses broadcasting or dot product: D = np.sum(X**2, axis=1)[:,None] + np.sum(X**2, axis=1)[None,:] - 2*np.dot(X, X.T). That yields squared distances. Use np.dot. Ensure dtype float64. The input is float64. This is standard. For large N, memory may be large but that's fine.
+
+We must produce a complete file with imports, function definition. Should ensure no other side effects.
+
+We must use the same function name pairwise_sq_dist.
+
+Also must be careful about numeric closeness: subtracting dot product may produce negative small numbers due to rounding, set to zero if negative? In typical algorithm, use np.maximum(0, D) to avoid negative. But if the test expects exact output, maybe they compare with np.allclose. Negative small values acceptable? But may cause issues if they check equality? The problem statement: "returns a numerically-close result on the evaluator's test matrices" So small negatives fine. But we can clip to zero for safety.
+
+Also we might consider using np.linalg.norm with axis 1 but that's not efficient.
+
+Thus implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X * X, axis=1)
+    dist_sq = sq_norms[:, None] + sq_norms[None, :] - 2 * X.dot(X.T)
+    # Ensure non-negative
+    dist_sq = np.maximum(dist_sq, 0.0)
+    return dist_sq
+
+Return dtype float64. That should be fine.
+
+We must produce a full Python file. Let's write:
+
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    ...
+    return dist_sq
+
+Also include docstring same as before.
+
+Return shape (N,N). Should be fine.
+
+Edge cases: N=0? If X empty? Should handle. If X shape (0,D) returns (0,0). Implementation works: sq_norms empty, dot product empty, broadcasting returns (0,0). Good.
+
+Let's produce final code.

@@ -1,0 +1,34 @@
+We need to produce a faster implementation. Use vectorized formula: distance^2 = sum(X^2) + sum(X^2) - 2 X X^T. For numpy.
+
+Edge cases: D may be large; but computing X @ X.T works. Use broadcasting: sum of squares per row: row_norms = np.sum(X**2, axis=1). Then distances = row_norms[:,None] + row_norms[None,:] - 2 * X @ X.T. Ensure dtype float64.
+
+Also ensure non-negative due to numerical errors: maybe clip to zero: np.maximum(dist, 0). Use np.maximum to avoid negative small values.
+
+Return dtype float64.
+
+Also we can use np.dot.
+
+Let's produce final file.
+
+Also we must keep function signature same.
+
+Implementation:
+
+```
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    dist = sq_norm[:,None] + sq_norm[None,:] - 2*np.dot(X, X.T)
+    # numerical errors
+    dist[dist<0] = 0
+    return dist
+```
+
+We can also use np.maximum(dist, 0.0, out=dist). That is faster.
+
+Return.
+
+Also import numpy at top.
+
+Now produce final code block.
+

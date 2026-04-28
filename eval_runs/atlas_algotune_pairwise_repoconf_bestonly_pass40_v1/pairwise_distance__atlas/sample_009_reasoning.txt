@@ -1,0 +1,17 @@
+We need to write efficient implementation. Standard formula: squared distances matrix = A + A.T - 2*X @ X.T, where A is diagonal of squared norms. Use numpy broadcasting. Must return same dtype float64. Ensure symmetrical and zero diagonal.
+
+Implementation: compute norms = np.sum(X**2, axis=1) shape (N,), then out = norms[:,None] + norms[None,:] - 2 * X @ X.T. Ensure dtype float64. For safety, use np.asarray(X, dtype=np.float64). Use np.maximum(out, 0) to avoid negative due to numerical errors. Return out.
+
+Edge cases: X empty? shape (0, D). Then out shape (0,0). Implementation should handle.
+
+Return dtype float64.
+
+Let's produce code file with imports, function definition.
+
+Also we can use np.einsum for dot product maybe slower.
+
+Return out.
+
+Also we can set out = np.maximum(out, 0.0) to avoid negative small values.
+
+Ok.

@@ -1,0 +1,29 @@
+We need to implement fast conv1d using FFT. We can use numpy. We can use np.fft.fft or scipy.signal.fftconvolve. But we need to ensure same output shape: full convolution. For real input, we can use rfft. But we can just use np.fft.fft for simplicity.
+
+We need to handle length: convolution length L = N+M-1. We need to zero-pad to at least next power of two >= L for efficient FFT. Use np.fft.fftpack? np.fft.fft is fine.
+
+Implementation: compute nfft = 1 << (L-1).bit_length() maybe.
+
+Compute X = np.fft.fft(x, nfft). H = np.fft.fft(h, nfft). Multiply. y = np.fft.ifft(X*H).real. Then truncate to length L.
+
+But need to ensure dtype float64. Use np.float64.
+
+Edge cases: if inputs may be complex? Problem says float64. So fine.
+
+Potential accuracy: use rfft and irfft? But fine.
+
+Alternatively, use scipy.signal.fftconvolve which handles real arrays and returns float64. But we can use numpy only.
+
+We need to preserve numeric closeness: using float64 should be fine.
+
+Implement conv1d as described.
+
+Also need to ensure memory: for large arrays, nfft may be huge but acceptable.
+
+Return y[:L].
+
+Let's produce code.
+
+Also we may implement a fallback to direct if inputs small: maybe use np.convolve? But not necessary.
+
+Let's produce final code.

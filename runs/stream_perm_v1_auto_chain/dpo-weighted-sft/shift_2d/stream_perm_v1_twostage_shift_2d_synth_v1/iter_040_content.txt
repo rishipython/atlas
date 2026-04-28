@@ -1,0 +1,167 @@
+We need to figure out what shift_2d does. Let's guess: probably given a 2D array and shift vector, we shift the array. The baseline is slow; we want fast vectorized solution using scipy.ndimage shift. We must import logging, random, typing, numpy, scipy.ndimage. No Python loops. Use scipy functions somewhere.
+
+Let's think: Problem likely contains image and shift parameters. The solver probably returns shifted image. Could be multiple shifts? Maybe problem dict contains 'image', 'shift', etc.
+
+We need to design run_solver that takes problem dict and returns result.
+
+We want to use scipy.ndimage.shift for each channel maybe. But no loops: if multiple images? Could use np.stack and apply shift via ndimage.map_coordinates? That still loops internally but vectorized.
+
+But requirement: no Python-level loops. So we cannot iterate over images in Python; but we can use np.apply_along_axis? That's still looped but in C? Might be okay.
+
+But simpler: assume single image, single shift. Then just call scipy.ndimage.shift directly.
+
+But maybe problem has multiple shifts? We can handle general case by stacking and using broadcasting.
+
+Let's think about design: We'll parse problem dict keys: 'data' maybe numpy array shape (H,W) or (H,W,C). 'shift' maybe tuple of floats (dy, dx). We'll also support 'mode' optional.
+
+We will implement run_solver that logs start, random seed maybe used for something? Not sure why random imported; maybe for generating random seeds for reproducibility? Could be used for generating noise or something.
+
+But design brief says imports include logging, random, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+So we need to use random somewhere; maybe to set seed for reproducibility of some randomness in algorithm? But shift_2d likely deterministic; but we can use random to generate jitter? Hmm.
+
+Maybe baseline uses random to fill missing values? Not sure.
+
+But we can simply import random but not use it; but requirement might be to use it somewhere else; but not necessary.
+
+Better to incorporate random.seed(0) at start for reproducibility of any stochastic part like generating noise or test data inside solver if needed.
+
+But since it's just shifting, no randomness needed; but we can still call random.seed(42) at start to satisfy import usage.
+
+Now algorithm: Use scipy.ndimage.shift which handles subpixel shifts with interpolation. It uses order parameter default 3 (cubic). We can set order=1 for linear or 3 for cubic. Use mode='nearest' or 'constant'.
+
+We must ensure output shape same as input.
+
+Implementation:
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    logging.info("Running shift_2d solver")
+    data = problem.get('data')
+    if data is None:
+        raise ValueError("Problem must contain 'data'")
+    shift = problem.get('shift', (0,0))
+    mode = problem.get('mode', 'nearest')
+    order = problem.get('order', 3)
+    # Ensure data is numpy array
+    arr = np.asarray(data)
+    # Use scipy.ndimage.shift
+    shifted = scipy.ndimage.shift(arr, shift=shift, mode=mode, order=order)
+    return shifted
+
+That's simple vectorized with no loops. Use numpy and scipy.ndimage. Logging used. Random seed set at start of function maybe.
+
+Edge cases: if data is 1D or 3D with channels last dimension; shift applies along first axes only; but okay.
+
+If shift is list of length equal to arr.ndim? We pass as tuple; works.
+
+Now test: If arr shape (H,W,C), shift will shift all channels equally because shift applies across all axes including channel axis? Actually ndimage.shift expects shift per axis; if length less than arr.ndim it will apply same shift to all axes? Wait docs: "shift" sequence of floats of length arr.ndim or scalar". If scalar, same shift applied to all axes. So if we pass (dy,dx) and arr has 3 dims (H,W,C), then length mismatch -> error. So we need to handle that: if arr.ndim>2 and len(shift)==2 then apply only first two axes and keep channel unchanged. We can slice array into spatial dims and channels separately then stack back.
+
+Implementation:
+
+if arr.ndim == 3 and len(shift)==2:
+    spatial = arr[..., :].reshape(arr.shape[0], arr.shape[1], -1)
+    # Actually easier: apply shift on first two axes using ndimage.shift with mode etc.
+    shifted_spatial = scipy.ndimage.shift(arr[...,0], ...)? Not good.
+Better approach: For each channel separately using vectorized map_coordinates with broadcasting across channels: we can compute coordinates grid once and then map_coordinates with axis=... but that's complex.
+
+Simpler: If arr.ndim==3 and len(shift)==2:
+    # reshape to (H,W,C) -> treat each channel as separate image
+    # We can use np.moveaxis to bring channel last.
+    # Then use scipy.ndimage.shift on each channel via broadcasting by specifying order=..., mode...
+    # But ndimage.shift can't broadcast over channels automatically.
+We could apply shift on the entire array by providing a tuple of length 3 where third element is 0: e.g., shift=(dy,dx,0). That will leave channel unchanged because shifting by 0 along channel axis does nothing. So do that:
+
+if len(shift)==2:
+   full_shift = (*shift, 0)
+else:
+   full_shift = shift
+
+Then call ndimage.shift(arr, full_shift,...). That works even for higher dims where last dims are channels or other features; shifting by zero won't affect them.
+
+So implement:
+
+if isinstance(shift,(list,tuple)):
+   if len(shift)==arr.ndim:
+       full_shift=tuple(shift)
+   elif len(shift)==arr.ndim-1:
+       full_shift=tuple(list(shift)+[0])
+   else:
+       raise ValueError
+else:
+   full_shift=(float(shift),)*arr.ndim
+
+Yes.
+
+Also handle dtype float32 vs float64; keep same dtype as input by passing output dtype param maybe not needed as ndimage.shift returns same dtype as input unless order >1 which may cast to float64 temporarily then cast back? But fine.
+
+Now about performance: ndimage.shift uses C code and FFT maybe for subpixel shifts? It's efficient enough.
+
+No loops used except inside library calls. Good.
+
+Edge cases: negative shifts allowed; fractional shifts fine.
+
+Return type numpy array same shape as input.
+
+Now incorporate logging at start and end maybe with time measurement using time.perf_counter from time module imported implicitly? Not required but could help debug speed but not necessary.
+
+Random seed not used; but we could generate some noise added after shifting for demonstration; but not needed. But requirement didn't say must use random; just import it. It's okay not used though might be flagged by linter but fine.
+
+But design brief didn't require using random; just import it. So fine.
+
+Now final code file includes imports at top as specified plus function run_solver defined accordingly. Also include __all__ maybe not needed.
+
+Also add type hints from typing.Any Dict etc at function signature as requested? They said signature same as baseline which likely run_solver(problem). So keep that signature without type hints optional but fine to include annotation like def run_solver(problem: Dict[str, Any]) -> np.ndarray:.
+
+Add docstring minimal perhaps not required but fine.
+
+Ok finalize design summary before handoff.
+We need to replace the slow Shift2D solver with a fast vectorised implementation that still honours the interface `run_solver(problem)` and returns an optimal solution quickly while staying within the constraints given in the brief – no Python loops, heavy reliance on NumPy/Scipy functions, a handful of imports including `logging`, `random`, `typing`, `numpy`, `scipy.ndimage`.
+
+First thought was a straight‑forward wrapper around `scipy.ndimage.shift`. That gives us a single BLAS‑level call per image – perfect speedwise – so I’ll start there. The only wrinkle is that the baseline might accept images with more than two dimensions (e.g., colour images with shape `(H,W,C)` or even `(B,H,W,C)` for batches). The `ndimage.shift` function expects a `shift` tuple whose length matches the number of dimensions of the array being shifted. If the caller supplies just a two‑element tuple `(dy,dx)` for a three‑dimensional array we’ll get an error because it will try to apply that pair of shifts along all three axes instead of leaving the third axis untouched. To avoid this I’ll normalise the supplied `shift` argument:
+
+* If the user passes a scalar → broadcast it across all axes.
+* If they pass a sequence whose length matches `arr.ndim` → use it verbatim.
+* If they pass a sequence whose length is one less than `arr.ndim` → append a zero so that the extra axis stays fixed.
+* Anything else → raise an informative error so callers know what they did wrong.
+
+With that logic in place I can safely call:
+
+```python
+scipy.ndimage.shift(arr,
+                    shift=full_shift,
+                    mode=mode,
+                    order=order)
+```
+
+The parameters `mode` and `order` are optional in the problem dict – defaulting respectively to `'nearest'` and cubic interpolation (`order=3`). Using cubic gives good visual quality while still being fast enough for most image sizes; users who care about speed can override it if they wish.
+
+I also want to satisfy the “no Python‑level loops” rule strictly – everything from reading the input dictionary through converting it into a NumPy array down to calling `ndimage.shift` happens in compiled code or via NumPy’s own vectorised routines. No explicit loops are written in Python anywhere in this function body except possibly very small sanity checks which are trivial overhead compared to the heavy lifting done inside SciPy’s C implementation.
+
+Logging is included at entry so users see when the solver starts running – useful for debugging large pipelines where many solvers are chained together:
+
+```python
+logging.info("Running Shift2D solver")
+```
+
+The import list is exactly what was requested:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+The `random` module isn’t actually used in this implementation – importing it satisfies the brief without affecting performance or correctness because any calls would be negligible compared to the heavy SciPy operation anyway. If future extensions require stochastic behaviour (e.g., adding Gaussian noise after shifting) this import will already be present and ready for use without further changes.
+
+Edge cases I’ve considered:
+
+* **Empty arrays** – `ndimage.shift` handles zero‑size arrays gracefully.
+* **Non‑numeric inputs** – converting via `np.asarray` will raise an exception early if data isn’t numeric.
+* **Mismatched shift lengths** – caught by my sanity check raising a clear ValueError.
+* **Different dtypes** – output keeps the same dtype as input unless interpolation forces conversion internally (which SciPy handles automatically).
+
+All these checks are lightweight relative to the core operation so they won’t hurt performance significantly while giving robust behaviour in edge cases such as very small images or unexpected input shapes.
+
+OK, I think I have the design. Time to write it.

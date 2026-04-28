@@ -1,0 +1,72 @@
+We need to rewrite the solver so it can take the incoming `problem` dictionary and spit out a rotated image without any Python‑level loops and with the help of SciPy’s fast routines. The key is to keep the code lean and vectorised – just one call to `scipy.ndimage.rotate` per image – while still handling the usual edge cases that people expect from a rotation helper.
+
+Let’s sketch what the `problem` dict will look like. The baseline `Rotate2D` class probably pulls out an `'image'` key (a NumPy array), an `'angle'` in degrees, and maybe a boolean `'reshape'` flag that tells whether the output should be padded to fit the whole rotated rectangle (`reshape=True`) or clipped to the original bounds (`reshape=False`). If any of those keys are missing we’ll supply sensible defaults: `angle=0`, `reshape=False`.
+
+The simplest implementation would be:
+
+```python
+def run_solver(problem):
+    img = np.asarray(problem['image'])
+    angle = problem.get('angle', 0)
+    reshape = problem.get('reshape', False)
+    out = scipy.ndimage.rotate(img, angle,
+                               reshape=reshape,
+                               order=1,
+                               mode='nearest')
+    return {'rotated': out}
+```
+
+But we have to make sure we stay within the constraints:
+
+* **No loops** – we’re fine.
+* **Use SciPy** – yes.
+* **Imports** – we must include `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`. Even if `random` isn’t used we’ll import it because the brief explicitly lists it.
+* **Return format** – The baseline probably returns a dictionary with a key like `'rotated'`. We’ll follow that convention.
+* **Preserve dtype** – If the input is integer (e.g., an 8‑bit image), SciPy will cast to float64 by default. That’s usually acceptable for rotation, but some callers might expect the same dtype back. We can cast back at the end:
+
+```python
+out = out.astype(img.dtype)
+```
+
+* **Interpolation order** – The baseline may use bilinear (`order=1`). That’s a good trade‑off between speed and quality; cubic (`order=3`) is slower and not needed unless higher quality is required.
+* **Mode** – Using `'nearest'` keeps edges simple; `'constant'` would pad zeros which can introduce artifacts when rotating near borders. `'nearest'` matches many common implementations.
+* **Angle normalisation** – SciPy handles arbitrary angles fine; no need to wrap between 0–360.
+* **Batch handling** – If someone passes a stack of images in shape `(N,H,W)` or `(N,H,W,C)`, SciPy’s `rotate` will treat the first two axes as spatial and leave the rest untouched, effectively rotating each channel independently but still processing them together without an explicit Python loop. That satisfies “no loops” even for batches.
+
+With all that in mind, here’s a compact implementation that meets every requirement:
+
+```python
+import random
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    # Extract inputs with defaults
+    img = np.asarray(problem["image"])
+    angle = float(problem.get("angle", 0))
+    reshape_flag = bool(problem.get("reshape", False))
+
+    # Perform rotation using SciPy's highly optimised routine
+    rotated = scipy.ndimage.rotate(
+        img,
+        angle,
+        reshape=reshape_flag,
+        order=1,
+        mode="nearest",
+        prefilter=False,
+    )
+
+    # Preserve original dtype if possible
+    try:
+        rotated = rotated.astype(img.dtype)
+    except Exception:
+        pass
+
+    return {"rotated": rotated}
+```
+
+This version uses only vectorised operations, calls into SciPy for heavy lifting, respects the expected input format, and keeps the code short enough that it can comfortably fit within a ~5097‑character file when combined with any necessary boilerplate or helper functions. 
+
+OK, I think I have the design. Time to write it.

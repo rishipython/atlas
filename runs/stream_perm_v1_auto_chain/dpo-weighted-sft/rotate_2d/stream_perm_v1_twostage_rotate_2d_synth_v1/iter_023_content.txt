@@ -1,0 +1,102 @@
+We need to implement rotate_2d solver. The baseline uses a class Rotate2D with solve. We need to replace body with faster implementation. Use numpy and scipy.ndimage. No loops. Use vectorized operations. Let's think: rotate 2D likely rotates a 2D array by an angle? The problem input format unknown; maybe a dict with 'image', 'angle', etc. Let's assume problem is dict with 'image': 2D numpy array, 'angle': float in degrees. We need to rotate image accordingly.
+
+The baseline might use scipy.ndimage.rotate or similar but slow due to overhead? Actually baseline might use naive loops. We can use scipy.ndimage.rotate which is efficient, but we must avoid loops.
+
+We need to produce run_solver function that returns solution: maybe rotated image. Use logging, typing.Any, Dict.
+
+We need to keep same function name and signature: run_solver(problem). So we can implement inside that function.
+
+We should import logging, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+We should avoid loops: just call scipy.ndimage.rotate with order=1 or 3? For speed, order=1 bilinear is fine.
+
+Edge cases: angle could be negative; we must handle shape changes? ndimage.rotate can expand output; we can set reshape=True or False. Probably keep same shape as input? The baseline may preserve shape. We could set reshape=False to keep same shape and crop.
+
+Also we may want to precompute sin/cos and use affine transform manually? But that might be slower than ndimage.
+
+Let's think about potential numeric issues: rotation may produce NaNs outside boundaries; we can set mode='nearest' or 'constant', cval=0. Use mode='nearest' for speed.
+
+Also we should consider dtype: float32 vs float64. Input likely float32; keep dtype same.
+
+No loops: just call function.
+
+Potential alternative: use skimage.transform.rotate but that's not allowed (skimage not in list). So use scipy.ndimage.rotate.
+
+Also we can use np.rot90 for multiples of 90 degrees, which is fast and no interpolation. But if angle arbitrary, need general rotation.
+
+Maybe we can detect if angle % 90 == 0 and use np.rot90 for speed; else use ndimage.rotate.
+
+Edge cases: large arrays (e.g., 1024x1024). ndimage.rotate uses FFT internally for large arrays? Might be okay.
+
+Also we might consider using JAX or Numba but requirement says uses scipy functions somewhere; so must include scipy.ndimage usage somewhere. So we will use it directly.
+
+We also need to ensure no Python-level loops; np.rot90 also vectorized but uses loop internally? It's fine as no explicit loops in our code.
+
+Now design:
+
+def run_solver(problem):
+    # extract image and angle
+    img = problem.get('image')
+    angle = problem.get('angle', 0)
+    # maybe other keys like 'reshape', 'order'
+    reshape = problem.get('reshape', True)
+    order = problem.get('order', 1)
+    mode = problem.get('mode', 'nearest')
+    # log
+    logging.debug(f"Rotating image of shape {img.shape} by {angle} degrees")
+    # if angle multiple of 90
+    if angle % 90 == 0:
+        k = int(round(angle / 90)) % 4
+        rotated = np.rot90(img, k=k)
+    else:
+        rotated = scipy.ndimage.rotate(img, angle=angle, reshape=reshape,
+                                       order=order, mode=mode)
+    return rotated
+
+But note: angle % 90 works only for floats; we should check near integer multiples within tolerance due to float errors. Use np.isclose(angle % 90, 0) or round(angle/90). For negative angles also works due modulo negative? Use k = int(round(angle/90)) % 4 ensures correct orientation.
+
+Also ensure dtype preserved: np.rot90 preserves dtype; ndimage.rotate returns float64 by default if input is float32? It may cast to float64; we can cast back to original dtype after rotation if needed: rotated.astype(img.dtype).
+
+Also maybe set prefilter=False for order <=1 to speed up.
+
+So final code:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    img = problem['image']
+    angle = problem.get('angle', 0)
+    reshape = problem.get('reshape', True)
+    order = problem.get('order', 1)
+    mode = problem.get('mode', 'nearest')
+    
+    logging.debug(f"Running rotate_2d on shape {img.shape} with angle {angle}")
+    
+    if isinstance(angle, (int, float)):
+        # check near multiple of 90
+        if np.isclose(angle % 90, 0):
+            k = int(round(angle / 90)) % 4
+            rotated = np.rot90(img, k=k)
+            return rotated.astype(img.dtype)
+    
+    rotated = scipy.ndimage.rotate(img,
+                                   angle=angle,
+                                   reshape=reshape,
+                                   order=order,
+                                   mode=mode,
+                                   prefilter=(order > 1))
+    return rotated.astype(img.dtype)
+
+Edge cases: if img has multiple channels (e.g., HxWxC), ndimage.rotate rotates over first two axes only; need axis param? But default rotates over first two axes; for color images might want axis=(0,1). We'll assume grayscale.
+
+Ok final design seems good.
+
+Now sanity check: If angle negative -45 -> k=int(round(-45/90))%4 => -0.5 round -> -1 => -1%4=3 -> rot90 by k=3 rotates clockwise by -45? Actually rot90 rotates counter-clockwise by k*90 degrees. For -45 not multiple of 90 so fallback to ndimage. Good.
+
+If angle close to multiple but due floating error e.g., 270.0000001 -> mod gives small epsilon; isclose handles it.
+
+Now final handoff sentence.
+OK, I think I have the design. Time to write it.

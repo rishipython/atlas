@@ -1,0 +1,26 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    # Ensure inputs are 1‑D float64 arrays
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+
+    N = x.size
+    M = h.size
+    L = N + M - 1  # length of the full convolution
+
+    # Pad to the next power of two for efficient FFT
+    n_fft = 1
+    while n_fft < L:
+        n_fft <<= 1
+
+    # Compute real FFTs, multiply, and inverse transform
+    X = np.fft.rfft(x, n_fft)
+    H = np.fft.rfft(h, n_fft)
+    Y = X * H
+    y = np.fft.irfft(Y, n_fft)
+
+    # Return only the first L samples (the full convolution)
+    return y[:L]

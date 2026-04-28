@@ -1,0 +1,100 @@
+We need to figure out what rotate_2d problem is. Likely rotating a 2D array by some angle. The reference implementation probably uses nested loops or slow operations. We need to use scipy.ndimage for rotation. No Python loops, vectorized. Use numpy, scipy.ndimage.rotate. Probably input format: problem dict with image array and angle. Need to output rotated image.
+
+We must consider edge cases: interpolation order, reshape, mode. Use scipy.ndimage.rotate with reshape=False to keep size? Might need to pad.
+
+Also ensure dtype consistency, maybe float32.
+
+Need to handle multiple angles? Maybe problem contains 'angles' list? Might be batch rotation.
+
+Let's think: The solver likely expects to return a dict with rotated image. The baseline uses Rotate2D class with solve method that takes problem dict and returns rotated array.
+
+So design: run_solver(problem) returns rotated array.
+
+We need to avoid loops: just call scipy.ndimage.rotate once per image if single, or vectorize over batch via list comprehension? But that's a loop; but maybe we can stack images into 3D and rotate each slice? But scipy.ndimage.rotate does not support batch.
+
+But we can use np.stack and apply rotate along axis using np.apply_along_axis? That is a loop too.
+
+Maybe the problem only has single image. So just use rotate.
+
+Edge cases: angle may be negative, multiple of 360, etc.
+
+Also ensure that output shape matches input shape: use reshape=False.
+
+Also set order=1 (bilinear) for speed vs higher order slower.
+
+Also mode='constant', cval=0.
+
+Check dtype: convert to float32 for speed.
+
+Return as numpy array.
+
+Ok design:
+
+```
+def run_solver(problem):
+    img = np.asarray(problem['image'], dtype=np.float32)
+    angle = float(problem.get('angle', 0))
+    # if angle is array? maybe single
+    rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=1, mode='constant', cval=0)
+    return {'rotated_image': rotated}
+```
+
+But maybe output expected as numpy array directly? The baseline might return the rotated image directly. Let's assume it returns the rotated image as np.ndarray.
+
+Better: return rotated
+
+But we should match signature of Rotate2D.solve which probably returns the rotated image or dict. Let's assume it returns numpy array. So run_solver returns rotated array.
+
+Edge case: If input is list of images? But likely not.
+
+Consider using numba JIT? But requirement says use scipy functions somewhere; we already use scipy.ndimage.rotate which is C-optimized.
+
+No loops; we just call function once.
+
+Ok final design is simple. Ensure imports at top: typing.Any, Dict; import numpy as np; import scipy.ndimage
+
+Return type annotated as Any or Dict.
+
+Alright handoff.
+We need to take the raw problem dictionary, pull out the 2‑D data and the rotation angle, and feed it straight into a fast SciPy routine. The key is that SciPy’s `ndimage.rotate` does all the heavy lifting in C/Fortran – no Python loops at all – so we’ll just hand the data over and let it do its thing.
+
+First thing is to import everything we’ll need:
+
+```python
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+Next, inside `run_solver` we’ll fetch the image from `problem`.  In the reference code it was probably accessed as `problem['data']` or something similar; let’s be defensive and allow either `'data'` or `'image'`.  We’ll cast it to `float32` because that’s usually what `ndimage.rotate` expects for speed and memory efficiency:
+
+```python
+img = np.asarray(problem.get('data') or problem.get('image'), dtype=np.float32)
+```
+
+The angle is likely stored under a key called `'angle'`.  It could be an int, float or even an array if someone passed a batch – but our spec says no loops, so we’ll assume a single scalar angle:
+
+```python
+angle = float(problem.get('angle', 0))
+```
+
+Now we call SciPy’s rotate.  We want to keep the same shape as the input (the baseline probably did this), so `reshape=False`.  For speed we’ll use bilinear interpolation (`order=1`) and clamp out‑of‑bounds pixels to zero (`mode='constant', cval=0`).  That’s all done in one line:
+
+```python
+rotated = scipy.ndimage.rotate(
+    img,
+    angle,
+    reshape=False,
+    order=1,
+    mode='constant',
+    cval=0,
+)
+```
+
+Finally we return whatever the original solver returned – most likely just the NumPy array itself:
+
+```python
+return rotated
+```
+
+Putting it together gives us a concise, fully vectorised solution that satisfies all constraints: only NumPy and SciPy imports are used, no Python‑level loops appear anywhere, and the heavy lifting is delegated to SciPy’s highly optimised C code. This should be fast enough while staying within the required character budget. OK, I think I have the design. Time to write it.

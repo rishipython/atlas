@@ -1,0 +1,120 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have an image array and a 2x3 matrix. The reference uses scipy.ndimage.affine_transform with order=3, mode='constant'. That's probably slow because it's generic and uses interpolation per pixel. We can try to use a faster method.
+
+What are options? Could use scipy.ndimage.affine_transform but maybe with order=1 or 0 for speed. But we need to match reference output? The is_solution checks against reference with order=3. So if we change order, we might fail verification. We must produce the same output as reference. So we cannot change interpolation order unless we mimic cubic interpolation ourselves? That would be complex.
+
+Alternatively, we could use SciPy's map_coordinates or affine_transform but maybe with precomputed coefficients? But the main overhead is per-pixel interpolation. Maybe we can use SciPy's built-in function but call it with precomputed inverse matrix to avoid repeated calculation? But affine_transform already does that.
+
+Maybe we can use numba JIT to accelerate custom implementation of cubic spline interpolation on grid? That could be faster if vectorized.
+
+But we can't have Python loops, but numba can compile loops. However, the brief says no Python-level loops; but numba loops are okay as they are compiled.
+
+Alternatively, use JAX to JIT compile the operation; JAX has jax.scipy.ndimage.affine_transform? Not sure.
+
+Maybe we can use SciPy's affine_transform but set prefilter=False? That might skip prefiltering step which is expensive for cubic? Actually for cubic order, SciPy does prefiltering using convolution to compute coefficients; that might be heavy. We could skip prefiltering by setting prefilter=False, but then the result will be wrong. But maybe the difference is small? No, likely not acceptable.
+
+Another angle: Use SciPy's ndimage.map_coordinates with a grid of coordinates computed once, then call map_coordinates which is vectorized and may be faster? But map_coordinates also does interpolation per point.
+
+Could use OpenCV cv2.warpAffine which is highly optimized and supports cubic interpolation (INTER_CUBIC). That might be faster than SciPy's implementation. But is cv2 available? Not in allowed packages list; only numpy, scipy, etc. So cannot use OpenCV.
+
+Maybe use numba to implement cubic B-spline interpolation manually in a vectorized way across entire array? That would involve computing contributions from 4x4 neighborhoods per pixel; could be heavy but maybe faster than SciPy's generic algorithm.
+
+But perhaps simpler: Use SciPy's affine_transform but convert image to float32 to reduce memory traffic and maybe speed up due to smaller data type. Also set order=3 still; but float32 might still produce same output within tolerance? Might produce slight differences due to rounding; verification uses rtol=1e-5, atol=1e-7; float32 might exceed tolerance for some values. But maybe still within tolerance because input values are up to 255 and cubic interpolation linear combination of 16 neighbors each weighted sum of floats; error may be small (<1e-5 relative). Might be okay.
+
+Also mode='constant' with cval=0 default; that's fine.
+
+We could also use np.float32 for image and matrix before passing to scipy; that might speed up as it uses single precision kernels.
+
+Also ensure that output dtype matches input dtype? The reference uses float64 by default I think because image is list of floats maybe cast to float64 by numpy when creating array. We could cast back to float64 after transform if needed for comparison.
+
+But if we cast input to float32, SciPy will produce float32 output; then in is_solution they convert proposed_array = np.asarray(proposed_list, dtype=float). If our output is float32, converting to float64 should still match within tolerance if difference small.
+
+So design: In solve(), get image as np.array(dtype=np.float32), matrix as np.array(dtype=np.float32). Then call scipy.ndimage.affine_transform with order=self.order (3), mode=self.mode, prefilter=True (default). That should produce float32 result. Then cast result back to np.float64 before returning so that verification compares properly.
+
+Will this speed up significantly? Probably not huge but maybe enough.
+
+But maybe we can do more: Use scipy.ndimage.affine_transform on a flattened array using vectorized mapping of coordinates via np.meshgrid and map_coordinates manually? That might be slower due to Python overhead.
+
+Alternatively, use scipy.ndimage.shift or rotate functions separately for rotation+scale+shear+translation? Not trivial.
+
+Maybe best approach: Use numba JIT compiled function that loops over output pixels performing cubic interpolation using precomputed coefficients from matrix inverse mapping. This would avoid overhead of Python loops because numba compiles them into machine code and uses SIMD where possible. Might be faster than SciPy's pure Python overhead plus C code for each pixel?
+
+However implementing cubic interpolation manually is complex: For each output pixel (i,j), compute source coordinates (x,y) = inverse_matrix * [i,j,1]. Then compute integer floor of x,y and fractional parts dx,dy. Then evaluate cubic B-spline basis weights along x and y directions for four neighboring pixels each direction: weights_x = [w0,w1,w2,w3], weights_y similarly. Then sum over k,l of image[y0+k,x0+l] * weights_x[k]*weights_y[l]. Need careful indexing and boundary handling with constant zero padding outside bounds (so treat out-of-bounds as zero). This can be done in numba easily with loops over k,l inside outer loops over i,j compiled by numba.
+
+We can also vectorize partially by computing all coordinates at once using numpy arrays then loop over k,l inside vectorized operations? Might be more complex.
+
+Given time constraints I'd choose simpler: just use scipy.ndimage.affine_transform but cast to float32 for speed and maybe set prefilter=False if acceptable? But verification will compare with reference which uses default prefilter True; difference may exceed tolerance though maybe small?
+
+Better keep default prefilter True; just cast types.
+
+Also consider using scipy.ndimage.affine_transform with order=3 but specifying cval=0 explicitly (mode constant). That's fine.
+
+So design:
+
+- In solve(): parse problem dict.
+- Convert image list -> np.array(dtype=np.float32).
+- Convert matrix list -> np.array(dtype=np.float32).
+- Compute transformed_image = scipy.ndimage.affine_transform(image_arr, matrix_arr, order=self.order, mode=self.mode)
+- Cast transformed_image back to np.float64.
+- Return {"transformed_image": transformed_image}
+
+Potential edge cases: If input image empty or shape mismatch - but problem ensures n x n array of floats [0..255]. Could handle non-square gracefully by passing shape unchanged; transform will preserve shape automatically based on input shape unless output_shape specified. So fine.
+
+Need also handle large images: memory consumption okay.
+
+Now think about potential numeric differences due to dtype conversion: When converting image from list of floats (likely python floats) -> np.float32 reduces precision slightly; then transform computed in float32 may differ from reference computed in float64 by more than tolerance if differences accumulate across many operations (cubic interpolation uses many multiplications). The error might be up to ~1e-7 relative maybe okay. Let's estimate worst-case error: Each multiplication error ~ 1e-7 relative due to rounding at 24-bit mantissa (~7 decimal digits). Summing 16 terms could amplify error by factor ~16 => ~1e-6 relative absolute ~0.00016 at max value 255 => <0.001 difference < atol 1e-7 absolute?? Wait atol=1e-7 absolute! That's extremely tight! They require absolute tolerance 1e-7! That's tiny compared to typical floating errors! Actually atol is 1e-7 absolute regardless of magnitude! So any difference >1e-7 fails! That's extremely strict - essentially requires bitwise equality between our result and reference double precision result! Using float32 will almost certainly fail because rounding differences >1e-7 likely occur because double precision has many more bits than single precision so difference > 1e-7 absolute may happen easily when values around say 100 -> difference ~1e-5 or more. So can't cast to float32 unless we also cast reference back to float32 before comparison? But verification uses ref_array computed from original problem using same dtype as input list (float64). So they compare double precision results exactly within atol 1e-7 absolute! So our result must match double precision reference within 1e-7 absolute difference for each element - basically identical up to machine epsilon ~2e-16 relative times magnitude ~100 -> ~2e-14 absolute < 1e-7 easily satisfied if our computation matches exactly double precision arithmetic results except rounding errors less than machine epsilon times magnitude (~2e-14). Using single precision will produce errors on order 1e-4 or more > atol => fail verification!
+
+Thus cannot cast input/matrix/outcome dtype downwards if verification strictness remains same as original baseline (which uses double precision). So need keep double precision throughout. Then what else can speed up?
+
+Maybe use numba compiled function that operates on float64 arrays directly - should produce same numeric results as pure Python loops computing same operations in C-level code but no extra rounding differences because same operations executed in double precision - so should match exactly if algorithm identical mathematically (though floating point associativity may differ slightly causing differences > atol?). But if we implement exactly same algorithm as SciPy's affine_transform using same ordering of operations and same weight calculations, results should match within machine epsilon perhaps less than atol.
+
+However implementing cubic spline manually may produce slightly different results due to different basis function implementation or different rounding order compared to SciPy's algorithm which uses its own internal approach possibly different weight computations leading to small differences > atol? Unclear but risk high.
+
+Thus safest approach: Keep using scipy.ndimage.affine_transform directly; it's already C-level efficient and produces correct results exactly like reference since it's the same function used in validation. The only way to speed up is reduce overhead like converting lists -> arrays earlier or avoid copying etc., but that's minor overhead relative to heavy computation anyway?
+
+But perhaps the baseline solution includes extra overhead like try/except blocks etc., causing slowdown relative performance baseline which might also call same function but less overhead?
+
+Let's examine baseline code: Provided code uses try/except around whole solve method; inside they convert image = problem["image"], matrix = problem["matrix"] - these are lists presumably not numpy arrays yet. They pass directly into scipy.ndimage.affine_transform which will implicitly convert them via np.asarray inside the function call - that conversion cost minimal relative heavy transform though still some overhead copying entire arrays twice maybe.
+
+If we convert them explicitly using np.asarray before passing, that's similar cost anyway though maybe one less conversion step inside function call because it receives already array objects - but still needs copy if not contiguous etc., but likely minimal difference.
+
+But bigger improvement could come from specifying `output_shape=image.shape` explicitly so no need for default shape calculation overhead? Not sure if significant.
+
+Another possibility: Use `scipy.ndimage.affine_transform` with `prefilter=False` when order>=3 reduces expensive prefiltering step which involves convolution across entire array multiple times (~8 passes?). For cubic interpolation (order=3), SciPy performs a filter step where it convolves the image with a kernel derived from B-spline basis functions before applying transformation coefficients computed via coordinate mapping later on. This prefiltering step costs O(N) per dimension times number of passes equal order+1 =4 passes each dimension maybe heavy. If we disable prefiltering by setting `prefilter=False`, the algorithm will skip this step and compute interpolation directly on original data using fractional positions weights computed on the fly each pixel - this may actually be slower because it requires evaluating B-spline basis functions at each pixel rather than reusing filtered data across all pixels? Wait B-spline filtering reduces complexity by turning fractional coefficient evaluation into integer coefficient lookup plus filtering along axes once per dimension before transformation - this speeds up for large images especially high-order filters because convolution cost independent of number of pixels after transformation mapping vs per-pixel evaluation cost O(order^2) each pixel vs O(order) after filtering + integer shift? I'm not fully sure which is faster for small images typical here n maybe small like 256 or less? Hard guess.
+
+Given uncertainty I'd keep default prefilter True since it's likely optimal for large images too.
+
+Thus perhaps there isn't much room for optimization beyond trivial micro tweaks like converting inputs early or disabling try/except overhead etc., which may not yield significant speedup relative baseline that already calls same function quickly anyway?
+
+But baseline likely runs quickly already since it's just one call C-level heavy operation; adding more overhead won't help much either way; speed improvement likely limited (<10%). Maybe other design like using `scipy.ndimage.affine_transform` with `mode='constant', cval=0` explicit arguments might avoid checking default mode string conversion overhead?
+
+But I think bigger improvement can come from using `scipy.ndimage.map_coordinates` with a grid computed once outside loop rather than calling affine_transform which internally recomputes coordinates per pixel again? Actually affine_transform calculates coordinates inside loop anyway similar cost as map_coordinates given grid computed once externally might reduce some overhead?
+
+Let's think about map_coordinates approach:
+
+Compute grid coordinates:
+```
+h,w = image.shape
+y_coords,x_coords = np.indices((h,w))
+# Flatten
+coords = np.vstack((y_coords.ravel(), x_coords.ravel(), np.ones_like(y_coords.ravel())))
+# Apply inverse matrix:
+inv_mat = inv(matrix)
+src_coords = inv_mat @ coords
+# Reshape back
+y_src = src_coords[0,:].reshape(h,w)
+x_src = src_coords[1,:].reshape(h,w)
+# Flatten
+coords_src = np.vstack((y_src.ravel(), x_src.ravel()))
+# Call map_coordinates:
+transformed_flat = map_coordinates(image, coords_src, order=3, mode='constant', cval=0)
+transformed_image = transformed_flat.reshape(h,w)
+```
+This avoids repeated coordinate calculations inside loop and may be slightly faster because map_coordinates operates on flattened coordinates vectorized internally in C-level code too; coordinate computation done once in numpy fast operations too; overall similar performance maybe slightly better due time spent computing coordinates once vs per-pixel inside affine_transform internal loop where it computes source coordinate per output pixel anyway probably similar cost though maybe less memory traffic due vectorization vs scalar loops in C?
+
+However affine_transform also does coordinate mapping inside its own C loop anyway similar complexity so difference minimal.
+
+Thus perhaps best approach: keep original code essentially unchanged except removing unnecessary try/except wrappers that add overhead when exception occurs rarely - but that won't help when no exception occurs since try/except doesn't add runtime cost except check at compile time? In Python try/except around normal code adds negligible overhead at runtime except when exception thrown rarely so not issue.
+
+Thus I'm uncertain how much improvement possible while preserving correctness constraints strictly identical numeric results within tolerance <=1e-7 absolute which demands exact match basically bitwise equality between our result and reference double precision result (since both computed via same algorithm). So any alternative algorithm must produce identical results bit-for-bit else fail test even by tiny epsilon > atol fails because atol extremely tight requiring <1e-7 absolute diff across all elements - this effectively means identical within machine

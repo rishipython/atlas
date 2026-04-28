@@ -1,0 +1,59 @@
+We need to replace a triple loop with something faster. Let's think.
+
+We know the classic formula: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute norms squared vector, then outer sum, then subtract 2*dot product. That's vectorized. But the brief says we must use scipy functions somewhere, and numba JIT, and matrix multiplication (BLAS). Also no Python loops.
+
+So we can use scipy.linalg.norm or scipy.spatial.distance.cdist? But we want to use BLAS anyway. We can compute dot product via np.dot or np.matmul; that's BLAS. But we also need to incorporate scipy. Maybe use scipy.linalg.norm? Or scipy.spatial.distance.cdist? But that might be slower.
+
+Better: Use scipy.linalg.norm to compute norms of rows? That returns 1-D array of shape (N,) of Euclidean norms. Then square them. Then compute gram matrix via np.dot(X, X.T). But we need to use scipy for something; maybe use scipy.linalg.norm or scipy.linalg.blas.dgemm for dot product? Or maybe use scipy.spatial.distance.cdist for computing distances directly, but that uses loops inside C but not Python loops. But we still need to do the formula ourselves.
+
+Alternatively, we can use scipy.spatial.distance.cdist(X, X, 'sqeuclidean') which returns exactly what we need. But that is a single function call; it might be acceptable but maybe not using numba. The brief wants numba JIT too.
+
+So maybe we can combine: compute gram matrix via numba JITed kernel that does matrix multiplication? But BLAS is already fast; numba might help for some parts like computing norms or outer sum? But maybe we can write a small numba function that does the pairwise distance computation via broadcasting and sum over axis? That would be pure Python loops inside numba compiled; but the brief says no Python-level loops in final solution? It says "No Python-level loops — all work is vectorised." That suggests the final solution should not have explicit Python loops at all. But if we use numba JIT on a function with loops, that's not Python-level loops? It's compiled loops inside numba; but still they are loops in code. The brief says "No Python-level loops" meaning no for loops in Python code, but using numba's compiled loops is allowed because it's not executed as Python bytecode.
+
+But maybe easier: Use SciPy's cdist which is vectorized C code; no Python loops; no need for numba. But brief demands numba usage somewhere. So we need to incorporate numba somewhere else perhaps just for a small helper like computing squared norms via broadcasting? But that could be done with numpy alone.
+
+Maybe we can write a small numba-accelerated function that computes the Gram matrix by looping over rows of X and accumulating dot products using BLAS via numpy dot inside loop? That would involve Python-level loop over rows though.
+
+Alternatively, maybe use numba to JIT compile a kernel that does the full distance matrix computation using broadcasting and sum over axis: e.g., `X[:, None, :] - X[None, :, :]` yields shape (N,N,D), then square and sum axis=2. That's memory heavy but okay for moderate N (~2000). That's pure numpy operations though; no loops.
+
+But if N large (like 10k), memory blow up. Might not be allowed.
+
+Better: Use Gram matrix approach: compute `sq_norms = np.sum(X**2, axis=1)` shape (N,), then `D = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T`. That's vectorized and uses BLAS for dot product.
+
+Now incorporate SciPy: maybe use `scipy.linalg.norm` to compute sq_norms? But norm returns sqrt of sum squares; we'd need square again. Or use `scipy.linalg.norm(X, axis=1)` then square.
+
+Alternatively, use `scipy.spatial.distance.cdist` to compute pairwise distances directly; but that might be slower than our formula due to overhead.
+
+But requirement: "Uses **scipy** functions somewhere in the solution." So we must call at least one SciPy function somewhere.
+
+We could call `scipy.linalg.norm` or `scipy.linalg.blas.dgemm`. Using dgemm explicitly would involve SciPy's BLAS wrappers; that's fine.
+
+Also require **numba** JIT compilation somewhere in solution. So maybe write a small helper function decorated with @numba.njit that does something trivial like computing squared norms or performing elementwise subtraction? That would satisfy requirement but may not add performance benefit.
+
+But requirement might be interpreted as must use both SciPy and numba in final code.
+
+So design:
+
+- Import numpy as np
+- Import scipy
+- Import numba
+
+- In pairwise_sq_dist:
+
+    - Compute sq_norms = np.sum(X**2, axis=1)   # or use scipy.linalg.norm
+
+    - Compute gram = X @ X.T   # BLAS
+
+    - Compute out = sq_norms[:, None] + sq_norms[None, :] - 2 * gram
+
+    - Ensure non-negative due to numerical errors: clip negative values to zero (np.maximum(out, 0)) maybe optional.
+
+But this uses numpy only; no SciPy or numba used yet.
+
+To satisfy SciPy requirement: Replace the sum of squares with `scipy.linalg.norm(X, axis=1)` which returns Euclidean norm (sqrt). Then square it: `sq_norms = np.square(scipy.linalg.norm(X, axis=1))`. That uses SciPy's linalg.norm function.
+
+Alternatively, call `scipy.spatial.distance.cdist` inside to compute distances but then override with our formula? Not needed.
+
+To satisfy numba requirement: Write a tiny jit-compiled helper that takes X and returns out using our formula inside compiled code? That would involve loops inside compiled code though. But we could just jit compile the entire function pairwise_sq_dist itself; but it will contain numpy operations which are not supported by numba unless using nopython mode with supported operations like np.dot etc. Numba supports many numpy ops including dot and broadcasting etc. We could decorate pairwise_sq_dist with @numba.njit(parallel=True) and let it compile the whole thing. That would avoid Python loops entirely because operations are compiled into machine code via BLAS calls anyway. That satisfies requirement of using numba JIT compilation somewhere in solution (the whole function). However Numba cannot compile arbitrary numpy functions like np.sum over axis? It can compile many but may not support all features like advanced indexing or broadcasting easily. It supports np.sum along axis if input is contiguous etc.
+
+OK, I think I have the design. Time to write it.

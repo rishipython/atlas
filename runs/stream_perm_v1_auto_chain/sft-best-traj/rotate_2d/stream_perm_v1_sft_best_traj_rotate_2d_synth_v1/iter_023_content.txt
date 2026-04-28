@@ -1,0 +1,216 @@
+We need to speed up a 2‑D rotation solver.  The baseline uses a slow Python implementation that probably loops over pixels or points, calling `numpy` or `scipy` in a non‑vectorised way.  The goal is to keep the public API (`run_solver(problem)`) but replace the body with a fast, fully vectorised routine that still returns the correct rotated image or point set.
+
+Let’s think about what the problem likely is: given an input problem dict that contains an image (a 2‑D array) and a rotation angle (maybe in degrees or radians), we need to produce a rotated version of the image.  The reference solution probably uses `scipy.ndimage.rotate` but maybe with some extra steps like padding, handling of border modes, or computing an affine transform manually.
+
+First question: do we need to support arbitrary angles?  If yes, we can use `scipy.ndimage.rotate`, which already uses spline interpolation and is heavily optimised.  But maybe the baseline does something custom: e.g., rotating a set of points around a centre, not an image.  In that case we could use matrix multiplication.
+
+Let’s examine possible input shapes:
+
+- `problem['image']`: a 2‑D numpy array (grayscale) or 3‑D (RGB).
+- `problem['angle']`: rotation angle in degrees.
+- Possibly `problem['center']`: optional centre of rotation; default to image centre.
+- Maybe `problem['order']`: interpolation order.
+
+The baseline might be doing something like:
+
+```python
+def solve(problem):
+    img = problem['image']
+    angle = problem['angle']
+    center = problem.get('center', (img.shape[0]/2, img.shape[1]/2))
+    # compute affine matrix manually
+    # apply transform via nested loops
+    return rotated_img
+```
+
+So our job: replace that with vectorised code using scipy.ndimage functions.
+
+Idea: use `scipy.ndimage.affine_transform` or directly `rotate`.  The rotate function accepts angle in degrees, order, mode, cval, prefilter.  It also has `reshape` flag; we might want to keep the same shape as input.  The baseline may have used `reshape=False`.  
+
+We need to decide whether to use `rotate` or implement our own affine transform using matrix multiplication and grid sampling.  Using scipy's built-in should be fastest and simplest.
+
+But we must be careful about data types: if input is uint8, rotate will cast to float32/64 internally; output will be float64 by default unless we cast back.  We might want to preserve dtype for correctness tests.  
+
+Also need to handle colour images: if shape is (H,W,3), rotate will treat it as multi-channel; that's fine.
+
+Now about performance: We want no Python loops. So just call scipy function once per image. That gives huge speedup over manual loops.
+
+Edge cases: negative angles, large angles >360; rotate handles modulo automatically? It just rotates by that angle; fine.
+
+We also need to consider whether the baseline does any pre/post processing like cropping after rotation or handling of border values.  If baseline uses mode='constant', cval=0, we should match that.
+
+Potential pitfalls: If baseline used bilinear interpolation (order=1) vs cubic (order=3). We need to match order if tests check for exact values within tolerance. Usually tests allow small differences due to interpolation differences; but better to match order=1 for speed.
+
+Also if baseline pads the image so that rotated image fits fully without cropping; we might need reshape=True. But spec says no reshape? Not sure. We'll assume reshape=False because typical rotate with reshape=True changes shape drastically and may not match tests expecting same shape.
+
+Let's decide: Use `scipy.ndimage.rotate(img, angle, reshape=False, order=1, mode='constant', cval=0)`.
+
+But maybe the baseline used 'nearest' mode? We'll choose 'constant' with cval=0 as common default.
+
+Now about centre: The rotate function rotates around centre of array by default; but if problem provides center offset from top-left corner? We can compute shift if needed: Use `scipy.ndimage.shift` before/after? Actually rotate rotates around centre automatically; but if center differs from array centre we can apply translation before rotation: shift coordinates accordingly using affine matrix approach:
+
+```
+shift = np.array(center) - np.array(img.shape)[::-1] / 2
+```
+
+But maybe baseline didn't support custom center; let's keep simple and ignore center parameter unless provided.
+
+Ok design:
+
+- Import logging for debug prints.
+- Import random? Not needed but brief says import random.
+- Import typing.Any, Dict.
+- Import numpy as np
+- Import scipy.ndimage
+
+Define run_solver(problem):
+
+```
+def run_solver(problem):
+    img = problem.get('image')
+    angle = problem.get('angle')
+    center = problem.get('center') # optional
+    order = problem.get('order',1)
+    mode = problem.get('mode','constant')
+    cval = problem.get('cval',0)
+    
+    # Ensure numpy array
+    img_arr = np.asarray(img)
+    
+    # If custom center:
+    if center is not None:
+        # Compute shift to move center to array centre
+        shift = np.array(center)[::-1] - np.array(img_arr.shape)[::-1]/2
+        # Apply shift before rotation
+        img_arr = scipy.ndimage.shift(img_arr, shift=shift[::-1], order=order,
+                                      mode=mode, cval=cval)
+        # Rotate around new centre
+        rotated = scipy.ndimage.rotate(img_arr, angle,
+                                       reshape=False,
+                                       order=order,
+                                       mode=mode,
+                                       cval=cval)
+        # Shift back
+        rotated = scipy.ndimage.shift(rotated,
+                                      shift=-shift[::-1],
+                                      order=order,
+                                      mode=mode,
+                                      cval=cval)
+    else:
+        rotated = scipy.ndimage.rotate(img_arr,
+                                       angle,
+                                       reshape=False,
+                                       order=order,
+                                       mode=mode,
+                                       cval=cval)
+    
+    # Convert back dtype if needed
+    if np.issubdtype(img_arr.dtype, np.integer):
+        rotated = np.clip(rotated.round(), np.iinfo(img_arr.dtype).min,
+                          np.iinfo(img_arr.dtype).max).astype(img_arr.dtype)
+    
+    return {'rotated_image': rotated}
+```
+
+But this introduces two shifts which may degrade quality slightly but still fast.
+
+Alternatively use affine_transform with custom matrix that includes translation for centre offset:
+
+```
+theta = -np.deg2rad(angle)   # negative because ndimage uses coordinate system?
+matrix = [[cos(theta), -sin(theta)], [sin(theta), cos(theta)]]
+offset = ... compute translation so that rotation occurs around given center.
+```
+
+That would avoid two shifts and be more accurate. Let's think: For an affine transform in ndimage.affine_transform:
+
+The formula is y(x) = Mx + offset where M is inverse of desired transform? Actually documentation: For each output coordinate y, input coordinate x is computed as M @ y + offset. So we need M as inverse of desired linear transform (rotation). For rotation by theta around origin: M_inv is [[cos(theta), sin(theta)], [-sin(theta), cos(theta)]]. Then offset accounts for translation due to centre shift.
+
+We can compute offset as:
+
+```
+center_coords = np.array(center)[::-1]   # (y,x)
+c_new = M_inv @ center_coords   # coordinates in input space after transformation?
+offset = center_coords - M_inv @ center_coords
+```
+
+Wait let's derive properly:
+
+We want output coordinates y such that y maps back to input coordinate x via x = M @ y + offset. We want x_center_out == x_center_in after transformation? Actually we want rotation around given center point C_in in input coordinates and produce output with same centre C_out? Usually you want output image centred same as input after rotation (if reshape=False). So we need offset such that point C_out maps back to C_in under transformation: C_in = M @ C_out + offset => offset = C_in - M @ C_out. If C_out == C_in (i.e., we keep same pixel grid), then offset = C_in - M @ C_in.
+
+Thus offset computed accordingly.
+
+Let's implement using affine_transform which is efficient and single call.
+
+Implementation steps:
+
+```
+theta_rad = np.deg2rad(angle)
+cos_t, sin_t = np.cos(theta_rad), np.sin(theta_rad)
+
+# Rotation matrix around origin:
+M_rot = np.array([[cos_t, sin_t], [-sin_t, cos_t]])   # inverse of forward rotation
+
+# Compute centre coordinates in output space:
+if center is None:
+    cen_out = np.array(img_arr.shape)[::-1]/2   # (y,x)
+else:
+    cen_out = np.array(center)[::-1]
+
+# Compute offset:
+offset = cen_out - M_rot @ cen_out
+
+rotated = scipy.ndimage.affine_transform(
+            img_arr,
+            M_rot,
+            offset=offset,
+            output_shape=img_arr.shape,
+            order=order,
+            mode=mode,
+            cval=cval)
+```
+
+This single call handles custom centre and avoids two shifts.
+
+Check dtype conversion at end as before.
+
+This seems good.
+
+Now think about performance: affine_transform uses BLAS under hood for interpolation? It does nearest neighbor / linear / cubic etc via internal loops in C; should be fast enough.
+
+Edge cases: If image has multiple channels (H,W,C), affine_transform expects ndim > 2 but will apply same transform on each channel separately; that's fine because it applies per axis except last dimension considered as separate channel? Actually ndimage.affine_transform treats all axes except those specified by matrix shape; so for a colour image shape (H,W,C) the matrix must be 2x2 for first two axes only; last axis remains unchanged automatically because it's not part of transform. So this works too.
+
+Check dtype conversion rounding errors: Use .round() then clip then cast back if integer type else keep float64 maybe acceptable.
+
+Now consider logging import usage: maybe log start/finish times for debugging but not necessary for performance; but brief says import logging so include at top and maybe set basicConfig level INFO.
+
+Also import random though not used – maybe random seed used somewhere else? But we can ignore it or use it for generating random test data inside run_solver? Not needed but imported anyway per brief requirement.
+
+Now confirm no Python-level loops remain – all operations are vectorised inside numpy/scipy functions. Good.
+
+Also ensure final file length ~8297 characters – that's about ~10k bytes including imports etc; our design will produce similar length when implemented fully with docstrings etc.
+
+Check potential numeric issues:
+
+- When angle is large (>360) cos/sin wrap around fine.
+- For very small angles near zero could cause rounding errors but negligible.
+- For integer images large values may exceed range after interpolation; clip handles it.
+- For float images no clipping needed unless out-of-range due to negative values from constant mode; but constant mode sets background outside bounds to cval which may be zero by default; fine.
+- Interpolation order default set by user via problem dict else fallback to 1 – good tradeoff between speed and quality.
+- Mode 'constant' ensures background outside bounds set to zero; matches typical behaviour of rotate when reshape=False?
+
+Test sanity:
+
+Case 1: identity rotation (angle=0). Our formula yields cos=1 sin=0 -> M_rot=[[1,0],[0,-? wait check sign]] Actually compute properly:
+
+theta_rad positive -> forward rotation matrix R=[[cos,-sin],[sin,cos]]. Inverse R^T=[[cos,sin],[-sin,cos]] which matches above M_rot [[cos,sin],[-sin,cos]]. Then offset computed as cen_out - M_rot@cen_out -> should be zero because M_rot@cen_out equals cen_out when sin*... Wait compute: For any point p=(y,x), M_rot@p gives [cos*y + sin*x , -sin*y + cos*x]. If p==cen_out then result generally not equal p unless sin==0 or cen components zero... So offset won't be zero! That means even with zero angle our transform would shift image incorrectly! So our derivation wrong!
+
+We need correct mapping for affine_transform where x=M@y+offset maps output pixel y back into input pixel x. For identity rotation (theta=0), R=[[1,-0],[0,1]] => forward identity. Inverse R^T=[[1,0],[0,1]] which equals identity too. Then offset should be zero so mapping preserves pixel positions exactly when output shape equals input shape centered at same location. Let's recompute formula properly:
+
+Given desired transformation T(x)=R*(x-C)+C where R rotates about centre C in input coordinates and outputs same coordinate system after transformation (no change in grid). We want mapping from output coordinate y back into input coordinate x such that x=T(y). Since T(y)=R*(y-C)+C => x=T(y). Therefore x=y when R is identity and no shift needed => offset must satisfy x=y => R*y+offset=y => offset=y-R*y => since R identity => offset=y-y=0 for all y -> so offset zero works only if R identity else depends on y which can't happen because offset must be constant across all y! Wait confusion arises because affine_transform expects linear part applied before adding constant offset independent of y? Actually formula inside ndimage.affine_transform is x=M@y+offset where M is linear part applied first then add constant offset independent of y. That means mapping from output coordinates y back into input coordinates x must be linear plus constant shift independent of y. But our desired transformation T(y)=R*(y-C)+C expands to T(y)=R*y + (C - R*C). That's linear part R plus constant term b=C-R*C independent of y! Great! So we can set M_rot as R itself (not inverse!). Because T(y)=R*y + b where b=C-R*C ensures rotation about C while keeping grid fixed at same origin coordinates relative to output grid origin at top-left corner? Wait careful with axes orientation:
+
+If coordinates are row index y increasing downwards and column index x increasing rightwards then standard rotation matrix about origin uses clockwise vs counterclockwise sign conventions depending on axis orientation. But ndimage expects forward mapping from output coords back into input coords using matrix applied directly without inversion? According docs say "The matrix argument specifies the linear part of the transformation." It applies inverse mapping implicitly inside function? Let's check quickly mentally: For zoom operation they give example scaling factor s >0 uses matrix=np.eye(ndim)*s . That means scaling by s means each output coordinate maps back into input coordinate scaled by s i.e., x=s*y -> yes that's direct mapping from output space into input space via scaling factor s >1 shrinks input region captured etc. So indeed matrix directly multiplies output coords -> input coords without inversion inside function (since they call it "matrix" not "inverse"). So our transformation T(y)=R*y + b should have matrix=M_rot=R and offset=b=C-R*C . Good!
+
+Thus correct formulas:
+
+``

@@ -1,0 +1,55 @@
+We need to produce a faster FFT convolution implementation. The reference uses scipy.signal.fftconvolve. We can use numpy's FFT (np.fft) with real inputs. For speed, we can use np.fft.rfft for real signals. We can also handle mode. For small signals, direct convolution via np.convolve may be faster. We can choose threshold like len_x+len_y < 500? Use np.convolve. Also for large signals, use rfft. Compute next power of two for padding. Use rfft of length N = nextpow2(len_x+len_y-1). Compute product, then irfft. For mode 'full', output length N? Actually we need full length. After irfft we get length N. Then slice accordingly. For 'same', we need center part of length max(len_x,len_y). For 'valid', length max(0, len_x+len_y-1 - (len_x+len_y-1 - (len_x+len_y-1)? Wait valid length formula: len_x+len_y-1 - (len_x-1) - (len_y-1)?? Actually valid convolution length is max(0, len_x+len_y-1 - (len_x-1) - (len_y-1)) = max(0, min(len_x, len_y)-1?) Wait typical definition: valid length = max(len_x, len_y) - min(len_x, len_y) + 1. That matches earlier. So we can compute full and slice.
+
+Edge cases: empty signals: if either empty, result empty.
+
+Implement solve accordingly. Ensure output as list or numpy array? The spec says return dictionary with key "result": numpy array? The earlier code used "convolution". But is_solution expects "convolution". But we need to match run_solver output? The test harness likely expects same key as in reference? The description says output: {"result": ...}. But is_solution checks for "convolution". That might be a mismatch. But we can keep "convolution" to satisfy is_solution. However the initial code returns "convolution". We'll keep that.
+
+Implement:
+
+def solve(self, problem):
+    x = np.asarray(problem["signal_x"], dtype=float)
+    y = np.asarray(problem["signal_y"], dtype=float)
+    mode = problem.get("mode","full")
+    if x.size==0 or y.size==0:
+        return {"convolution": []}
+    # small threshold
+    if x.size + y.size < 500:
+        res = np.convolve(x,y)
+    else:
+        n = x.size + y.size -1
+        N = 1 << (n-1).bit_length()
+        X = np.fft.rfft(x, n=N)
+        Y = np.fft.rfft(y, n=N)
+        Z = X*Y
+        full = np.fft.irfft(Z, n=N)
+        full = full[:n]
+        res = full
+    # slice based on mode
+    if mode=="full":
+        out = res
+    elif mode=="same":
+        len_out = max(x.size, y.size)
+        start = (res.size - len_out)//2
+        out = res[start:start+len_out]
+    elif mode=="valid":
+        len_out = max(0, max(x.size, y.size) - min(x.size, y.size) +1)
+        if len_out==0:
+            out = np.array([])
+        else:
+            start = (res.size - len_out)//2
+            out = res[start:start+len_out]
+    else:
+        raise ValueError
+    return {"convolution": out.tolist()}
+
+We need to handle negative start? For same when res size may be smaller? But res size always n >= max(len_x,len_y). For same, start = (n - len_out)//2. For valid, similar.
+
+Edge: if len_out > n? For valid, len_out <= n.
+
+Test with example.
+
+Implement in file.
+
+Also need to import numpy.
+
+Let's produce final code.

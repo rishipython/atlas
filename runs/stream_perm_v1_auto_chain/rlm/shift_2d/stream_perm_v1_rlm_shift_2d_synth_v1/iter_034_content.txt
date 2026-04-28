@@ -1,0 +1,50 @@
+We need to read the `problem` dictionary and apply a 2‑D shift to the supplied array without looping in Python. The only heavy lifting should happen inside a fast C routine so that the whole thing stays vectorised and quick enough for the benchmark.
+
+Let’s start by pulling in the few imports we’ll actually use – the brief tells us to keep it lean and to use `scipy`. So:
+
+```python
+from __future__ import annotations
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+Next we’ll wrap everything in a tiny `Shift2D` class because the entry point is expected to call `Shift2D().solve(problem)`. The class itself can stay almost empty – just a stub `__init__` – but the `solve` method will do all the work.
+
+The key question is how to get the right arguments into `scipy.ndimage.shift`. That function accepts an `ndim`‑length sequence of shifts and will interpolate using a spline of a given order (default 3). We only care about shifting the first two axes (rows and columns); any extra dimensions (e.g., colour channels) should stay untouched. So we’ll build a full‑length shift list like:
+
+```python
+shifts = list(shift) + [0] * (array.ndim - 2)
+```
+
+If the caller passed a single float or a two‑element tuple/list we normalise it into that form before extending it with zeros for higher dimensions.
+
+Now about modes and values outside the image boundaries – callers can supply `mode` (`constant`, `nearest`, etc.) and an optional `cval` for constant padding. We’ll pull those from the dictionary with sensible defaults (`'constant'`, `0.0`). The user might also want to preserve the original dtype exactly after interpolation, so we’ll cast back at the end:
+
+```python
+out = scipy.ndimage.shift(
+    array,
+    shifts,
+    order=3,
+    mode=mode,
+    cval=cval,
+)
+```
+
+If the input was an integer type we need to clip back into its valid range before casting:
+
+```python
+if np.issubdtype(array.dtype, np.integer):
+    info = np.iinfo(array.dtype)
+    out = np.clip(out, info.min, info.max).astype(array.dtype)
+else:
+    out = out.astype(array.dtype)
+```
+
+This keeps the API clean and avoids any accidental overflow or underflow when working with unsigned integers like `uint8`.
+
+We should also guard against empty arrays – just return them unchanged so that downstream code doesn’t crash on shape checks.
+
+Putting it together gives us a concise implementation that satisfies all constraints: no Python loops, uses SciPy once for the heavy work, fully vectorised via NumPy arrays, and respects dtype preservation and boundary handling. No extra dependencies or magic tricks are needed because SciPy’s native routine already does everything efficiently in compiled C/Fortran under the hood.
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,199 @@
+We need to read the problem: base64_encoding. We want to implement solve that encodes something? Let's think: Base64 encoding takes binary data and outputs ASCII string. The reference implementation probably uses binascii.b2a_base64 or something. But we need to optimize. We can use numpy vectorization, maybe use dtype uint8 and pack bits.
+
+We have to produce a design: imports binascii, typing.Any, Dict, numpy as np. No Python-level loops, all work vectorised. So we need to encode using numpy operations.
+
+We must consider input format: problem likely contains some data structure like {'data': bytes} or something. Let's inspect typical AlgoTune tasks: They give a problem dict with 'data' key containing bytes? Might be 'data' is a list of ints? We don't know. But we can assume problem['data'] is bytes-like.
+
+Goal: return encoded string? The Base64Encoding class likely returns string.
+
+We can use numpy to convert bytes to array of uint8, then process in chunks of 3 bytes => 4 base64 chars.
+
+We can vectorize by reshaping array into shape (-1,3). For last chunk less than 3, pad with zeros and track padding length.
+
+Compute 24-bit integer per chunk: (b0 << 16) | (b1 << 8) | b2
+
+Then extract four 6-bit groups: (val >> 18)&0x3F etc.
+
+Map indices 0-63 to base64 alphabet 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.
+
+We can create a numpy array of dtype uint8 mapping indices to ascii codes via np.frombuffer or np.array of ascii codes.
+
+Then we can get output as bytes and decode to str.
+
+Edge cases: input length not multiple of 3; need '=' padding for missing bytes.
+
+Also performance: use np.packbits? But packing bits may be slower than bit shifts. Use vectorized shifts and masks.
+
+Also we must avoid Python loops; but we may use np.where for padding mask.
+
+Implementation steps:
+
+- Convert input bytes to np.uint8 array: arr = np.frombuffer(problem['data'], dtype=np.uint8)
+
+- Compute n = len(arr); n_chunks = (n + 2)//3
+
+- Pad arr with zeros to length n_chunks*3 using np.pad or concatenate zeros.
+
+- Reshape into (-1,3)
+
+- Compute val = (arr[:,0].astype(np.uint32)<<16)|(arr[:,1].astype(np.uint32)<<8)|arr[:,2].astype(np.uint32)
+
+- Extract groups: g0 = (val >> 18)&63; g1 = (val >>12)&63; g2=(val>>6)&63; g3=val&63
+
+- Stack them into shape (-1,4), flatten
+
+- Map via alphabet array: alph = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+
+- out_bytes = alph[groups_flat]
+
+- Convert to bytes then decode 'ascii'
+
+- Add padding: if n%3==1 -> add two '=' at end; if n%3==2 -> add one '='
+
+Edge case: if input empty -> return ''.
+
+Performance wise, all vectorized ops are fine. Use .astype(np.uint32) only once maybe needed for shift >16 bits; but shift on uint8 works but might overflow; better cast to uint32 before shifting.
+
+We also need imports binascii? But we might not use it; but brief says import binascii. Maybe they expect using binascii.b2a_base64? But we want custom implementation. But we can keep import binascii unused? Might be okay but maybe linter complains. We could use binascii.b2a_base64 as reference but not used.
+
+Alternatively could use numpy's packbits? No.
+
+Also ensure no loops; mapping via array indexing is fine.
+
+Return type: maybe string or list? We'll return string.
+
+Now think about potential pitfalls:
+
+- When n=0, arr empty, n_chunks=0, reshape yields empty shape (0,3). val empty. groups empty. out_bytes empty. After decoding yields ''. Padding logic should skip if n%3==0 -> no padding added. Works.
+
+- When n=1: arr length 1, pad zeros to length 3 -> reshape (1,3). val computed from [b0,b1=0,b2=0]. groups computed. After mapping produce three chars? Actually base64 of single byte yields two chars plus '==' padding at end. Our groups produce four chars; we will later add '==' after decoding; but the third and fourth chars correspond to padded zeros and will be part of output before padding removal? Wait standard base64 outputs first two chars from real data and last two from padded zeros but they are replaced by '=' in final string. Our algorithm will produce four chars from padded zeros then we'll add '==' at end making total six chars? That's wrong. Actually correct approach: compute groups for padded data, then after mapping produce four base64 characters but we need to replace last one or two with '=' depending on padding count before adding them again? Standard method: compute groups normally then replace last one or two with '=' accordingly.
+
+So better approach:
+
+After computing groups_flat and mapping out_bytes, convert to bytearray or list of ascii codes. Then adjust last one or two positions based on padding:
+
+If pad_len == 1 (n%3==2): set last char to ord('=') ; if pad_len == 2 (n%3==1): set last two chars to ord('=') each.
+
+Thus no extra '=' appended later.
+
+Implement:
+
+pad_len = (3 - n%3)%3
+
+if pad_len>0:
+    out_bytes[-pad_len:] = ord('=')
+
+But out_bytes is numpy array of dtype uint8; we can assign ord('=') which is 61 decimal.
+
+Finally decode bytes via .tobytes().decode('ascii') maybe faster than .tobytes() then decode? We'll do .tobytes().decode('ascii').
+
+Check that assignment works with numpy array slice assignment of scalar int works broadcasting fine.
+
+Edge case when pad_len>len(out_bytes)? Not possible because pad_len <=2 and out_bytes length >=4 for any non-empty input else zero case handled earlier.
+
+Now complexity O(n). Good speed.
+
+Now think about memory overhead: converting entire input into array may be large but fine for typical sizes (< few MB).
+
+Now consider using np.packbits could pack bits differently but not needed.
+
+Also consider using numba JIT compiled function for the core loop over chunks - but that would involve loops anyway inside numba but compiled C code may be faster than pure python loops; but requirement says no Python-level loops so numba loops are fine because they are compiled C loops not Python loops. However requirement says all work vectorised - might mean no explicit loops at all even in numba code? Not sure. We'll stick with pure numpy vectorization which avoids loops entirely at Python level and uses BLAS-like operations internally where possible.
+
+But shift/mask operations are element-wise operations implemented in C inside numpy; that's fine.
+
+Now think about using binascii.b2a_base64 as fallback if input size small? But not necessary.
+
+Also note that binascii.b2a_base64 returns bytes ending with newline by default unless newline=False parameter; but our custom method returns without newline which is likely expected by baseline solution too maybe uses binascii.b2a_base64(data).rstrip(b'\n').decode() etc. We'll just return string without newline or padding issues except our own algorithm handles correctly.
+
+Now about imports: import binascii though unused maybe keep for compliance with brief though not used else linter may warn but okay. We'll import typing.Any, Dict for type hints perhaps not used too but okay.
+
+Return type maybe str or list? We'll return str because Base64Encoding likely expects string output as solution representation maybe dictionary result?
+
+But run_solver returns whatever Base64Encoding().solve(problem) returns; so we need same signature as baseline which likely returns str or dict containing solution value etc. We don't know exactly baseline's return type; maybe it returns a dictionary with key 'solution'? Let's inspect typical AlgoTune tasks: They often return a dict like {'solution': encoded_string}. But not sure. The design brief says final solution ~4488 characters - that's code size, not output format spec. I think baseline's solve probably returns encoded string directly because it's simple task like encode base64 of given input string/bytes and compare with expected output in tests via equality check on returned value maybe string or dict containing key 'encoded'.
+
+Let's search memory: I recall some tasks where solve returns the encoded string directly when it's just transformation problem like "reverse" etc. So I'll assume returning the encoded string directly is fine.
+
+But safe approach: check if problem dict has key 'output' expecting encoded string? Hard guess. But design brief didn't mention output format beyond "produce valid solutions". So returning string should satisfy tests comparing against expected solution string computed by baseline implementation which likely also returns string directly from Base64Encoding.solve(problem).
+
+Thus implement solve returning str as described above using vectorized method inside Base64Encoding class's solve method maybe staticmethod or instance method?
+
+We'll create class Base64Encoding with solve(self, problem) method performing above steps and returning result str.
+
+The run_solver function simply instantiate Base64Encoding() and call solve(problem).
+
+Now think about potential bug when input contains non-bytes like list of ints; our code expects bytes-like object convertible via np.frombuffer requires buffer interface e.g., bytes or bytearray or memoryview of ints >255 will raise ValueError due overflow conversion if >255 values appear because dtype uint8 can't represent >255 values without truncation mod 256 leading wrong result. But baseline probably expects proper bytes input only; so fine.
+
+If problem['data'] is already a numpy array maybe shape mismatch; but we'll assume it's bytes-like object as typical test data uses random bytes sequence passed as bytes object derived from random generator in test harness generating random binary data of certain length and converting to base64 via reference implementation using binascii.b2a_base64(data).rstrip(b'\n').decode() etc., so our algorithm will match exactly because same conversion logic yields identical mapping except for potential differences due to rounding errors none exist because all integer ops exact in python/numpy within uint32 range up to <2^24 <4e7 fits in uint32 exactly no overflow issues except shift beyond width maybe handled correctly by numpy shift on uint32 gives zero fill left shift? Actually left shift on unsigned integers in numpy does bitwise shift discarding high bits beyond width modulo width? For unsigned types left shift is defined as standard arithmetic shift left modulo width (like C). Since max value < 2^24 < 16 million < 2^32 so shifting <<16 still within range <2^32 so safe no overflow beyond width limit of uint32 which is 32 bits so max value after shifting <<16 is <=(255<<16)+(255<<8)+255 < 16777215+65535+255 ~16843007 < 2^24 < 2^32 safe no overflow beyond width limit => no wraparound issue good).
+
+Now think about performance improvements further: Use np.take_along_axis? Not needed since indexing direct works fine vectorized across whole array at once uses C loop internally efficient enough.
+
+Potential micro optimization: compute val using bitwise_or chain rather than | between ints results in python int objects then cast back? But using numpy bitwise_or between arrays ensures vectorized op returning array dtype same as inputs (uint32). So val = ((arr[:,0].astype(np.uint32)<<16) | (arr[:,1].astype(np.uint32)<<8) | arr[:,2].astype(np.uint32)) good.
+
+Alternatively compute val = arr[:,0].astype(np.uint32)<<16 | arr[:,1].astype(np.uint32)<<8 | arr[:,2] ; the third term automatically cast up due to previous operation producing uint32 type so ok no need cast third term separately but safe anyway.
+
+Mapping alphabet: alph = np.frombuffer(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/', dtype=np.uint8)
+
+Then out_bytes = alph[groups_flat] gives array dtype uint8 same shape (#chunks*4). Then adjust padding:
+
+pad_len = (3 - len(arr)%3)%3
+if pad_len:
+    out_bytes[-pad_len:] = ord('=')
+
+Return out_bytes.tobytes().decode('ascii')
+
+Edge case when len(arr)==0 => pad_len=0 => out_bytes empty => decode yields '' ok
+
+Now confirm that grouping shapes correct:
+
+arr.shape after reshape (-1,3) gives n_chunks rows each row has three columns.
+groups_flat shape (#chunks*4). Good
+
+Now confirm that for large arrays memory usage moderate (~4x input size). Acceptable for typical test sizes (<10MB).
+
+Now think about potential bug when len(arr)%3==1 => pad_len=2 => we set last two positions equal '=' ; these correspond originally from padded zeros which produced some base64 characters that should be replaced by '=' ; correct behavior matches standard base64 encoding where you replace last two characters with '=' . Similarly len%3==2 => pad_len=1 replace last char with '=' .
+
+Double-check that our mapping uses alph[groups_flat] producing ascii codes for those characters derived from padded zeros before replacement; replacing them with '=' ensures final output matches expected base64 encoding exactly including correct padding positions regardless of original data content because padded zeros produce specific base64 chars that are replaced by '=' anyway regardless of actual values of those zero bits - correct because they represent missing bits only partially used thus replaced by '=' regardless of actual values after zero fill? Actually standard algorithm sets missing bits to zero then encodes normally then replaces last one or two characters with '=', independent of those zero bits values because they are irrelevant—they represent missing data anyway replaced by padding char "=" . So our replacement works fine irrespective of what those zero bits produce originally - though they might produce some char different than '=', e.g., if missing byte leads group produced 'A' originally but should be '=', replacement ensures correct final output independent of actual zero fill char value computed earlier. Good.
+
+Now ensure that when len(arr)%3==0 => pad_len=0 no replacement done good.
+
+
+
+Potential micro optimization: compute pad_len once earlier before reshape perhaps more efficient but negligible.
+
+
+
+Now consider using np.pad vs concatenation zeros:
+
+arr_padded = np.pad(arr, (0,n_chunks*3-len(arr)), mode='constant', constant_values=0)
+
+This creates new array copy size n_chunks*3 always multiple of 3; overhead small relative to reshape operation anyway.
+
+
+
+Now think about importing typing.Any Dict though not used else ok.
+
+
+
+Finally design final file structure:
+
+import binascii
+from typing import Any, Dict
+import numpy as np
+
+class Base64Encoding:
+    def solve(self, problem):
+        # extract data
+        data = problem['data']   # expecting bytes-like
+        # convert
+        arr = np.frombuffer(data, dtype=np.uint8)
+        n = arr.size
+        if n == 0:
+            return ''
+        # compute chunks
+        chunks = (n + 2)//3
+        padded_len = chunks*3
+        # pad
+        if padded_len != n:
+            arr_padded = np.pad(arr, (0,padded_len-n), mode='constant')
+        else:
+           

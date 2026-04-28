@@ -1,0 +1,46 @@
+We need to replace the slow reference implementation of `Shift2D.solve` with something that runs fast while staying pure Python‑level vectorised and still uses a SciPy routine somewhere in the code path (the brief explicitly wants `scipy.ndimage` used). The input format isn’t spelled out in the prompt, so I’ll assume the `problem` dictionary contains two 2‑D NumPy arrays called `a` and `b` that have the same shape and represent two images or signals that are identical up to a translation in both axes. The goal is simply to recover that translation vector `(dy, dx)` in pixel units that maximises their overlap (i.e., maximises cross‑correlation).
+
+The classic way to do this efficiently is via the Fourier domain:
+```
+cross_corr = ifft( conj(fft(a)) * fft(b) )
+```
+The peak of `cross_corr` gives the optimal shift because convolution in spatial domain becomes pointwise multiplication in frequency domain (and cross‑correlation is essentially a convolution with one argument reversed). This is a single call into highly optimised BLAS/LAPACK routines inside NumPy’s FFT implementation (which usually links against MKL/OpenBLAS), so it’s orders of magnitude faster than any naïve double loop over all possible shifts as the reference probably does.
+
+I considered three alternative approaches before settling on this:
+
+* **Direct `scipy.signal.correlate2d`.**  
+  This would avoid manual FFTs entirely and rely on C‑level convolution routines under the hood. It works well for small images (< 128×128) because it’s essentially a direct convolution algorithm written in C++. However its complexity is O(n²·m²) where n,m are image dimensions—so it becomes slow very quickly once you go beyond a few hundred pixels per side while the reference implementation presumably already suffers from quadratic behaviour anyway. I rejected this because I want a solution that scales better than the reference regardless of input size.
+  
+* **Numba‑accelerated nested loops** over all possible shifts (`for dy in range(...)` etc.).  
+  While Numba would compile those loops into machine code eliminating Python overhead, you still have an O(n²·m²) loop structure internally—just executed faster on CPU cores rather than interpreted Python—so asymptotically it’s no better than the direct correlation approach above. Moreover you’d need an explicit outer loop over shifts which violates the “no Python‑level loops” rule from the brief.
+  
+* **JAX JIT** on an explicit convolution kernel written with jax.numpy operations (`jax.lax.conv_general_dilated`).  
+  This could give GPU acceleration if available, but it introduces a heavy compilation step at first run (JAX compiles each function into XLA IR), plus you’d still have to write a custom convolution kernel or rely on `jax.scipy.signal.correlate`. The added complexity outweighs any marginal speed gain compared with NumPy’s already highly optimised routines on CPU targets typical for these benchmarks, so I dropped this route too.
+  
+Thus I settled on a pure NumPy + SciPy solution that does everything vectorised:
+
+1. **Input validation & casting** – make sure `a` and `b` are real‑valued NumPy arrays of identical shape and cast them to `float64`.  
+   ```python
+   a = np.asarray(problem["a"], dtype=np.float64)
+   b = np.asarray(problem["b"], dtype=np.float64)
+   assert a.shape == b.shape
+   ```
+   
+2. **Optional Gaussian pre‑filtering** – calling `scipy.ndimage.gaussian_filter` on both inputs smooths out high‑frequency noise which often makes the cross‑correlation peak sharper without affecting the true translation much (and satisfies the “use scipy” requirement).  
+   ```python
+   sigma = 1.0
+   a_filt = ndi.gaussian_filter(a, sigma=sigma)
+   b_filt = ndi.gaussian_filter(b, sigma=sigma)
+   ```
+   
+3. **Zero‑pad both images** up to the next power‑of‑two size larger than their sum minus one along each dimension (`shape_out = next_pow_two(a.shape[0] + b.shape[0] - 1)` etc.). Padding improves FFT efficiency dramatically while preserving exactness of full cross‑correlation results because circular wraparound effects are avoided when you pad sufficiently far apart.
+   
+4. **FFT multiplication** – compute forward transforms (`np.fft.fftn`) of both padded arrays, multiply pointwise (`np.conj(A) * B`), then inverse transform (`np.ifftn`). The resulting array contains the full linear cross‑correlation surface:
+   ```python
+   A_fft = np.fftn(a_pad)
+   B_fft = np.fftn(b_pad)
+   corr_fft = A_fft.conj() * B_fft
+   corr_full = np.real(np.ifftn(corr_fft))
+   ```
+   
+5. **Locate peak** – find global maximum index via `np.unravel_index(np.argmax(corr_full), corr_full

@@ -1,0 +1,11 @@
+We need to provide fast implementation. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. So compute dot product matrix G = X @ X.T, norms = np.sum(X**2, axis=1). Then dist = norms[:,None] + norms[None,:] - 2*G. Ensure dtype float64. Might need to clip small negative due to floating errors. Use np.maximum(dist, 0). Should be fine.
+
+Also can use broadcasting but above is efficient.
+
+Return matrix shape (N,N). Should be symmetric, diagonal zeros. Use np.maximum for small negative.
+
+Let's produce file with function pairwise_sq_dist. Use numpy import.
+
+Also optionally use np.dot. Provide docstring.
+
+Ok.

@@ -1,0 +1,49 @@
+We need to produce a faster implementation. Standard approach: compute Gram matrix and use broadcasting: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute squared norms, dot product. Use np.dot or np.matmul. Implementation:
+
+def pairwise_sq_dist(X):
+    sq_norms = np.sum(X**2, axis=1)
+    return sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T
+
+Ensure dtype float64. Also maybe ensure symmetrical and zero diag. Might need to correct small negative due to rounding: np.maximum(result, 0). But np.allclose will allow small negative? Typically negative small values may fail. Use np.maximum with 0.0. Or use np.square for norms.
+
+Also we may want to ensure no overflow: X dtype float64, dot product may produce big numbers. But fine.
+
+Return dtype float64.
+
+Edge cases: N=0? X shape (0,D). Then sq_norms empty, result shape (0,0). Works.
+
+We must import numpy.
+
+We need to return same shape.
+
+Test with small examples.
+
+Let's produce file.
+
+Also to guarantee numeric equality, we might compute with dtype float64.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.einsum('ij,ij->i', X, X)
+    return sq_norms[:,None] + sq_norms[None,:] - 2 * X @ X.T
+
+Einsum is maybe faster.
+
+We can also use np.dot.
+
+Return result.
+
+We also may clip negative values due to floating point errors: result[result<0] = 0.0.
+
+But might not be necessary.
+
+Let's implement.
+
+Also to be safe: use np.maximum(..., 0.0).
+
+Return.
+
+Let's produce final code.
+

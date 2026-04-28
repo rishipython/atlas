@@ -1,0 +1,19 @@
+We need to provide a faster implementation. Use broadcasting or matrix multiplication: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j.
+
+Compute norms squared vector of length N. Then use outer sum plus negative 2 times dot product. Use np.dot or np.matmul.
+
+Implementation: def pairwise_sq_dist(X): X = np.asarray(X, dtype=np.float64). Then compute G = X @ X.T. Norms = np.sum(X**2, axis=1). Then out = norms[:,None] + norms[None,:] - 2*G. Ensure nonnegative small negative due to numerical errors: maybe clip at 0. But tests probably allow small negative due to floating rounding. Use np.maximum(out, 0.0).
+
+Return out.
+
+Edge cases: N=0? shape (0,D) -> out shape (0,0). Works.
+
+Also ensure dtype float64.
+
+Let's produce file with imports and function. Use np.maximum.
+
+Add __all__ maybe not necessary.
+
+Return result.
+
+Ok produce.

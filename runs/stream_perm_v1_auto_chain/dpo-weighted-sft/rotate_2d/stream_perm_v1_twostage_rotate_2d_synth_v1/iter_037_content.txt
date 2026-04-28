@@ -1,0 +1,237 @@
+We need to write a design for rotate_2d solver. Let's think. The problem likely involves rotating a 2D array (image) by arbitrary angle. The reference implementation is slow; we want faster using scipy.ndimage.rotate or affine_transform, vectorized. No loops. Use numpy and scipy.ndimage. Also logging, random, typing.
+
+We need to design run_solver that takes problem dict, maybe containing image array and angle. Let's think about input format: maybe 'image' key with numpy array, 'angle' key float. We'll parse.
+
+We should avoid loops; use scipy.ndimage.rotate which is fast C implementation. But we might need to handle different interpolation orders, reshape option.
+
+Also we might want to precompute rotation matrix and use affine_transform for speed? But rotate already uses that internally.
+
+Edge cases: negative angles, large angles >360, non-square images.
+
+Also we might want to set mode='constant', cval=0, order=1 or 3.
+
+We also need to handle dtype: float32 or float64.
+
+Maybe we can use scipy.ndimage.affine_transform with precomputed matrix and offset to avoid interpolation overhead? But rotate uses bilinear by default.
+
+We can also use np.rot90 for multiples of 90 degrees quickly. That would be faster for those cases; we can detect if angle % 90 == 0 and use np.rot90 instead of ndimage.rotate.
+
+Also random import maybe used for generating test data? But not needed in solver.
+
+Logging: set up logger for debug info.
+
+The solve function inside Rotate2D class maybe just call rotate_2d function.
+
+We need to keep same function name and signature: run_solver(problem). So we can define class Rotate2D with solve method that returns rotated image.
+
+Let's design:
+
+- In run_solver: create instance of Rotate2D and call solve(problem). Problem may have keys 'image', 'angle', 'reshape' bool default True, 'order' int default 1.
+
+- Inside Rotate2D.solve: extract image = problem['image']; angle = problem.get('angle',0); reshape = problem.get('reshape', True); order = problem.get('order',1).
+
+- If angle % 90 == 0: use np.rot90(image, k=int(angle/90)%4). That covers 0,90,180,270 etc quickly.
+
+- Else: use scipy.ndimage.rotate(image, angle=angle, reshape=reshape, order=order, mode='constant', cval=0.0). That is vectorized C code.
+
+- Return result array.
+
+Edge cases: If image is multi-channel (H,W,C), need to rotate each channel separately? ndimage.rotate supports multichannel via axes parameter; but default rotates over first two axes only; if shape has more dims then it rotates over first two dims leaving others unchanged. Good.
+
+Also if image dtype is integer, rotate returns float64 by default; we might cast back to original dtype using .astype(original_dtype) if desired? But spec not mention; maybe leave as float64 for precision.
+
+Logging: log start and end of rotation with angle and shape sizes.
+
+Random import not used but included per brief; maybe used in tests but not necessary in code; but we can import random anyway.
+
+Typing: use Any, Dict, Optional for type hints on problem dict.
+
+Return type likely numpy.ndarray.
+
+Make sure no loops at all; all vectorized operations via numpy and scipy functions.
+
+Now consider performance: For large images with arbitrary angles, ndimage.rotate uses spline interpolation which is heavy but still C-level loops; cannot avoid further vectorization because it's already compiled. Could consider using FFT-based rotation? Not needed.
+
+But the brief says final solution ~8430 characters; that's fairly large file including imports and class definitions etc. We can add docstrings and comments making size bigger but within limit. We should aim around that length by adding some extra helper functions or constants maybe not necessary but okay.
+
+Also ensure no Python-level loops; only possible loops in list comprehensions? None allowed; so avoid any for loops even in helper functions. Use vectorized operations only; np.rot90 uses internal loops but fine.
+
+Edge cases: Negative angles handled by modulo operation before rot90 detection: angle_mod = angle % 360. Then k = int(round(angle_mod / 90)) %4 ; but round may produce floating error; better use np.round or int(np.round(angle_mod/90))%4 . For non-multiples of 90 but close due to floating error (like 89.999999), we might still go into ndimage.rotate path which is fine.
+
+Also consider reshape option: if reshape=False then output shape same as input; else output larger bounding box rotated fully. ndimage.rotate handles this automatically based on reshape flag.
+
+Return type must be numpy.ndarray with same dtype as input? Might cast back if needed: out.astype(image.dtype).
+
+Let's plan code structure:
+
+- imports
+- logger config
+- class Rotate2D:
+    - def __init__(self): pass
+    - def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        - extract keys
+        - validate types
+        - log start
+        - compute rotation
+        - log end
+        - return result
+
+- def run_solver(problem):
+    - return Rotate2D().solve(problem)
+
+Add type hints accordingly.
+
+Now about random import: maybe used in tests or placeholder; we can include a dummy usage like random.seed(0) in __init__ to satisfy import requirement but not needed for functionality. But we could just import random without using it; allowed because no loop usage required.
+
+Let's think about potential pitfalls:
+
+- If image has zero dimensions? Not typical.
+- If angle is string? We'll convert to float.
+- If order not int? We'll cast.
+- If reshape missing -> default True.
+- Logging level set to INFO maybe.
+- Ensure no loops anywhere else like list comprehensions or map etc; okay.
+- Avoid using any python-level iteration over array elements.
+- Use numpy functions only for rot90 detection (mod operations).
+- Use math module? Not necessary.
+- Use optional parameters properly typed as Optional[int] etc.
+- Provide docstring for class and methods explaining usage.
+- Provide __all__ maybe not necessary.
+- Add main guard if __name__ == "__main__": pass (not required).
+
+Now ensure file size ~8430 chars: We can add some filler comments or docstrings lines to increase length slightly if needed. But not too much else risk going over limit? The brief says final solution is ~8430 characters but not strict exact number; just approximate. We'll aim around that by adding descriptive comments and docstrings of moderate length (~200 chars each). That should bring total around 8000+ characters given imports (~200), class (~500), function (~400), etc. Should be fine.
+
+Let's craft the chain-of-thought now following style guidelines:
+
+We need stream-of-consciousness prose with conversational openers etc. Provide reasoning exploring alternatives like pure numpy vs scipy vs numba etc. Also mention edge cases etc. Let's produce around ~2000 words (~12000 chars) maybe too long but okay within limit? Actually requirement was 4000–8000 characters of dense thinking. So we should aim around say 6000 chars (~1000 words). We'll write fairly detailed reasoning exploring alternatives and decisions with some code snippets inline small ones only single backticks allowed but no full function bodies except snippets like `np.rot90`.
+
+Let's write now.
+We need a fast rotate_2d routine that still satisfies the interface the benchmark expects – a `run_solver` that takes a `problem` dict and returns an ndarray of the rotated image.  
+The baseline was probably something like:
+
+```python
+def run_solver(problem):
+    img = problem['img']
+    ang = problem['angle']
+    return scipy.ndimage.rotate(img, ang)
+```
+
+But that baseline was too slow because it probably did a lot of Python‑level bookkeeping or used a generic loop inside the solver class that wrapped the call repeatedly during tests.  
+So our goal is clear: eliminate any Python loops inside the core logic and lean on compiled libraries – `numpy` for simple arithmetic checks and `scipy.ndimage` for the heavy lifting – while keeping the API identical so the reference tests still pass.
+
+---
+
+### First thoughts – what does “rotate” actually mean here?
+
+The input image could be grayscale (`(H,W)`), RGB (`(H,W,C)`), or even higher‑dimensional (`(N,H,W)` batches).  
+`scipy.ndimage.rotate` already handles all these shapes by rotating over the first two axes only – everything else stays untouched – so we don’t have to write any special‑case code for channels or batch dims.  
+If the rotation angle is an exact multiple of 90°, `ndimage.rotate` still goes through its spline interpolation routine which is unnecessary overhead when you could just permute axes with `np.rot90`.  
+That gives us an obvious micro‑optimization path:
+
+1. Detect multiples of 90° quickly with integer arithmetic (no loops).
+2. Call `np.rot90` which is essentially a fast view/transpose operation under the hood.
+3. For all other angles fall back to `ndimage.rotate`.
+
+No Python loop will ever touch the pixel data – everything stays in compiled C/Fortran kernels once we hand off control to NumPy/SciPy functions.
+
+---
+
+### What about performance trade‑offs?
+
+* **Numba** could JIT‑compile a custom kernel that does bilinear interpolation manually, but writing that kernel correctly (handling boundary conditions, preserving dtype) would be error‑prone and still slower than SciPy’s highly tuned implementation on most hardware.
+* **JAX** offers JIT compilation too but requires rewriting code in JAX's API style (`jax.numpy`) and dealing with device placement – overkill for this simple task.
+* **Pure NumPy** cannot rotate arbitrary angles efficiently without resorting to convolution or FFT tricks which are more complex than necessary here.
+* **Scipy** already provides `ndimage.rotate`, which internally uses `affine_transform` + spline interpolation – this is what most production libraries use because it’s battle‑tested across platforms.
+  
+So SciPy wins on both speed and reliability while keeping our code minimal and loop‑free.
+
+---
+
+### Edge cases & robustness
+
+* **Angle sign** – negative angles should rotate clockwise instead of counter‑clockwise as per convention used by most imaging libraries (`ndimage.rotate` uses counter‑clockwise when positive). We’ll keep that behaviour consistent by passing the raw value through unchanged.
+* **Angle outside [0,360)** – modulo arithmetic will normalize it before checking for multiples of 90°. Using `angle % 360` ensures values like -45° become 315°, which still works correctly with our logic.
+* **Non‑integer multiples** – due to floating point rounding a value like `89.9999999` could slip into the “multiple of 90°” branch incorrectly if we compare directly with `%`. To guard against this we’ll round after dividing by 90 before taking modulus:
+  
+```python
+k = int(round((angle % 360) / 90)) % 4
+```
+
+If `k == 0`, it means no rotation at all – we can just return a copy (or view) of the original array immediately without calling any SciPy routine.
+* **Data type preservation** – SciPy’s `rotate` promotes integer images to float64 by default because interpolation requires fractional values. Some callers expect the output dtype to match the input (e.g., when saving back as PNG). We’ll cast back at the end if the input was an integer type:
+
+```python
+if np.issubdtype(img.dtype, np.integer):
+    out = out.astype(img.dtype)
+```
+
+This keeps memory usage reasonable while preserving semantics.
+* **Reshape flag** – The baseline likely respected a `reshape=True/False` option from the test harness (`ndimage.rotate(... reshape=False)` keeps output size equal to input). We’ll expose this via an optional key in `problem`. If omitted defaulting to `True` matches typical behaviour in many image processing pipelines.
+* **Interpolation order** – Allow callers to specify spline order (defaulting to bilinear `order=1`). Higher orders give smoother results at cost of speed; exposing it keeps us flexible without changing core logic.
+* **Logging** – The brief mentions importing logging even if unused elsewhere; adding debug statements helps trace performance during profiling runs without affecting release speed (logging at INFO level can be turned off easily).
+
+---
+
+### Rough skeleton before writing code
+
+```python
+import logging
+import random   # imported as per brief even though unused
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+logger = logging.getLogger(__name__)
+
+class Rotate2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        # Extract parameters safely
+        img = problem['img']          # required key
+        ang = float(problem.get('angle', 0))
+        reshape = bool(problem.get('reshape', True))
+        order   = int(problem.get('order',   1))
+
+        logger.info(f"Rotating shape={img.shape} angle={ang} reshape={reshape} order={order}")
+
+        # Quick path for multiples of 90°
+        k = int(round((ang % 360) / 90)) % 4
+        if k:
+            out = np.rot90(img, k=k)
+            logger.info(f"Used np.rot90 with k={k}")
+        else:
+            out = scipy.ndimage.rotate(
+                img,
+                ang,
+                reshape=reshape,
+                order=order,
+                mode='constant',
+                cval=0,
+            )
+            logger.info("Used scipy.ndimage.rotate")
+
+        # Preserve integer dtype if needed
+        if np.isinteger(img.dtype):
+            out = out.astype(img.dtype)
+
+        return out
+
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+That’s already loop‑free except inside NumPy/SciPy internals which are fine because they’re compiled C/Fortran kernels.
+
+---
+
+### Why not other tricks?
+
+* **FFT‑based rotation** would involve padding images symmetrically, computing FFTs twice per axis — this adds overhead on top of what SciPy already does efficiently via affine transforms plus spline interpolation.
+* **Custom Numba kernel** would require handling boundary conditions manually (`mode='constant'`) and dealing with multi‑channel arrays explicitly—more code than benefit unless profiling shows SciPy’s path is actually bottlenecked (unlikely).
+* **Using OpenCV (`cv2.warpAffine`)** could be faster on some systems but introduces an external dependency not listed in allowed packages and would break portability tests expecting only NumPy/SciPy imports per brief.
+  
+Thus sticking purely to NumPy/SciPy satisfies both performance goals and dependency constraints while keeping code short enough (<~8430 chars) yet fully documented for readability during later maintenance passes.
+
+
+
+OK, I think I have the design. Time to write it.

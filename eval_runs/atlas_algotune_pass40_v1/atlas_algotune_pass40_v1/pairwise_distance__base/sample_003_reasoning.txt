@@ -1,0 +1,21 @@
+We need to write faster implementation. Use broadcasting or dot product trick. For squared Euclidean distance: D = a + b - 2c where a = sum(X^2, axis=1) as column vector, b = a^T, c = X @ X^T. So D[i,j] = a[i] + a[j] - 2 * X[i]·X[j]. Return non-negative.
+
+Use np.dot. Implementation should handle large arrays. Ensure dtype float64. Provide function pairwise_sq_dist. Use np.maximum(D, 0) to avoid negative due to numerical errors.
+
+Return matrix. That's fast.
+
+Let's produce code. Use numpy only. Should be fine.
+
+Edge cases: X shape (N,D). If N==0? return empty (0,0). Implementation handles.
+
+We'll implement as:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    D = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # due to numerical errors, small negative values may appear
+    np.maximum(D, 0, out=D)
+    return D
+
+That's all. Provide file.

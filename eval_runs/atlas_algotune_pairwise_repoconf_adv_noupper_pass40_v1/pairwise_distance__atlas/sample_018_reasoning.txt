@@ -1,0 +1,21 @@
+We need to replace triple loops with efficient numpy vectorization. Standard formula: squared distance matrix = A + A.T - 2*X*X.T, where A is sum of squares per row. For float64. So implement:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2.0 * X @ X.T
+    # ensure non-negative due to numerical errors: max(dist, 0)
+    np.maximum(dist, 0, out=dist)
+    return dist
+
+That's efficient.
+
+Edge cases: X shape (N,D). For large N, memory may be huge. But okay.
+
+Also we might use np.dot.
+
+We need to import numpy.
+
+Return same dtype.
+
+Let's produce final code.

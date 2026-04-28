@@ -1,0 +1,14 @@
+We need to provide a faster implementation. Use vectorized operations: compute squared norms and use broadcasting: D = ||X||^2 + ||X||^2 - 2 X X^T. Use np.dot. Ensure dtype float64. For N up to maybe large. We also need to return symmetrical matrix with zeros diagonal. Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X*X, axis=1)
+    D = norms[:,None] + norms[None,:] - 2.0*np.dot(X, X.T)
+    D[D<0] = 0  # due to numerical errors
+    return D
+
+Edge cases: N=0? Should return empty (0,0). Works. We'll keep imports.
+
+Return as np.ndarray dtype float64. Provide file.
+
+Let's produce final code.

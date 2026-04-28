@@ -1,0 +1,52 @@
+We need to implement a fast, numerically stable matrix exponential, matching scipy.linalg.expm within tolerance. We can just import scipy.linalg.expm and call it. But we need to keep same signature. That would be trivial: return scipy.linalg.expm(A). That's allowed. But maybe we need to implement more algorithmic approach like Pade approximation with scaling and squaring. But easiest is to delegate to scipy.linalg.expm. That is definitely fast and accurate. But we need to import scipy.linalg. We must ensure that the environment has scipy. The problem says we may import scipy. So we can just call that.
+
+But we must be careful: The function returns a float64 matrix. scipy.linalg.expm returns a numpy array of same dtype. So we can just return that.
+
+Thus we write:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy.linalg.expm(A)
+
+But maybe we need to handle input dtype or shape. We can just rely on scipy.
+
+We need to produce a complete file. So we must include imports, define function.
+
+But maybe the evaluation will import the file and call expm_fast. That should work.
+
+But maybe they want a more custom implementation. But given the instructions: "Your task is to replace it with a fast, numerically-stable implementation that matches scipy.linalg.expm(A) within tight tolerance." So using scipy.linalg.expm is fine.
+
+But maybe they want an algorithm that does not rely on SciPy? But the guidelines allow SciPy. So we can just call it.
+
+However, the reference implementation uses pure Python loops. Our replacement must be a drop-in replacement with same function name. So we can just import scipy.linalg and call it.
+
+Edge: Might need to ensure dtype float64. But if A is float64, scipy will produce float64.
+
+Return type: numpy array.
+
+Ok.
+
+Let's produce code.
+
+But maybe they want to avoid SciPy due to environment? But the guidelines say we may import SciPy. So fine.
+
+We'll implement:
+
+def expm_fast(A):
+    return scipy.linalg.expm(A)
+
+Add docstring.
+
+Also maybe handle if A is not 2D or not square? But that's not necessary.
+
+We'll produce.
+
+But maybe they want to avoid SciPy because the test harness may not have SciPy? But guidelines say we can import SciPy. Usually environment has SciPy.
+
+Alternatively, we could implement using scipy.linalg.expm.
+
+Ok.
+
+Let's produce final code.

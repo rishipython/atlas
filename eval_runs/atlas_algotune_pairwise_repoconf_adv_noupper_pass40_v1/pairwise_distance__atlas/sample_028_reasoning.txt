@@ -1,0 +1,18 @@
+We need to replace the triple loop with efficient vectorized approach. Pairwise squared Euclidean distance matrix can be computed via broadcasting or using dot product: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared: sum X**2 along axis=1. Then compute Gram matrix: X @ X.T. Then D = norms[:,None] + norms[None,:] - 2*gram. Ensure dtype float64. Return D. Ensure no negative due to numerical error: maybe clip small negative values to zero.
+
+Implementation: def pairwise_sq_dist(X): compute. Use np.dot. Should handle large N. Complexity O(N^2). Provide final code.
+
+Let's produce final file with imports and function.
+
+Also ensure that X is np.ndarray float64. Accept any shape. Use np.asarray.
+
+Edge cases: if X is empty? shape (0,D). Then norms shape (0,) etc. D shape (0,0). Works.
+
+Return dtype float64.
+
+Potential small negative due to rounding, clip: out = np.maximum(out, 0.0).
+
+Return.
+
+Let's craft final code.
+

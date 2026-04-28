@@ -1,0 +1,170 @@
+We need to replace the slow scipy.ndimage.affine_transform with something faster but still correct. Let's think: we can use scipy.ndimage.map_coordinates with precomputed grid, or use skimage.transform.warp? But requirement: uses scipy functions somewhere. So maybe use scipy.ndimage.affine_transform but with order=1 instead of 3 for speed. But the problem expects cubic? No, reference uses order=3, but we can change? The is_solution compares to reference, so must match exactly. So we need same output as reference. That means we must replicate affine_transform behavior with cubic interpolation.
+
+Maybe we can use scipy.ndimage.affine_transform but with optimized parameters: precompute inverse matrix, use mode='constant', cval=0. That is what reference does. So not much to optimize.
+
+Alternate: Use scipy.ndimage.affine_transform but convert image to float32 for speed? But reference uses float64? It doesn't specify dtype. The input image is floats 0-255. If we convert to float32, the output may differ slightly due to rounding, might fail is_solution due to tolerance. We can set rtol/atol to allow small diff.
+
+But is_solution uses rtol=1e-5, atol=1e-7. That's tight. Using float32 might produce differences > tolerance? Possibly but maybe within 1e-5 relative error is fine.
+
+Better: Use numba JIT on custom interpolation? That could be faster but more complex.
+
+But requirement: no Python-level loops; all vectorised. So we can't write loops in Python.
+
+We could use scipy.linalg.solve? No.
+
+Maybe we can compute coordinates grid once and use map_coordinates which is vectorised and maybe faster than affine_transform for large images? But map_coordinates also loops internally in C.
+
+Alternatively, use scipy.ndimage.affine_transform but set order=3 and mode='constant', cval=0. That's the reference.
+
+To speed up: maybe convert image to contiguous array, ensure dtype float32, pass order=3, but that might not speed up.
+
+Better: Use scipy.ndimage.affine_transform but specify output_shape same as input; that's default anyway.
+
+Maybe use numba to jit the call? Not helpful.
+
+Could use JAX jitted function that calls numpy's affine transform? JAX doesn't have built-in affine transform; would need custom mapping.
+
+Maybe use SciPy's ndimage.rotate etc? No.
+
+We could implement affine transform via grid generation and interpolation using SciPy's map_coordinates with precomputed coordinates arrays (meshgrid). That would avoid some overhead of affine_transform?
+
+Let's think: affine_transform basically applies matrix inverse to coordinates and then interpolates. We can compute output grid coordinates as array of shape (n,n,2) representing (x,y) positions in input space for each output pixel. Then call map_coordinates(image, [coords_y, coords_x], order=3). That's vectorised and may be faster because it avoids per-pixel transformation overhead? Not sure.
+
+But map_coordinates also loops internally; difference may be minimal.
+
+However we can precompute coordinate arrays once per solve call; that's fine.
+
+We must handle boundary mode 'constant', so map_coordinates has mode='constant', cval=0.
+
+Thus design:
+
+- Get image shape (h,w).
+- Compute inverse matrix M_inv = np.linalg.inv([[matrix[0][0], matrix[0][1], matrix[0][2]],[matrix[1][0], matrix[1][1], matrix[1][2]],[0,0,1]])[:2,:]
+- Create output coordinate grid: y indices from 0..h-1, x indices 0..w-1.
+- Flatten into arrays of shape (N,) where N=h*w.
+- Compute input coords = M_inv @ [x_flat; y_flat; ones] -> shape (2,N)
+- Reshape back to (h,w) for each channel.
+- Use map_coordinates(image, [y_coords,y_coords], order=3). Wait map_coordinates expects coordinates as list of arrays per dimension: [y_coords_flat, x_coords_flat].
+- Provide shape accordingly.
+- Reshape back to (h,w).
+- Return as numpy array dtype float64 maybe.
+
+This is vectorised and no loops at Python level.
+
+Will this be faster than affine_transform? Possibly similar; but at least it's explicit and uses only one function call map_coordinates which may be optimized better than affine_transform overhead.
+
+We need to ensure memory usage okay: creating arrays of size 2*N maybe fine for moderate n (~512). For large n maybe heavy but okay.
+
+Edge cases: if matrix singular? Then inverse fails; but problem likely ensures invertible.
+
+Also need to handle dtype conversion: keep as float64 or float32? Use float64 for consistency with reference.
+
+Test numeric equality: Since our algorithm uses same interpolation method as map_coordinates which matches cubic spline interpolation used by affine_transform? Yes both use spline interpolation of given order on input data; should produce identical results if coordinates computed correctly. Might differ slightly due to rounding errors in coordinate calculation vs internal method inside affine_transform which might compute coordinates differently (like using forward mapping?). But likely identical if using same math. However small differences might exceed tolerance if rounding differences are significant. But using double precision should match within 1e-7 relative error probably fine.
+
+We must also consider that affine_transform uses inverse mapping by default (it transforms output coordinates back). Our method does same via inverse matrix M_inv computed from given matrix directly. Need correct ordering: In affine_transform docs: The matrix argument is the transformation from output to input coordinates; i.e., it maps output indices into input indices via linear transformation plus offset. Actually docs say "matrix" transforms output coordinates into input coordinates." So our M_inv should be that matrix itself? Wait the given "matrix" in problem is a 2x3 matrix that defines the transform from input to output or vice versa? Problem says "The transformation is defined by a 2x3 matrix which combines rotation,...". Usually in image processing context, a 2x3 affine transform maps input coordinates to output coordinates via x_out = A * x_in + t. But scipy.ndimage.affine_transform expects matrix that maps output coords into input coords (the inverse). So if problem gives forward transform A_fwd, then we need its inverse for affine_transform. But reference code passes matrix directly into affine_transform without inversion! That implies that problem's "matrix" is actually already the inverse mapping expected by affine_transform. Or maybe they misinterpret; but since reference passes it directly and passes tests presumably passing verification against itself, our implementation must produce same result as reference given same input matrix. So we should mimic exactly what reference does: treat "matrix" as the one passed into affine_transform directly (i.e., mapping output coords -> input coords). So when computing M_inv ourselves, we shouldn't invert again; just treat "matrix" as given mapping from output coords -> input coords in homogeneous form [A|t]. That means M_inv = [[matrix[0][0], matrix[0][1], matrix[0][2]],[matrix[1][0], matrix[1][1], matrix[1][2]],[0,0,1]] . We don't need further inversion because it's already mapping from out->in used by affine_transform. Wait check docs: In ndimage.affine_transform(image,matrix,...), "matrix" transforms coordinates from output space into input space." Yes that's correct. So if problem's "matrix" is meant as forward transform from input->output then they'd need inversion before passing into affine_transform; but they didn't do that so likely problem's "matrix" already represents out->in mapping or they purposely used it incorrectly expecting this behavior for test harness consistency.
+
+Thus our coordinate calculation should use this "matrix" directly as mapping from out->in coordinate system: For each pixel position (x_out,y_out), compute [x_in,y_in] = M @ [x_out,y_out,1]. Good.
+
+So implement:
+
+M = np.array(matrix) # shape (2,3)
+M_hom = np.vstack([M,[0,0,1]]) # shape (3,3)
+coords_out_x = np.arange(w)
+coords_out_y = np.arange(h)
+X,Y = np.meshgrid(coords_out_x,coords_out_y) # shape h,w
+ones = np.ones_like(X)
+coords_hom = np.stack([X,Y,ones], axis=-1) # h,w,3
+coords_in_hom = coords_hom @ M_hom.T # h,w,2
+x_in = coords_in_hom[...,0]
+y_in = coords_in_hom[...,1]
+Now flatten and feed into map_coordinates:
+
+coords_flat = [y_in.ravel(), x_in.ravel()]
+transformed_flat = scipy.ndimage.map_coordinates(image.astype(np.float64), coords_flat,
+                                                order=self.order,
+                                                mode=self.mode,
+                                                cval=0)
+transformed_image = transformed_flat.reshape((h,w))
+
+Return dict with transformed_image array.
+
+This uses only numpy operations and one call to map_coordinates which may be faster than affine_transform due to less overhead in computing Jacobian etc?
+
+We need no Python-level loops - we used meshgrid etc which are vectorized.
+
+Edge cases: If image not square? Problem says n x n array but could handle rectangular anyway.
+
+Also consider memory consumption for large images; but okay.
+
+Now performance wise: Using meshgrid creates large arrays of size h*w each for X,Y which are double precision floats (~8 bytes each). For 2048x2048 that's ~33MB per array times two => ~66MB plus others => maybe high but acceptable within typical memory limits (~512MB). For bigger images might exceed memory but tasks likely moderate size (<512).
+
+Alternatively could generate coordinate arrays via broadcasting without meshgrid by using np.arange and broadcasting addition etc:
+
+X = np.arange(w)[None,:]
+Y = np.arange(h)[:,None]
+ones = np.ones_like(X)
+
+Then stack along last axis etc - similar memory usage though smaller because X,Y separate shapes h,w each still same size though broadcasting reduces copies maybe less overhead than meshgrid which creates full arrays anyway. We'll just use meshgrid for simplicity.
+
+Potential optimization: Use float32 for X,Y because they are integer indices up to n < 65536 maybe fits in int32 or float32; then cast later when computing product with M_hom floats double precision -> result double precision anyway due to cast promotion. Using int32 or float32 may reduce memory slightly but not huge difference; keep double for simplicity and consistency with reference which uses double inside its internal function likely double precision too.
+
+Now check numeric correctness: Using map_coordinates with same order and mode will produce identical results if coordinate calculation matches internal method of affine_transform exactly including how they handle offsets and scaling relative to pixel centers vs corners etc. There might be subtle difference regarding whether pixel centers are at integer coordinates or half-integer positions depending on convention used by ndimage.affine_transform vs our manual mapping using integer grid positions referencing pixel centers at integer positions by default (like index of pixel center). I think both treat pixel indices as centers at integer positions starting at zero at first pixel center. So should match exactly if coordinate calculation matches their formula exactly which uses homogeneous transform applied directly on indices without any offset shift like -center etc. So should be identical because we're doing exactly that formula used by ndimage.affine_transform internally when computing transformed coordinates via inverse mapping of each output index into input index using provided matrix directly (no extra translation). Thus our method should produce identical outputs within floating point rounding errors only due to intermediate calculations differences perhaps negligible < tolerance.
+
+But we must ensure that we pass same dtype for image and same order/mode/cval values as reference default cval=0 for constant mode yes default cval=0 so fine.
+
+Thus design ready.
+
+Now consider potential improvements:
+
+Could avoid creating X,Y arrays entirely by using linear indexing approach:
+
+indices = np.arange(h*w).reshape(h,w)
+But need separate x,y coordinates per pixel; can compute x indices via broadcasting:
+
+x_indices = np.arange(w)[None,:] repeated along rows
+y_indices = np.arange(h)[:,None] repeated along columns
+
+Then stack them horizontally using stack or concatenate along last axis after adding ones column:
+
+ones_col = np.ones((h,w))
+coords_hom = np.stack([x_indices,y_indices,ones_col], axis=-1)
+
+This yields shape h,w,3 similar memory usage as meshgrid though meshgrid returns X,Y separately anyway so memory similar anyway.
+
+Let's choose simple approach with meshgrid since readability fine and no loops needed anyway within numpy functions only python-level code minimal lines no loops except function definitions etc allowed because they are not loops over data points - just single calls generating arrays internally C-level loops not counted as Python-level loops I think yes it's vectorized operations inside C code not Python loop overhead - acceptable per requirement "No Python-level loops".
+
+Now about import list: We will import numpy as np; import scipy.ndimage; from typing import Dict
+
+We'll define class AffineTransform2D with __init__ setting order=3 mode='constant'.
+
+In solve method we'll do above steps returning dict {"transformed_image": transformed_image} where transformed_image is numpy array of floats possibly dtype float64 default from map_coordinates result type same as image dtype casted earlier . We'll cast image.astype(np.float64) before passing so result dtype float64 too consistent with reference which likely returns float64 too because image original floats maybe float64 already if list converted automatically by numpy default dtype float64 unless specified else maybe float64 anyway because list of floats yields float64 by default when converting via np.asarray() inside ndimage.affine_transform perhaps they convert inside too - unknown but safe to cast explicitly ensures double precision consistent across both methods so comparison passes tolerance easily even if small differences due to rounding differences between two methods cause small relative error < tol probably fine).
+
+Edge cases like empty image or zero-size dims? Problem likely always non-empty square >0 dims else tests might fail anyway - skip handling those unless needed else raise error gracefully returning empty list like original code did when exception occurs - keep similar behaviour maybe try/except around entire transformation block returning empty list on exception like original code did earlier returns {"transformed_image": []}. We'll preserve that logic just modify inner block accordingly inside try except Exception e:.
+
+Also keep logging import perhaps not needed but ok keep existing imports unchanged except remove unused ones like random etc if not used - fine though optional but maintain minimal imports per brief? Brief says imports include numpy,np ;scipy.ndimage ; typing Dict Any List . We can keep others though not necessary but okay minimal set advisable.
+
+Let's craft final design accordingly:
+
+```
+import numpy as np
+import scipy.ndimage
+from typing import Dict
+
+class AffineTransform2D:
+    def __init__(self):
+        self.order=3
+        self.mode='constant'
+
+    def solve(self,p):
+        try:
+            image=np.asarray(p['image'],dtype=np.float64)
+            mat=np.asarray(p['matrix'],dtype=np.float64)
+            h,w=image.shape
+            # build homogeneous transformation
+            M=np.vstack([mat,np.array([0.,0.,1.]])])
+            # generate grid
+            x_grid=np.arange(w)[None,:]
+            y_grid=np.arange(h)[:,None]
+            ones=np.ones((h,w),dtype=np.float64)
+            coord=np.stack([x_grid,y_grid,ones],axis=-1)   # shape h,w,3
+            #

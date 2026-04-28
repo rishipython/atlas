@@ -1,0 +1,39 @@
+We need to produce efficient convolution via FFT. Need to handle 1D arrays of floats, dtype float64. We can use scipy.signal.fftconvolve or numpy.fft.fft. For large arrays, use numpy.fft.fft and then inverse. However, to avoid overhead, we can use numpy.fft.fft with real input: np.fft.rfft or rfft? For real signals, we can use rfft to get half-length. But easier: use np.fft.fft of size nfft = next power of 2 >= N+M-1. Use np.fft.fft(x, nfft)*np.fft.fft(h, nfft). Then inverse. Use np.fft.ifft. The result should be real. So conv = np.real(ifft). Or use scipy.signal.fftconvolve which is probably efficient. But for compatibility, we can implement ourselves. Use np.fft.fft.
+
+Edge cases: If either array empty? Should handle? They likely non-empty.
+
+Also, we need to match numeric results: using float64, rounding errors acceptable.
+
+Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h); nfft = 1 << (N+M-1-1).bit_length() maybe. Then compute. y = np.fft.ifft(np.fft.fft(x, nfft)*np.fft.fft(h, nfft)).real[:N+M-1]
+
+Return dtype float64.
+
+We need to import numpy.
+
+Also, for small arrays maybe direct loop is faster, but not required.
+
+Let's implement.
+
+Also, we might want to use np.fft.rfft and irfft: this reduces memory. rfft size nfft returns nfft/2+1. Compute product, then irfft to get full length. That is more efficient. Use nfft = next power of 2. Use np.fft.rfft(x, nfft). Then product. Then irfft to length N+M-1.
+
+Implementation:
+
+nfft = 1 << (N+M-1-1).bit_length()
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = np.fft.irfft(X*H, nfft)[:N+M-1]
+return Y
+
+This yields float64. Should be fine.
+
+We need to ensure dtype float64. np.fft functions produce float64 by default. Good.
+
+Return as np.ndarray of dtype float64.
+
+Edge: If N+M-1==0? but arrays non-empty.
+
+Let's produce final code.
+

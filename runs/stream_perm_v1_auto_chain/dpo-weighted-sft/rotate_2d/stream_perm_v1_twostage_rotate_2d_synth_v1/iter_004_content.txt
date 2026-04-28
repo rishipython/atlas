@@ -1,0 +1,74 @@
+We need to speed up rotate_2d. Let's think. The problem likely rotates a 2D array? The reference uses Rotate2D class. We need to replace solve with fast implementation. We must use scipy, matrix multiplication, no loops. Use numpy vectorized operations. Maybe use scipy.ndimage.rotate? That is fast and uses interpolation. But maybe we need exact rotation without interpolation? Might be rotating a grid of points around center by angle. Could use homogeneous coordinates and matrix multiplication.
+
+We must consider input format: problem dict contains array and angle? Let's assume problem has 'image' key and 'angle'. We'll produce rotated image using scipy.ndimage.rotate with reshape=False for same size. That's vectorized, uses FFT? It uses spline interpolation.
+
+But we need to keep same function signature: run_solver(problem) returns solution. The solution likely a dict with rotated array.
+
+We should import logging, random, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+No loops: just call rotate.
+
+Edge cases: angle could be negative or >360; ensure modulo 360.
+
+Also maybe the rotate should preserve dtype. Use order=1 for bilinear.
+
+Let's think about performance: scipy.ndimage.rotate is C-coded, uses FFT for large images? Might be good.
+
+Alternatively, we can implement rotation via matrix multiplication on grid coordinates: create meshgrid of indices, subtract center, apply rotation matrix via np.dot, then interpolate via map_coordinates. That also uses scipy.ndimage.map_coordinates which is vectorized.
+
+Better: use scipy.ndimage.affine_transform which directly applies affine matrix with interpolation. That is efficient.
+
+So design: get image array (2D). Compute center (cx,cy). Build rotation matrix R = [[cos,-sin],[sin,cos]]. Build affine matrix for affine_transform expects inverse mapping and offset. For rotation about center: offset = center - R @ center. Then call affine_transform(image, R, offset=offset, order=1). That yields rotated image same shape.
+
+No loops. Use numpy for cos/sin and matrix multiplication.
+
+Edge cases: dtype float64; if image int then cast back? We can keep as original dtype but output float64; fine.
+
+Also include logging for debugging; random maybe used for seeding? Not needed but import anyway per brief.
+
+Return dict with rotated image under key 'rotated'.
+
+Ok finalize design.
+
+Now handoff sentence.
+We need to replace the slow `Rotate2D.solve` with a fast vectorised routine that still satisfies the API contract of `run_solver`.  
+The input will be a dictionary – let's assume it contains at least an `'image'` key holding a 2‑D NumPy array and an `'angle'` key giving the rotation in degrees (positive counter‑clockwise).  The reference implementation probably builds a grid of coordinates, applies a rotation matrix point‑wise and interpolates – all in pure Python loops – which is the obvious bottleneck.
+
+**What can we do instead?**  
+`scipy.ndimage` already ships a highly optimised routine `affine_transform` that does exactly what we want: it applies an arbitrary linear transform (here a pure rotation) to an array using C‑level BLAS calls for the matrix multiplication part and fast interpolation kernels written in Cython/Fortran.  No Python loops at all – just a couple of NumPy calls to build the affine matrix and one call into SciPy.
+
+Steps to build the transform:
+1. Grab the image `I` from `problem['image']`.  
+2. Convert the angle from degrees to radians: `theta = np.deg2rad(problem['angle'])`.  
+3. Build the 2×2 rotation matrix  
+   ```python
+   R = np.array([[np.cos(theta), -np.sin(theta)],
+                 [np.sin(theta),  np.cos(theta)]], dtype=np.float64)
+   ```
+4. Compute the centre of the image in pixel coordinates:  
+   ```python
+   cy, cx = np.array(I.shape) / 2
+   ```
+5. For `affine_transform`, we need the inverse mapping and an offset that keeps the centre fixed:
+   ```python
+   invR = R.T          # rotation matrices are orthogonal
+   offset = np.array([cx, cy]) - invR @ np.array([cx, cy])
+   ```
+6. Call `scipy.ndimage.affine_transform(I, invR, offset=offset, order=1)` – bilinear interpolation keeps it fast while still looking reasonable.
+7. Return the rotated array wrapped in a dict under some key (`'rotated'`) so that downstream code can consume it unchanged.
+
+**Why this works better**  
+- All heavy lifting is done in compiled C/Fortran code inside SciPy/Numpy – essentially one BLAS call for the matrix multiplication plus a fast interpolation kernel.
+- No Python‑level loops; everything vectorised.
+- Using `affine_transform` automatically handles edge cases like sub‑pixel rotations and keeps the output shape identical to the input (the reference probably did this too).
+- The code stays short and readable – just a handful of NumPy lines plus one SciPy call.
+- Logging can be sprinkled in if needed; random isn’t required but we’ll import it because the brief asks for it.
+- We stay within the constraints: imports include logging, random, typing.Any/Dict, numpy as np, scipy.ndimage; no other libraries used; final file ~8800 chars once boilerplate added.
+
+Edge cases to double‑check:
+- Angle zero or multiples of 360 should return identical image (rotation matrix becomes identity).
+- Negative angles work because sin changes sign appropriately.
+- Very small images (e.g., 1×1) – `affine_transform` still returns same single value.
+- Data type preservation: output will be float64; if callers expect integer we can cast back at end (`rot.astype(I.dtype)`), but keeping float is usually safer unless strict type is required.
+
+All set – time to write the actual code block following this design.

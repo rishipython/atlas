@@ -1,0 +1,41 @@
+We need to write fast convolution. Use numpy. Use np.fft.fft to compute convolution via multiplication in frequency domain. Use np.fft.fft(x, n) with length L = next power of two or at least N+M-1. But for numerical accuracy, use np.fft.fft(x, n). Use np.fft.ifft. Then cast to float64. Ensure real output. Use np.real to get real part. Or use np.fft.rfft? But rfft will produce real-to-complex. Use rfft for speed maybe. But simpler: use np.fft.fft.
+
+Edge cases: zeros, small arrays. Should handle length 0? Possibly. But typical. Implementation: compute len_out = N+M-1. nfft = 2**np.ceil(np.log2(len_out)). But we can just use len_out. For real inputs, we can use rfft and irfft. That is efficient. So:
+
+nfft = 1 << (len_out-1).bit_length() maybe. That gives power-of-two >= len_out. Then:
+
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X * H
+y = np.fft.irfft(Y, nfft)[:len_out]
+Return y.
+
+This yields real output. Use np.asarray(x, dtype=np.float64). Should convert to float64.
+
+Also if either input length 0: return empty array? In numpy.convolve, if either input empty, output empty. Let's check: np.convolve([], [1,2]) returns array([], dtype=float64). We'll mimic that.
+
+Implement conv1d accordingly.
+
+Also ensure that dtype is float64.
+
+Let's produce code with imports, function conv1d.
+
+Also include __all__ maybe.
+
+We need to keep same signature. Provide docstring maybe.
+
+Let's write.
+
+Test quickly mentally: x=[1,2], h=[3,4,5], N=2 M=3 len_out=4. nfft=4. rfft returns length nfft//2+1=3. Multiply. irfft length 4. Works.
+
+Edge: both empty: len_out = -1? Actually N=0 M=0 len_out = -1? But np.convolve([], []) returns array([], dtype=float64). But our formula yields N+M-1 = -1. That's wrong. So we need to handle zero lengths. If N==0 or M==0: return np.array([], dtype=np.float64). That matches.
+
+Also if one empty but other non-empty: len_out = N+M-1 = N-1? Eg N=3 M=0 => 2? Actually M=0 => N-1? But conv of length 3 with empty should be empty. So we handle if M==0 or N==0: return empty.
+
+Edge: M==1 or N==1: we can just do direct multiplication maybe. But rfft will work.
+
+Let's implement.
+
+Return y as float64.
+
+Now produce final code.

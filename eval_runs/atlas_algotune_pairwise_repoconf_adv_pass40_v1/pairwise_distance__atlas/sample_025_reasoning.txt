@@ -1,0 +1,32 @@
+We need to replace triple loops with efficient vectorized or using broadcasting or linear algebra. Standard formula: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared and dot product matrix. For N up to maybe large. Use np.dot or np.matmul. Implementation:
+
+norm_sq = np.sum(X**2, axis=1)  # shape (N,)
+D = norm_sq[:,None] + norm_sq[None,:] - 2 * X.dot(X.T)
+
+Return D. Ensure dtype float64. Ensure non-negative due to numerical errors. Possibly set negative small values to zero. But np.allclose will accept small negative. Use np.maximum(D, 0). Or just return D.
+
+Edge cases: X may be empty? N=0? Then shape (0,0). The formula still works.
+
+Return dtype float64. Ensure output shape (N,N).
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norm = np.sum(X**2, axis=1)
+    D = sq_norm[:,None] + sq_norm[None,:] - 2*np.dot(X, X.T)
+    # Numerical errors may produce tiny negative values
+    D[D < 0] = 0.0
+    return D
+
+Ok.
+
+Also maybe use np.dot for large D? Works.
+
+Let's produce file with imports.
+
+Also we may use np.linalg.norm? No.
+
+Implementation done.
+
+Let's produce final code.

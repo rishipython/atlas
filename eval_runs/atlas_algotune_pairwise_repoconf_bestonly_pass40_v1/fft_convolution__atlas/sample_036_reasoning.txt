@@ -1,0 +1,119 @@
+We need to produce a faster implementation of conv1d. Use numpy FFT: np.fft.fft to compute convolution. For real-valued arrays, we can use np.fft.rfft and irfft. But we need full convolution length N+M-1. So we can compute next power of two size L = nextpow2(N+M-1). Use np.fft.fft of length L. Multiply, then inverse transform. Or use scipy.signal.fftconvolve. But to avoid dependency, we can implement ourselves. Use np.fft.fft with size L. Use dtype float64. Steps:
+
+- Determine N, M
+- L = 1 << (N+M-1-1).bit_length()  # next power of two >= N+M-1
+- X = np.fft.fft(x, L)
+- H = np.fft.fft(h, L)
+- Y = X*H
+- y = np.fft.ifft(Y).real
+- Return y[:N+M-1]
+
+But np.fft.ifft returns complex; real part. But due to rounding errors, small imaginary parts may appear; we can round. Use np.real.
+
+Alternatively, use rfft: L = N+M-1; but rfft expects length. But we can use rfft with L. But rfft of real array returns length L//2+1. For convolution we need to zero-pad to L. So we can use rfft(x, L) etc.
+
+But simpler: use np.fft.fft.
+
+Edge cases: if x or h is empty? They may be length 0? But problem says N, M positive? Not specified but likely >0. But we can handle zeros.
+
+Return dtype float64. So we can cast.
+
+Also we can use np.fft.fft with dtype np.float64.
+
+Also we could use np.fft.fft2? But not necessary.
+
+We also must maintain same semantics as np.convolve(x,h,mode='full'). That uses linear convolution.
+
+So final code:
+
+```
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    N = x.shape[0]
+    M = h.shape[0]
+    size = N + M - 1
+    L = 1 << (size-1).bit_length()  # next power of two >= size
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y[:size]
+```
+
+But we need to ensure dtype float64. y is float64 from ifft result; but due to rounding, we might get small imaginary parts; real part.
+
+Test: conv1d(np.array([1,2]), np.array([3,4])) -> [3,10,8].
+
+Ok.
+
+Potential improvement: use np.fft.rfft and irfft for speed. Implementation:
+
+```
+L = 1 << (size-1).bit_length()
+X = np.fft.rfft(x, L)
+H = np.fft.rfft(h, L)
+Y = X * H
+y = np.fft.irfft(Y, L).real
+return y[:size]
+```
+
+But np.fft.irfft returns real array. Actually irfft returns real array. So we can just return y[:size].
+
+But we need to cast to float64.
+
+Let's implement rfft version. Use np.fft.rfft(x, L) returns complex array of length L//2+1. Multiply element-wise. Then irfft returns real array length L. Use y = np.fft.irfft(Y, L). Then slice.
+
+Also we can use np.fft.fft with L. rfft is faster for real input.
+
+Edge: if L==size? Then rfft will produce length size//2+1. But that's fine.
+
+Potential small imaginary parts due to rounding? irfft returns real. So good.
+
+So final code:
+
+```
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    N = x.shape[0]
+    M = h.shape[0]
+    size = N + M - 1
+    if size == 0:
+        return np.array([], dtype=np.float64)
+    L = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, L)
+    H = np.fft.rfft(h, L)
+    Y = X * H
+    y = np.fft.irfft(Y, L)
+    return y[:size]
+```
+
+Test with small arrays.
+
+Edge case: if x or h is empty. Then size = N+M-1. If either N==0 or M==0, size may be -1? Actually if N=0, M=3, size=2? Wait: N=0, M=3 -> size = 0+3-1=2. But convolution of empty and length 3? In numpy, convolve(empty, array) returns array of zeros? Actually np.convolve([], [1,2,3]) returns array([]?) Let's test: np.convolve([], [1,2,3]) gives array([], dtype=float64). So we need to handle if either array length zero: return empty array. But our size formula gives 2. That would be wrong. So we need to check if N==0 or M==0: return np.array([], dtype=np.float64). That matches np.convolve. Let's test: np.convolve([], [1,2,3]) -> array([], dtype=float64). So we need to handle.
+
+Similarly if both empty: size = -1? Actually -1? 0+0-1 = -1. So we need to check.
+
+Thus:
+
+```
+if N == 0 or M == 0:
+    return np.array([], dtype=np.float64)
+```
+
+Now, if N==0, M==0: return empty.
+
+Now else compute.
+
+Edge: if size==0? That would happen when N=1, M=0? But M cannot be 0 because we handled. So size >0.
+
+Ok.
+
+Now we produce final code.
+
+We also need to import numpy.
+
+Ok.
+
+Let's produce final answer.

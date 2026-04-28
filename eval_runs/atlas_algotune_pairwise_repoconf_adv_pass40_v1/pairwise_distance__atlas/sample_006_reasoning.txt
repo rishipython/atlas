@@ -1,0 +1,24 @@
+We need to produce efficient implementation. Use vectorized approach: compute squared Euclidean distances via broadcasting: dist[i,j] = ||X[i]-X[j]||^2 = sum_k X[i,k]^2 + sum_k X[j,k]^2 - 2 * X[i].dot(X[j]). So compute row norms squared: sq_norm = np.sum(X**2, axis=1). Then use outer sum and subtract 2*X.dot(X.T). Use np.add.outer or broadcasting.
+
+Return float64. Use np.maximum with 0 to avoid small negative due to numeric errors? Usually it's fine.
+
+Let's implement:
+
+def pairwise_sq_dist(X):
+    sq_norm = np.sum(X**2, axis=1)
+    dist = sq_norm[:, None] + sq_norm[None, :] - 2 * X.dot(X.T)
+    # Due to floating errors, may be slightly negative; set to zero
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+Return dtype float64. That's it.
+
+Make sure imports at top: import numpy as np.
+
+Return shape (N,N).
+
+Edge cases: X could be 0-dimensional? but N>=1.
+
+Ok.
+
+Let's produce final code.

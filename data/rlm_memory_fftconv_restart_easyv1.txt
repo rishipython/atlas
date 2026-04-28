@@ -1,0 +1,2027 @@
+# ATLAS-RLM memory bank (softmax OE run)
+# Each entry below summarises one attempt by the base model at the
+# softmax Triton-kernel task.  Entries are sorted by score (best first).
+# Total entries: 40
+
+============================
+ENTRY 1  [unknown, score=0.928, iter=15]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation focuses on speed and correctness while keeping the
+public API identical to the original reference.  The key ideas are:
+
+* Use NumPy's real FFT (`rfft`/`irfft`) for the heavy lifting.
+* Avoid the extra dependency on `scipy.fft` – the next‑fast length is
+  approximated by the next power of two, which is usually sufficient
+  for the sizes encountered in the benchmark.
+* Fall back to the highly optimized NumPy `convolve` for very small
+  inputs where the FFT overhead dominates.
+* Slice the full convolution result in a vectorised way for the three
+  standard modes: ``full``, ``same`` and ``valid``.
+* The code is intentionally concise to reduce the chance of bugs
+  while still being fully type‑annotated and documented.
+
+The solver is fully deterministic and passes the provided
+``is_solution`` validator.
+"""
+
+import logging
+from typing import Dict, List
+
+import numpy as np
+
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+def _next_power_of_two(n: int) -> int:
+    """Return the smallest power of two greater than or equal to ``n``."""
+    return 1 << (n - 1).bit_length()
+
+
+# --------------------------------------------------------------------------- #
+# Core solver
+# --------------------------------------------------------------------------- #
+class FFTConvolution:
+# ...(+216 more lines truncated)
+```
+
+============================
+ENTRY 2  [unknown, score=0.924, iter=19]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation provides a fast, NumPy‑only FFT based convolution that
+matches the behaviour of SciPy's `fftconvolve`.  It is tuned for large
+signals, falls back to the direct `np.convolve` for very small inputs,
+and handles the three standard convolution modes ("full", "same", "valid")
+exactly as the reference implementation used by the test harness.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is left unchanged to preserve compatibility with the
+evaluation framework.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+# ...(+160 more lines truncated)
+```
+
+============================
+ENTRY 3  [unknown, score=0.922, iter=12]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation provides a fast, NumPy‑only FFT based convolution that
+matches the behaviour of SciPy's `fftconvolve`.  It is tuned for large
+signals, falls back to the direct `np.convolve` for very small inputs,
+and handles the three standard convolution modes ("full", "same", "valid")
+exactly as the reference implementation used by the test harness.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is left unchanged to preserve compatibility with the
+evaluation framework.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+# ...(+157 more lines truncated)
+```
+
+============================
+ENTRY 4  [unknown, score=0.922, iter=22]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation is a lightweight, highly‑optimized version of the
+original reference.  It keeps the public API unchanged while
+leveraging NumPy's real FFT routines and a small‑signal fallback.
+The key ideas are:
+
+* Use NumPy's `rfft`/`irfft` for the heavy lifting – they are
+  highly tuned for real‑valued data.
+* For very short signals (length < 64) the direct `np.convolve`
+  is faster than the FFT overhead.
+* The FFT length is chosen as the next power of two – this is
+  usually the fastest choice for the sizes seen in the benchmark.
+* The three convolution modes (`full`, `same`, `valid`) are handled
+  with simple vectorised slicing, avoiding any Python loops.
+* All intermediate results are kept as NumPy arrays; conversion to
+  Python lists happens only once at the very end.
+
+The `is_solution` method is identical to the reference
+implementation, so the solver remains fully compatible with the
+evaluation harness.
+"""
+
+import logging
+from typing import Dict, List
+
+import numpy as np
+
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+def _next_power_of_two(n: int) -> int:
+    """Return the smallest power of two >= n."""
+    return 1 << (n - 1).bit_length()
+
+
+# --------------------------------------------------------------------------- #
+# ...(+219 more lines truncated)
+```
+
+============================
+ENTRY 5  [unknown, score=0.921, iter=18]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation provides a fast, NumPy‑only FFT based convolution that
+matches the behaviour of SciPy's `fftconvolve`.  It is tuned for large
+signals, falls back to the direct time‑domain convolution (`np.convolve`)
+for very small inputs, and handles the three standard convolution modes
+("full", "same", "valid") exactly as the reference implementation used
+by the test harness.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is left unchanged to preserve compatibility with the
+evaluation framework.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+# ...(+158 more lines truncated)
+```
+
+============================
+ENTRY 6  [unknown, score=0.920, iter=7]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using an efficient FFT-based
+implementation.  The implementation is fully vectorised, uses the real FFT
+(`rfft`) for speed on real‑valued signals, and falls back to a direct
+convolution for very short inputs where the FFT overhead would dominate.
+
+Input format (dict):
+    - "signal_x": list[float] – first signal
+    - "signal_y": list[float] – second signal
+    - "mode": str – one of "full", "same", "valid" (default "full")
+
+Output format (dict):
+    - "convolution": list[float] – convolution result
+
+The solver is compatible with the existing `is_solution` validator.
+"""
+
+import logging
+from typing import Dict, List
+
+import numpy as np
+from scipy.fft import rfft, irfft, next_fast_len
+
+# --------------------------------------------------------------------------- #
+# Core solver
+# --------------------------------------------------------------------------- #
+class FFTConvolution:
+    """
+    FFT‑based convolution solver.
+    """
+
+    def __init__(self) -> None:
+        """No state required."""
+        pass
+
+    # ----------------------------------------------------------------------- #
+    # Public API
+# ...(+196 more lines truncated)
+```
+
+============================
+ENTRY 7  [unknown, score=0.917, iter=37]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation keeps the original public API but adds a hybrid
+convolution strategy that automatically selects the fastest available
+method for the given input size:
+
+* Small signals are convolved directly with `np.convolve` – the FFT
+  overhead would dominate.
+* Medium‑to‑large signals are processed with NumPy's real FFT
+  (`rfft`/`irfft`).  The FFT length is chosen as the next power of
+  two, which is usually the fastest for the sizes encountered in the
+  benchmark.
+* For very large signals (product of lengths > 1 M) the implementation
+  falls back to a JAX‑accelerated FFT.  JAX compiles the FFT to highly
+  optimised XLA code and can provide a noticeable speedup on large
+  arrays.  The JAX path is only used when the library is available
+  and the input size is large enough to amortise the JIT overhead.
+
+The `is_solution` method remains unchanged from the reference
+implementation, ensuring full compatibility with the evaluation harness.
+"""
+
+import logging
+from typing import Dict, List
+
+import numpy as np
+
+# --------------------------------------------------------------------------- #
+# Optional JAX support
+# --------------------------------------------------------------------------- #
+try:
+    import jax.numpy as jnp
+    from jax import jit
+
+    _JAX_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _JAX_AVAILABLE = False
+
+# ...(+250 more lines truncated)
+```
+
+============================
+ENTRY 8  [unknown, score=0.917, iter=28]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation focuses on speed and numerical stability while keeping the
+public API identical to the original reference.  The key ideas are:
+
+* Use NumPy's real FFT (`rfft`/`irfft`) for the heavy lifting.
+* Choose the FFT length with `scipy.fft.next_fast_len` for optimal speed.
+* Fall back to the highly‑optimized NumPy `convolve` for very small
+  inputs where the FFT overhead dominates.
+* Slice the full convolution result in a vectorised way for the three
+  standard modes: ``full``, ``same`` and ``valid``.
+* All intermediate results are kept as NumPy arrays; conversion to
+  Python lists happens only once at the very end.
+
+The solver is fully deterministic and passes the provided
+``is_solution`` validator.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy.fft import next_fast_len
+
+# --------------------------------------------------------------------------- #
+# Core solver
+# --------------------------------------------------------------------------- #
+class FFTConvolution:
+    """
+    FFT‑based convolution solver that is both fast and numerically stable.
+    """
+
+    # Threshold below which direct convolution is cheaper than FFT
+    _DIRECT_CONV_THRESHOLD = 64  # empirically chosen
+
+    def __init__(self) -> None:
+        """No state required."""
+        pass
+# ...(+206 more lines truncated)
+```
+
+============================
+ENTRY 9  [unknown, score=0.916, iter=26]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation uses NumPy's real‑FFT (`rfft`/`irfft`) to perform a
+linear convolution that is accurate, fast and memory‑efficient for
+large signals.  For very small inputs the direct time‑domain
+convolution (`np.convolve`) is used because the FFT overhead would
+dominate.  The three standard convolution modes ("full", "same",
+"valid") are supported exactly as SciPy's `fftconvolve`.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is unchanged to keep the original validation logic.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for reference checks in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+# ...(+164 more lines truncated)
+```
+
+============================
+ENTRY 10  [unknown, score=0.915, iter=32]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation uses NumPy's real‑FFT (`rfft`/`irfft`) to perform a
+linear convolution that is accurate, fast and memory‑efficient for
+large signals.  For very small inputs the direct time‑domain
+convolution (`np.convolve`) is used because the FFT overhead would
+dominate.  The three standard convolution modes ("full", "same",
+"valid") are supported exactly as SciPy's `fftconvolve`.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is unchanged to keep the original validation logic.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for reference checks in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+# ...(+159 more lines truncated)
+```
+
+============================
+ENTRY 11  [unknown, score=0.915, iter=31]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This implementation replaces the custom FFT routine with SciPy's
+fftconvolve, which uses the highly optimised FFTW library when
+available.  For very small signals a direct NumPy convolution is
+used to avoid FFT overhead.  The public API remains unchanged.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _direct_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """Fallback to NumPy's direct convolution for very small signals."""
+    return np.convolve(x, y)
+
+# --------------------------------------------------------------------------- #
+# Main solver class
+# --------------------------------------------------------------------------- #
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    def __init__(self) -> None:
+        """No state required."""
+        pass
+
+    # ----------------------------------------------------------------------- #
+    # Public API
+    # ----------------------------------------------------------------------- #
+# ...(+94 more lines truncated)
+```
+
+============================
+ENTRY 12  [unknown, score=0.915, iter=39]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation performs a fast convolution using NumPy's real‑FFT
+(`rfft`/`irfft`).  It automatically falls back to the direct
+time‑domain convolution (`np.convolve`) for very small signals where
+FFT overhead would dominate.  The three standard convolution modes
+("full", "same", "valid") are supported exactly as SciPy's
+`fftconvolve` and the output format is unchanged.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # used only for reference checks in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+# ...(+155 more lines truncated)
+```
+
+============================
+ENTRY 13  [unknown, score=0.913, iter=35]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation focuses on speed and numerical stability while keeping the
+public API identical to the original reference.  The key ideas are:
+
+* Use NumPy's real FFT (`rfft`/`irfft`) for the heavy lifting.
+* Choose the FFT length with `scipy.fft.next_fast_len` – this is usually
+  faster than a simple power‑of‑two padding for the sizes encountered in the
+  benchmark.
+* Fall back to the highly‑optimized NumPy `convolve` for very small inputs
+  where the FFT overhead dominates.
+* Slice the full convolution result in a vectorised way for the three
+  standard modes: ``full``, ``same`` and ``valid``.
+* All intermediate results are kept as NumPy arrays; conversion to Python
+  lists happens only once at the very end.
+
+The `is_solution` method is identical to the reference implementation,
+so the solver remains fully compatible with the evaluation harness.
+"""
+
+import logging
+from typing import Dict, List
+
+import numpy as np
+from scipy.fft import next_fast_len
+
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+def _next_fast_len(n: int) -> int:
+    """Return the next length that is fast for FFT (usually a power of two
+    or a product of small primes)."""
+    return next_fast_len(n)
+
+
+# --------------------------------------------------------------------------- #
+# Core solver
+# ...(+218 more lines truncated)
+```
+
+============================
+ENTRY 14  [unknown, score=0.912, iter=33]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation provides a fast, NumPy‑only FFT based convolution that
+matches the behaviour of SciPy's `fftconvolve`.  It is tuned for large
+signals, falls back to the direct time‑domain convolution (`np.convolve`)
+for very small inputs, and handles the three standard convolution modes
+("full", "same", "valid") exactly as the reference implementation used
+by the test harness.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is left unchanged to preserve compatibility with the
+evaluation framework.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+# ...(+164 more lines truncated)
+```
+
+============================
+ENTRY 15  [unknown, score=0.907, iter=25]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation delegates the convolution to SciPy's highly‑optimised
+`fftconvolve`.  The function is a thin wrapper that handles empty
+inputs and returns the result as a plain Python list, matching the
+original interface.  By using SciPy's C‑level FFT routine we avoid
+Python‑level overhead and get a robust, well‑tested implementation
+without the need for custom slicing logic.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # used for the actual convolution
+
+
+class FFTConvolution:
+    """
+    Wrapper around SciPy's `fftconvolve` that matches the original
+    problem interface.
+    """
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two signals using SciPy's FFT routine.
+
+        Parameters
+        ----------
+        problem : dict
+            Must contain keys ``"signal_x"`` and ``"signal_y"`` and may
+            optionally contain ``"mode"``.
+
+# ...(+103 more lines truncated)
+```
+
+============================
+ENTRY 16  [unknown, score=0.904, iter=2]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform (FFT)
+approach. The convolution is defined as:
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below uses an optimized FFT‑based routine that:
+* Uses real‑FFT (rfft/irfft) when both inputs are real‑valued.
+* Falls back to direct convolution for small signals where FFT overhead dominates.
+* Selects the next fast FFT length to minimise padding.
+* Handles the three standard convolution modes: 'full', 'same', 'valid'.
+
+The solver returns a dictionary with key "convolution" containing the result as a Python
+list, matching the original interface.
+
+Author: OpenEvolve
+"""
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Threshold below which direct convolution is used (empirically chosen)
+    _DIRECT_CONV_THRESHOLD = 2000
+
+    def __init__(self) -> None:
+        """No state required."""
+        pass
+
+    @staticmethod
+# ...(+206 more lines truncated)
+```
+
+============================
+ENTRY 17  [unknown, score=0.904, iter=9]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform (FFT)
+approach. The convolution is defined as:
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below uses an optimized FFT‑based routine that:
+* Uses real‑FFT (rfft/irfft) when both inputs are real‑valued.
+* Falls back to direct convolution for small signals where FFT overhead dominates.
+* Selects the next fast FFT length to minimise padding.
+* Handles the three standard convolution modes: 'full', 'same', 'valid'.
+
+The solver returns a dictionary with key "convolution" containing the result as a Python
+list, matching the original interface.
+
+Author: OpenEvolve
+"""
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 2000
+
+    def __init__(self) -> None:
+        """No state required."""
+        pass
+
+# ...(+207 more lines truncated)
+```
+
+============================
+ENTRY 18  [unknown, score=0.904, iter=11]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+Given two signals `x` and `y`, compute their linear convolution using the
+Fast Fourier Transform (FFT) approach.  The convolution is defined as
+
+    z[n] = Σ_k x[k] * y[n‑k]
+
+The implementation below uses a hybrid strategy:
+* For very small inputs it falls back to the direct time‑domain convolution
+  (`np.convolve`) which is cheaper than the FFT overhead.
+* For larger inputs it performs a linear convolution via FFT with optimal
+  zero‑padding.  Real‑valued signals use `rfft/irfft` to halve the cost.
+* The three standard convolution modes are supported:
+  * "full"   – length `len(x)+len(y)-1`
+  * "same"   – central part of length `max(len(x),len(y))`
+  * "valid"  – fully overlapping part of length
+               `max(0, max(len(x),len(y)) - min(len(x),len(y)) + 1)`
+
+The solver returns a dictionary with key `"convolution"` containing the
+result as a Python list of floats, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    # Threshold below which direct convolution is used (empirically chosen).
+    _DIRECT_CONV_THRESHOLD = 256
+# ...(+208 more lines truncated)
+```
+
+============================
+ENTRY 19  [unknown, score=0.896, iter=40]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation delegates the heavy lifting to SciPy's highly‑optimised
+`fftconvolve`.  For very small inputs it falls back to the direct
+`np.convolve` to avoid FFT overhead.  The three standard convolution
+modes ("full", "same", "valid") are supported exactly as the reference
+implementation used by the test harness.
+
+The solver returns a dictionary with a single key, `"convolution"`,
+whose value is a plain Python list of floats.  The `is_solution`
+method is unchanged to preserve compatibility with the evaluation
+framework.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, Any
+
+import numpy as np
+from scipy import signal  # used for the actual convolution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        If the product of the input lengths is below this value the solver
+        uses the direct time‑domain convolution (`np.convolve`) which is
+        faster for tiny signals.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256) -> None:
+        self.small_threshold = small_threshold
+# ...(+151 more lines truncated)
+```
+
+============================
+ENTRY 20  [unknown, score=0.806, iter=10]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation uses NumPy's real FFT (`rfft`/`irfft`) for a fast
+linear convolution that works for all three standard modes
+("full", "same", "valid").  For very short inputs the direct
+`np.convolve` is used to avoid the FFT overhead.
+
+The solver is deliberately lightweight – only NumPy and SciPy
+(used solely for reference checks) are imported – and the public
+API matches the original harness.
+
+Author:  Auto‑Evolved
+"""
+
+import numpy as np
+from scipy import signal  # only for reference validation
+
+
+class FFTConvolution:
+    """
+    Fast convolution using the FFT.
+
+    Parameters
+    ----------
+    small_threshold : int, optional
+        Signals shorter than this length are convolved directly
+        with `np.convolve`.  The default value is tuned for the
+        benchmark distribution.
+    """
+
+    def __init__(self, small_threshold: int = 256):
+        self.small_threshold = small_threshold
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def solve(self, problem: dict) -> dict:
+        """
+# ...(+170 more lines truncated)
+```
+
+============================
+ENTRY 21  [unknown, score=0.804, iter=4]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task
+
+This implementation replaces the heavy scipy dependency with a lightweight
+NumPy‑based FFT convolution that is faster for large signals while still
+handling the three standard convolution modes ("full", "same", "valid").
+The algorithm automatically falls back to the direct `np.convolve` for
+small signals where the FFT overhead would dominate.
+
+Input
+-----
+A dictionary with keys:
+    - "signal_x": list of numbers (first signal)
+    - "signal_y": list of numbers (second signal)
+    - "mode":    one of "full", "same", "valid" (default: "full")
+
+Output
+------
+A dictionary with key:
+    - "convolution": list of floats representing the convolution result
+
+The output format matches the original implementation so that the
+provided `is_solution` checker continues to work unchanged.
+"""
+
+import logging
+import numpy as np
+from scipy import signal  # only used for validation in is_solution
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver.
+
+    The solver uses NumPy's real FFT (`rfft`/`irfft`) for speed and
+    minimal memory usage.  For very short inputs it delegates to
+    `np.convolve` to avoid FFT overhead.
+    """
+
+# ...(+215 more lines truncated)
+```
+
+============================
+ENTRY 22  [unknown, score=0.783, iter=16]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This implementation focuses on speed and correctness for a wide range of
+signal sizes.  Key improvements over the previous version:
+
+* Correct handling of all three convolution modes (`full`, `same`, `valid`).
+* A single, well‑tested `_fft_convolve` routine that uses real‑valued FFTs
+  (`rfft/irfft`) and pads to the next power of two for optimal performance.
+* Automatic fallback to the fast NumPy direct convolution for very small
+  inputs where the FFT overhead dominates.
+* Minor micro‑optimisations: avoid unnecessary copies, use type hints,
+  and keep the public API unchanged.
+
+The solver remains fully compatible with the original harness.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the smallest power of two >= n."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Compute the linear convolution of two real 1‑D arrays using FFT.
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Real input signals.
+# ...(+151 more lines truncated)
+```
+
+============================
+ENTRY 23  [unknown, score=0.782, iter=24]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+This implementation performs a linear convolution of two 1‑D signals using the
+Fast Fourier Transform (FFT).  It automatically selects the most efficient
+strategy for the input size:
+
+* For very small signals the direct time‑domain convolution (`np.convolve`)
+  is used – the FFT overhead would dominate.
+* For larger signals the FFT is employed with optimal zero‑padding.
+  Real‑valued inputs use `rfft/irfft` to halve the workload.
+* The three standard convolution modes are supported:
+  * ``full``   – length ``len(x)+len(y)-1``.
+  * ``same``   – central part, length ``max(len(x), len(y))``.
+  * ``valid``  – fully overlapping part, length
+    ``max(0, max(len(x),len(y)) - min(len(x),len(y)) + 1)``.
+
+The solver returns a dictionary with key ``"convolution"`` containing the
+result as a Python list of floats, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 256
+
+    def __init__(self) -> None:
+# ...(+213 more lines truncated)
+```
+
+============================
+ENTRY 24  [unknown, score=0.782, iter=8]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform
+approach. The implementation below replaces the generic scipy.signal.fftconvolve
+with a hand‑crafted routine that:
+
+* Uses real‑valued FFT (rfft/irfft) for speed on real inputs.
+* Falls back to direct convolution for very small signals where FFT overhead
+  dominates.
+* Handles the three standard convolution modes ("full", "same", "valid")
+  with minimal extra work.
+* Avoids unnecessary memory allocations by reusing arrays where possible.
+
+The solver still returns a dictionary with key "convolution" containing a list
+of floats, matching the original API.
+
+Author: OpenEvolve
+"""
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver with hybrid direct/FFT strategy.
+    """
+
+    # Threshold below which direct convolution is used (empirically chosen)
+    _DIRECT_CONV_THRESHOLD = 1024
+
+    def __init__(self) -> None:
+        """No special initialization required."""
+        pass
+
+    @staticmethod
+# ...(+207 more lines truncated)
+```
+
+============================
+ENTRY 25  [unknown, score=0.776, iter=34]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+This implementation computes the linear convolution of two 1‑D signals using a
+hybrid strategy that is fast for large inputs and cheap for small ones.
+The algorithm is:
+
+* For very small signals (product of lengths below a threshold) use
+  `numpy.convolve`, which is faster than the FFT overhead.
+* For larger signals perform a linear convolution via FFT:
+  - Zero‑pad to the next power‑of‑two length (or the next fast length
+    if NumPy provides it) to keep the FFT efficient.
+  - Use the real‑FFT (`rfft/irfft`) because the inputs are real‑valued.
+  - Slice the full convolution to the requested mode
+    ('full', 'same', 'valid').
+
+The solver returns a dictionary with key ``"convolution"`` containing the
+result as a Python list of floats, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+
+# --------------------------------------------------------------------------- #
+# Utility helpers
+# --------------------------------------------------------------------------- #
+def _next_fast_len(n: int) -> int:
+    """
+    Return the next power‑of‑two length that is >= ``n``.
+    Uses ``numpy.fft.next_fast_len`` if available, otherwise falls back
+    to a simple bit‑twiddling implementation.
+    """
+    try:
+# ...(+221 more lines truncated)
+```
+
+============================
+ENTRY 26  [unknown, score=0.776, iter=29]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This implementation focuses on speed and correctness for a wide range of
+signal sizes.  Key improvements over the previous version:
+
+* Correct handling of all three convolution modes (`full`, `same`, `valid`).
+* A single, well‑tested `_fft_convolve` routine that uses real‑valued FFTs
+  (`rfft/irfft`) and pads to the next power of two for optimal performance.
+* Automatic fallback to the fast NumPy direct convolution for very small
+  inputs where the FFT overhead dominates.
+* Minor micro‑optimisations: avoid unnecessary copies, use type hints,
+  and keep the public API unchanged.
+
+The solver remains fully compatible with the original harness.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the smallest power of two >= n."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Compute the linear convolution of two real 1‑D arrays using FFT.
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Real input signals.
+# ...(+151 more lines truncated)
+```
+
+============================
+ENTRY 27  [unknown, score=0.775, iter=30]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+Given two signals x and y, compute their convolution using the Fast Fourier
+Transform (FFT) approach.  The convolution is defined as
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below uses a hybrid strategy:
+* For very small signals it falls back to the direct time‑domain convolution
+  (`np.convolve`) which is faster than the FFT overhead.
+* For larger signals it performs a linear convolution via FFT with optimal
+  zero‑padding.  Real‑valued inputs use `rfft/irfft` to halve the workload.
+* The three standard convolution modes are supported:
+  * "full" – length `len(x)+len(y)-1`.
+  * "same" – central part, length `max(len(x),len(y))`.
+  * "valid" – fully overlapping part, length
+    `max(0, abs(len(x)-len(y))+1)`.
+
+The solver returns a dictionary with key "convolution" containing the result
+as a Python list of floats, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 256
+# ...(+202 more lines truncated)
+```
+
+============================
+ENTRY 28  [unknown, score=0.774, iter=23]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This version keeps the public API unchanged while improving speed and
+numerical robustness.  The key changes are:
+
+* The FFT routine now chooses the smallest power‑of‑two length that is
+  at least the linear convolution length.  For lengths that are already
+  powers of two the FFT size is unchanged, reducing unnecessary
+  padding.
+* The direct convolution fallback is kept for very small signals
+  (product of lengths ≤ 4096) where the FFT overhead dominates.
+* Minor micro‑optimisations: the mode‑slicing logic is simplified,
+  type hints are added, and the code avoids unnecessary copies.
+* The `is_solution` method continues to use SciPy's `fftconvolve`
+  for reference, but the solver itself is fully NumPy‑based.
+
+The implementation remains fully compatible with the original harness.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the smallest power of two ≥ n."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Compute the linear convolution of two real 1‑D arrays using FFT.
+
+    Parameters
+# ...(+152 more lines truncated)
+```
+
+============================
+ENTRY 29  [unknown, score=0.774, iter=20]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+Given two signals x and y, compute their convolution using the Fast Fourier
+Transform (FFT) approach.  The convolution is defined as
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below uses an optimized FFT‑based routine that:
+* Uses real‑FFT (rfft/irfft) when both inputs are real‑valued.
+* Falls back to direct convolution for small signals where FFT overhead dominates.
+* Selects the next power‑of‑two FFT length to minimise padding (a lightweight
+  replacement for numpy.fft.next_fast_len which may be missing in older
+  NumPy releases).
+* Handles the three standard convolution modes: 'full', 'same', 'valid'.
+
+The solver returns a dictionary with key "convolution" containing the result
+as a Python list, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 2000
+
+    @staticmethod
+    def _next_fast_len(n: int) -> int:
+# ...(+203 more lines truncated)
+```
+
+============================
+ENTRY 30  [unknown, score=0.774, iter=38]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+Given two signals x and y, compute their convolution using the Fast Fourier
+Transform (FFT) approach.  The convolution is defined as
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below uses a highly‑optimised hybrid strategy:
+
+* For very small inputs it falls back to the direct time‑domain convolution
+  (`np.convolve`) – the FFT overhead would dominate.
+* For larger inputs it performs a linear convolution via FFT with optimal
+  zero‑padding.  Real‑valued signals use `rfft/irfft` to halve the number of
+  complex operations.
+* The next power‑of‑two FFT length is chosen using `numpy.fft.next_fast_len`
+  when available, otherwise a lightweight fallback is used.
+* The three standard convolution modes – 'full', 'same', 'valid' – are
+  supported and return the correct output length.
+
+The solver returns a dictionary with key "convolution" containing the
+result as a
+```
+
+============================
+ENTRY 31  [unknown, score=0.773, iter=3]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform
+approach. The convolution is defined as:
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation uses an efficient hybrid strategy:
+* For very small signals it falls back to the direct convolution in the time domain.
+* For larger signals it performs a linear convolution via FFT with optimal zero‑padding
+  and real‑valued FFTs (rfft/irfft) to halve the computational load.
+
+The function supports the three common convolution modes:
+* "full"   – the complete linear convolution (length = len(x)+len(y)-1)
+* "same"   – the central part of the convolution (length = max(len(x),len(y)))
+* "valid"  – only the fully overlapping part (length = |len(x)-len(y)|+1)
+
+The solver returns a dictionary with key "convolution" containing the result as a
+Python list of floats.
+
+Author: OpenEvolve
+"""
+import logging
+import numpy as np
+from scipy import signal
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    def __init__(self, small_threshold: int = 256):
+        """
+        Parameters
+        ----------
+        small_threshold : int
+            If the product of the input lengths is below this value the solver
+            uses the direct time‑domain convolution (np.convolve) which is
+# ...(+146 more lines truncated)
+```
+
+============================
+ENTRY 32  [unknown, score=0.773, iter=17]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+This implementation performs a linear convolution of two 1‑D signals using the
+Fast Fourier Transform (FFT).  It automatically selects the most efficient
+strategy for the input size:
+
+* For very small signals the direct time‑domain convolution (`np.convolve`)
+  is used – the FFT overhead would dominate.
+* For larger signals the FFT is employed with optimal zero‑padding.
+  Real‑valued inputs use `rfft/irfft` to halve the workload.
+* The three standard convolution modes are supported:
+  * ``full`` – length ``len(x)+len(y)-1``.
+  * ``same`` – central part, length ``max(len(x), len(y))``.
+  * ``valid`` – fully overlapping part, length
+    ``max(0, max(len(x),len(y))-min(len(x),len(y))+1)``.
+
+The solver returns a dictionary with key ``"convolution"`` containing the
+result as a Python list.  Validation is performed against
+``scipy.signal.fftconvolve``.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 2000
+
+# ...(+201 more lines truncated)
+```
+
+============================
+ENTRY 33  [unknown, score=0.772, iter=1]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform
+approach. The convolution is defined as:
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation uses an efficient hybrid strategy:
+* For very small signals it falls back to the direct convolution in the time domain.
+* For larger signals it performs a linear convolution via FFT with optimal zero‑padding
+  and real‑valued FFTs (rfft/irfft) to halve the computational load.
+
+The function supports the three common convolution modes:
+* "full"   – the complete linear convolution (length = len(x)+len(y)-1)
+* "same"   – the central part of the convolution (length = max(len(x),len(y)))
+* "valid"  – only the fully overlapping part (length = |len(x)-len(y)|+1)
+
+The solver returns a dictionary with key "convolution" containing the result as a
+Python list of floats.
+
+Author: OpenEvolve
+"""
+import logging
+import numpy as np
+from scipy import signal
+
+class FFTConvolution:
+    """
+    Optimised FFT convolution solver.
+    """
+
+    def __init__(self, small_threshold: int = 256):
+        """
+        Parameters
+        ----------
+        small_threshold : int
+            If the product of the input lengths is below this value the solver
+            uses the direct time‑domain convolution (np.convolve) which is
+# ...(+146 more lines truncated)
+```
+
+============================
+ENTRY 34  [unknown, score=0.772, iter=27]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# Your rewritten program here
+"""
+FFT Convolution Task
+
+Given two signals x and y, compute their convolution using the Fast Fourier
+Transform (FFT) approach.  The convolution is defined as
+
+    z[n] = Σ_k x[k] * y[n-k]
+
+The implementation below is a lightweight, high‑performance hybrid
+solver that:
+
+* Uses the real‑FFT (rfft/irfft) whenever both inputs are real‑valued,
+  halving the number of complex operations.
+* Falls back to the direct time‑domain convolution (`np.convolve`) for
+  very small inputs where the FFT overhead dominates.
+* Chooses the next power‑of‑two FFT length with `numpy.fft.next_fast_len`
+  (or a simple bit‑twiddling fallback) to minimise padding.
+* Supports the three standard convolution modes: 'full', 'same', 'valid'.
+
+The solver returns a dictionary with key ``"convolution"`` containing the
+result as a Python list, matching the original interface.
+
+Author: OpenEvolve
+"""
+
+import logging
+from typing import Any, Dict, List
+
+import numpy as np
+from scipy import signal
+
+
+class FFTConvolution:
+    """
+    Optimised FFT‑based convolution solver.
+    """
+
+    # Empirical threshold: below this product of lengths we use direct convolution
+    _DIRECT_CONV_THRESHOLD = 2000
+# ...(+211 more lines truncated)
+```
+
+============================
+ENTRY 35  [unknown, score=0.595, iter=14]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+This implementation uses a hybrid strategy:
+* For small signals, the classic NumPy convolution is used.
+* For larger signals, a JAX‑accelerated FFT routine is employed.
+  JAX compiles the FFT to highly optimised code via XLA, giving a
+  significant speedup on large inputs while keeping the API identical
+  to the original reference.
+
+The solver returns a dictionary with key "convolution" containing a
+list of floats, matching the original API.
+
+Author: OpenEvolve
+"""
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# Import JAX – it is available in the execution environment.
+# The JIT compilation is performed only once, so the overhead is amortised
+# over many calls.
+try:
+    import jax.numpy as jnp
+    from jax import jit
+    _JAX_AVAILABLE = True
+except Exception:
+    _JAX_AVAILABLE = False
+
+
+class FFTConvolution:
+    """
+    FFT based convolution solver with hybrid direct/FFT strategy.
+    """
+
+    # Threshold below which direct convolution is used (empirically chosen)
+    _DIRECT_CONV_THRESHOLD = 1024
+# ...(+234 more lines truncated)
+```
+
+============================
+ENTRY 36  [unknown, score=0.363, iter=21]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This version keeps the public API unchanged but replaces the generic
+SciPy FFT convolution with a lightweight NumPy‑only routine that
+leverages real‑valued FFTs (`rfft`) and zero‑padding to the next
+power of two.  The implementation automatically falls back to the
+direct `np.convolve` for very short signals, where the FFT overhead
+dominates.  The mode handling (`full`, `same`, `valid`) is performed
+by slicing the full linear convolution result with minimal extra work.
+
+Key optimisations:
+* Use `np.fft.rfft`/`np.fft.irfft` for real‑valued signals – roughly
+  twice as fast as the complex FFT for the same length.
+* Pad to the next power of two to keep the FFT size optimal.
+* Switch to the direct convolution for signals whose product of
+  lengths is below a small threshold.
+* Slice the full convolution result to obtain the requested mode
+  with integer arithmetic only.
+"""
+
+import logging
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper function – hand‑crafted FFT convolution
+# --------------------------------------------------------------------------- #
+def _fft_convolve(signal_x: np.ndarray, signal_y: np.ndarray, mode: str = "full") -> np.ndarray:
+    """
+    Compute the linear convolution of two real signals using the FFT.
+
+    Parameters
+    ----------
+    signal_x, signal_y : np.ndarray
+        1‑D real input signals.
+    mode : {"full", "same", "valid"}
+        Convolution mode.
+
+# ...(+208 more lines truncated)
+```
+
+============================
+ENTRY 37  [unknown, score=0.362, iter=6]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task:
+
+Given two signals x and y, compute their convolution using the Fast Fourier Transform
+approach. The implementation below replaces the generic SciPy FFT convolution with a
+hand‑crafted routine that uses NumPy's real FFT (`rfft`) for speed and handles the
+three convolution modes efficiently.
+
+Key optimisations:
+* Use `np.fft.rfft`/`np.fft.irfft` for real‑valued signals – roughly twice as fast
+  as the complex FFT for the same length.
+* Pad to the next power of two to keep the FFT size optimal.
+* Fall back to the direct `np.convolve` for very short signals where the FFT
+  overhead dominates.
+* Slice the full convolution result to obtain the requested mode (`full`, `same`,
+  `valid`) with minimal extra work.
+
+The public interface (`solve`, `is_solution`, `run_solver`) remains unchanged.
+"""
+
+import logging
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper function – hand‑crafted FFT convolution
+# --------------------------------------------------------------------------- #
+def _fft_convolve(signal_x: np.ndarray, signal_y: np.ndarray, mode: str = "full") -> np.ndarray:
+    """
+    Compute the linear convolution of two real signals using the FFT.
+
+    Parameters
+    ----------
+    signal_x, signal_y : np.ndarray
+        1‑D real input signals.
+    mode : {"full", "same", "valid"}
+        Convolution mode.
+
+    Returns
+# ...(+206 more lines truncated)
+```
+
+============================
+ENTRY 38  [unknown, score=0.353, iter=5]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This version replaces the heavy scipy dependency with a lightweight
+NumPy‑only FFT routine that is faster for most input sizes.  The
+implementation automatically chooses between a direct convolution for
+small signals and an FFT‑based method for larger ones, and it uses
+real‑valued FFTs (`rfft`) to halve the computational cost.
+
+The public interface (`solve` and `is_solution`) remains unchanged
+so that the evaluator can use the same tests as before.
+"""
+
+import logging
+import numpy as np
+from scipy import signal
+from typing import Dict, Any, List
+
+# --------------------------------------------------------------------------- #
+# Utility helpers
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the next power of two greater than or equal to `n`."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Convolve two real 1‑D arrays using a real‑valued FFT.
+    The output length is len(x)+len(y)-1.
+    """
+    n = x.size + y.size - 1
+    n_fft = _next_pow2(n)
+    # Forward real FFTs
+    X = np.fft.rfft(x, n_fft)
+    Y = np.fft.rfft(y, n_fft)
+    # Point‑wise multiplication and inverse real FFT
+    conv = np.fft.irfft(X * Y, n_fft)[:n]
+    return conv
+# ...(+136 more lines truncated)
+```
+
+============================
+ENTRY 39  [unknown, score=0.352, iter=36]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – High‑Performance, Correct Implementation
+
+This implementation focuses on:
+* Correct handling of all three convolution modes (`full`, `same`, `valid`).
+* A fast, NumPy‑only FFT routine that uses real‑valued transforms (`rfft`/`irfft`).
+* Automatic fallback to the direct `np.convolve` for very short signals
+  where the FFT overhead dominates.
+* Minimal memory allocations and no unnecessary copies.
+* Robust input validation and detailed error reporting.
+
+The public API (`solve`, `is_solution`, `run_solver`) remains unchanged
+so that the evaluation harness can use the same tests as before.
+"""
+
+import logging
+from typing import Dict, List, Any
+
+import numpy as np
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Helper functions
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the smallest power of two ≥ n."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Compute the linear convolution of two real 1‑D arrays using FFT.
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Real input signals.
+
+    Returns
+# ...(+167 more lines truncated)
+```
+
+============================
+ENTRY 40  [unknown, score=0.215, iter=13]
+============================
+## Lesson
+(no reasoning captured)
+
+## Code excerpt
+```python
+# EVOLVE-BLOCK-START
+"""
+FFT Convolution Task – Optimised Implementation
+
+This version keeps the public API unchanged but replaces the heavy
+scipy dependency in the solver with a lightweight NumPy‑only FFT
+routine that is faster for most input sizes.  The implementation
+automatically chooses between a direct convolution for very small
+signals and an FFT‑based method for larger ones, and it uses
+real‑valued FFTs (`rfft`) to halve the computational cost.
+
+The `is_solution` helper still uses `scipy.signal.fftconvolve` for
+reference, but the solver itself is completely NumPy‑based.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+from typing import Dict, List, Any
+from scipy import signal
+
+# --------------------------------------------------------------------------- #
+# Utility helpers
+# --------------------------------------------------------------------------- #
+
+def _next_pow2(n: int) -> int:
+    """Return the next power of two greater than or equal to `n`."""
+    return 1 << (n - 1).bit_length()
+
+def _fft_convolve(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+    """
+    Convolve two real 1‑D arrays using a real‑valued FFT.
+
+    Parameters
+    ----------
+    x, y : np.ndarray
+        Real input signals.
+
+    Returns
+    -------
+# ...(+142 more lines truncated)
+```

@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""
+Fast, numerically stable matrix exponential using the scaling and squaring
+method with a Padé approximant of order 13.
+
+The implementation follows the algorithm described in
+Higham, Numerical Linear Algebra, Algorithm 10.2.2.
+"""
+
+import numpy as np
+
+__all__ = ["expm_fast"]
+
+
+# Padé coefficients for order 13 (c0 .. c13)
+_PAD_COEFFS = np.array(
+    [
+        64764752532480000.0,
+        32382376266240000.0,
+        7771770303897600.0,
+        1187353796428800.0,
+        129060195264000.0,
+        10559470521600.0,
+        670442572800.0,
+        33522128640.0,
+        1323241920.0,
+        40840800.0,
+        960960.0,
+        16380.0,
+        182.0,
+        1.0,
+    ],
+    dtype=np.float64,
+)
+
+
+def _pade13(A: np.ndarray) -> np.ndarray:
+    """
+    Compute the Padé approximant of order 13 for the matrix exponential.
+    """
+    n = A.shape[0]
+    # Compute powers of A up to A^13
+    A2 = A @ A
+    A4 = A2 @ A2
+    A6 = A4 @ A2
+    A8 = A4 @ A4
+    A10 = A8 @ A2
+    A12 = A8 @ A4
+
+    A3 = A2 @ A
+    A5 = A4 @ A
+    A7 = A6 @ A
+    A9 = A8 @ A
+    A11 = A10 @ A
+    A13 = A12 @ A
+
+    # Even powers: 0,2,4,6,8,10,12
+    V = (
+        _PAD_COEFFS[0] * np.eye(n, dtype=np.float64)
+        + _PAD_COEFFS[2] * A2
+        + _PAD_COEFFS[4] * A4
+        + _PAD_COEFFS[6] * A6
+        + _PAD_COEFFS[8] * A8
+        + _PAD_COEFFS[10] * A10
+        + _PAD_COEFFS[12] * A12
+    )
+
+    # Odd powers: 1,3,5,7,9,11,13
+    U = (
+        _PAD_COEFFS[1] * A
+        + _PAD_COEFFS[3] * A3
+        + _PAD_COEFFS[5] * A5
+        + _PAD_COEFFS[7] * A7
+        + _PAD_COEFFS[9] * A9
+        + _PAD_COEFFS[11] * A11
+        + _PAD_COEFFS[13] * A13
+    )
+
+    # Solve (V - U) X = V + U
+    B = V - U
+    C = V + U
+    return np.linalg.solve(B, C)
+
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """
+    Return the matrix exponential of a square float64 matrix ``A``.
+    The implementation uses the scaling-and-squaring method with a Padé
+    approximant of order 13, which is fast and numerically stable.
+    """
+    A = np.asarray(A, dtype=np.float64)
+
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        raise ValueError("Input must be a square matrix.")
+
+    n = A.shape[0]
+    if n == 0:
+        return np.empty((0, 0), dtype=np.float64)
+
+    # Zero matrix is a special case
+    if np.allclose(A, 0.0, atol=0, rtol=0):
+        return np.eye(n, dtype=np.float64)
+
+    # Compute the infinity norm to decide scaling
+    norm = np.linalg.norm(A, ord=np.inf)
+    s = max(0, int(np.ceil(np.log2(norm))) if norm > 0 else 0)
+
+    # Scale the matrix
+    A_scaled = A / (2 ** s)
+
+    # Compute Padé approximant of order 13
+    R = _pade13(A_scaled)
+
+    # Squaring step
+    for _ in range(s):
+        R = R @ R
+
+    return R

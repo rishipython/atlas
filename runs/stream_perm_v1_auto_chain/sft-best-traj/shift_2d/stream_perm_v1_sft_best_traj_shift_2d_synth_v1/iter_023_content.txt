@@ -1,0 +1,50 @@
+We need to read the problem dictionary and apply a 2‑D shift to the supplied array.  
+The reference implementation uses a class `Shift2D` with a `solve` method; we’ll keep that shape so that the rest of the framework can call it unchanged.  
+
+First thought: just call `scipy.ndimage.shift`. It already does the heavy lifting – vectorised interpolation, no Python loops – and is well‑tested for edge handling and sub‑pixel accuracy.  
+We’ll wrap it in a tiny class so the signature matches `Shift2D().solve(problem)` from the baseline.
+
+We should also add a little sanity checking – make sure the input is really a 2‑D array and that the shift value is either a scalar or a length‑two sequence.  
+Logging will help debug any misuse without slowing things down too much; just log at DEBUG level so normal runs stay fast.
+
+A quick sketch:
+
+```
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+logger = logging.getLogger(__name__)
+
+class Shift2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        data = np.asarray(problem.get('data'))
+        if data.ndim != 2:
+            raise ValueError("Input data must be 2‑D.")
+        shift = problem.get('shift', (0., 0.))
+        if isinstance(shift, (int, float)):
+            shift = (float(shift), float(shift))
+        elif isinstance(shift, (list, tuple)) and len(shift) == 2:
+            shift = tuple(float(v) for v in shift)
+        else:
+            raise ValueError("Shift must be scalar or tuple of two numbers.")
+        logger.debug(f"Shifting array of shape {data.shape} by {shift}")
+        # use cubic interpolation for smoothness; nearest for speed if needed
+        return scipy.ndimage.shift(data,
+                                   shift=shift,
+                                   order=3,
+                                   mode='nearest')
+```
+
+Finally expose the entry point:
+
+```
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+This keeps everything vectorised – no explicit Python loops – uses a SciPy routine for performance, and satisfies the import constraints (`logging`, `typing`, `numpy`, `scipy.ndimage`).  
+Edge cases such as non‑numeric shifts or wrong dimensionality are caught early with clear errors.  
+
+OK, I think I have the design. Time to write it.

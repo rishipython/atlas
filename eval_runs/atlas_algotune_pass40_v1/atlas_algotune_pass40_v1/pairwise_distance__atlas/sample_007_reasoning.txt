@@ -1,0 +1,26 @@
+We need to produce fast implementation. Use broadcasting or linear algebra trick: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute norms squared vector: sq_norms = np.sum(X**2, axis=1). Then use outer addition and subtract 2*X @ X.T. Ensure non-negative due to rounding. Use np.maximum with zero. dtype float64. Provide function. Also maybe use np.dot. Complexity O(N^2). That is fine.
+
+Edge cases: shape (0, D) returns (0,0). Should handle.
+
+Return float64.
+
+Let's produce file.
+
+Also we might want to use np.linalg.norm? But we compute.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.einsum('ij,ij->i', X, X)
+    # compute pairwise
+    dist = sq_norms[:,None] + sq_norms[None,:] - 2*np.dot(X, X.T)
+    # due to numerical errors might be negative small values; clip.
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+That's fine.
+
+Also use np.dot. Works.
+
+Let's produce final code.

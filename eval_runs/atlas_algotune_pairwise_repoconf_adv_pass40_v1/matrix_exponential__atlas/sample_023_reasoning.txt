@@ -1,0 +1,46 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm or np.linalg matrix exponential? We can use scipy.linalg.expm directly. But the problem likely expects that we use scipy's expm. But the reference implementation is naive; we can replace with scipy.linalg.expm(A). That would be fastest and correct. But maybe they want to implement scaling and squaring algorithm? But we can just call scipy.linalg.expm, which is efficient. That should pass the tests.
+
+But we must keep same signature. We can import scipy.linalg. Let's implement:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+But we might want to ensure dtype float64. expm returns dtype of A. That is fine.
+
+Also we may need to ensure that A is 2D square. But tests likely provide that. So just call expm.
+
+But maybe they want us to implement scaling and squaring algorithm to avoid external dependencies. But we can use scipy. The problem says we can import scipy. So fine.
+
+But we need to ensure speed. So using expm is fine.
+
+But maybe they want a fallback if scipy not available? But we can rely on SciPy.
+
+We might need to handle integer type? But not necessary.
+
+Thus final code:
+
+```
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+```
+
+Add docstring.
+
+But maybe we need to cast to float64. We can ensure:
+
+```
+A = np.asarray(A, dtype=np.float64)
+return expm(A)
+```
+
+But expm will accept.
+
+Let's produce final code.

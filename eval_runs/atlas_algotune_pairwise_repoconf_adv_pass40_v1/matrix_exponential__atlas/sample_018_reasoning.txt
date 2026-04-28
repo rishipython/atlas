@@ -1,0 +1,56 @@
+We need to implement a fast matrix exponential. Use scipy.linalg.expm or implement Pade approximant with scaling and squaring. We can just call scipy.linalg.expm for speed? But requirement: "Your solution must define the same top-level function name and signature as the reference. The reference is slow, but we need faster and numerically stable. We can use scipy.linalg.expm directly; it's fast and accurate. But maybe they want us to implement ourselves. But calling scipy.linalg.expm is allowed. The problem might want us to speed up but also match within tolerance. Using scipy.linalg.expm is simplest and fastest.
+
+But maybe the test environment may not have scipy? It says we may import scipy. So we can just:
+
+import scipy.linalg
+
+def expm_fast(A): return scipy.linalg.expm(A)
+
+But we need to import numpy, scipy.linalg. Should also ensure A is float64. But we can convert.
+
+However, maybe the problem expects we implement scaling and squaring with Pade approximant using numpy only. But using scipy is allowed.
+
+We need to produce a file that defines expm_fast. We'll import numpy as np, import scipy.linalg as la. The function should accept A, ensure it's 2D square. Possibly check shape. But not required.
+
+We need to preserve dtype float64. scipy.linalg.expm returns dtype same as input.
+
+Edge cases: input may not be float64; we can cast to float64. Use .astype(np.float64) maybe.
+
+But we need to be careful with memory: use la.expm(A). So:
+
+def expm_fast(A):
+    A = np.array(A, dtype=np.float64, copy=False)
+    return la.expm(A)
+
+This should be correct and fast.
+
+But maybe the problem expects we implement ourselves; but using scipy is fine. The evaluation will check output closeness to scipy.linalg.expm(A) within tolerance. If we call la.expm, we will produce same result; maybe differences due to internal algorithm but should be close.
+
+However, if we call la.expm, we might get same as reference? The reference uses 40 terms. For large norms, that may produce inaccurate. But la.expm uses scaling and squaring; it's accurate. The test likely compares our output to scipy.linalg.expm(A). So we need to produce same as la.expm. So calling la.expm is fine.
+
+But to be safe, we could implement the scaling and squaring with Pade approximant. But that is more code. Using scipy is simpler.
+
+Thus final code:
+
+import numpy as np
+import scipy.linalg as la
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64, copy=False)
+    return la.expm(A)
+
+Return type: np.ndarray.
+
+Add docstring.
+
+Add __all__ maybe.
+
+Write file.
+
+Check that code runs.
+
+Edge: if A is not square, la.expm will raise ValueError. That's fine.
+
+So final answer: a single code block with imports and function.
+
+Let's produce.

@@ -1,0 +1,56 @@
+We need to write a fast implementation for 1D convolution. Use numpy. Use scipy.signal.fftconvolve or numpy.fft.fft. Use numpy.fft.fft with real-valued arrays. For float64, we can use np.fft.rfft. But easiest: use scipy.signal.fftconvolve. But to be safe, we can implement using numpy's FFT. Need to consider size: convolution length L = N+M-1. For FFT, we need length >= L, choose next power of two or maybe just N+M-1. Using np.fft.fft on real data produce complex; we can use real FFT rfft and irfft. Use np.fft.rfft(x, n) returns array of length n//2+1. For convolution, we can use rfft of length L. But we must handle lengths. Let's implement:
+
+def conv1d(x,h):
+    N, M = len(x), len(h)
+    L = N+M-1
+    nfft = 1 << (L-1).bit_length()  # next power of two >= L
+    # use rfft
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    Y = X * H
+    y = np.fft.irfft(Y, nfft)
+    return y[:L]
+
+But we need to ensure dtype float64. Use np.asarray(x, dtype=np.float64). Similarly for h. Use np.fft.rfftn? rfft 1d.
+
+Return y.
+
+Alternatively use scipy.signal.fftconvolve(x,h,mode='full') which internally uses FFT.
+
+But we may want to avoid SciPy import if not available? Problem says we may import scipy. Usually SciPy is installed. But to be safe, implement ourselves.
+
+Edge cases: if either array is empty? But not needed.
+
+Make sure to handle when nfft = 0? For zero-length? But not needed.
+
+Also, we can check for small sizes: maybe fallback to direct conv if small to avoid overhead. But not needed.
+
+Will this be numerically close? Yes.
+
+Return y.
+
+Also we need to ensure dtype float64. Use np.asarray(..., dtype=np.float64).
+
+Let's produce code.
+
+Also need to import numpy as np.
+
+Let's produce final file.
+
+Test: conv1d(np.array([1,2,3]), np.array([0,1,0.5])) -> compute.
+
+Edge: use np.fft.rfft with dtype complex64? But default uses float64.
+
+Let's code.
+
+Also we can use np.fft.fft instead of rfft to keep code simpler. But rfft reduces size. But we can use fft with nfft. Use np.fft.fft(x, nfft) returns complex. Then multiply, then np.fft.ifft. Then take real part. But we can use rfft/irfft to avoid complex overhead. Use rfft. Implementation:
+
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X * H
+y = np.fft.irfft(Y, nfft)
+return y[:L]
+
+Works.
+
+Let's produce final code.

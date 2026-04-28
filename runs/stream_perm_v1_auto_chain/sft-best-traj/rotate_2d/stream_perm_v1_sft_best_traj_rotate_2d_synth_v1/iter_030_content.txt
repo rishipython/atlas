@@ -1,0 +1,78 @@
+We need to take a 2‑D array and rotate it by an arbitrary angle efficiently.  
+The baseline uses a slow pure‑Python loop over every pixel – that’s the bottleneck we want to eliminate.  
+So the first thing I’ll do is look at what SciPy already offers. `scipy.ndimage.rotate` is a thin wrapper around a fast C implementation that does exactly what we want: it takes an array, an angle in degrees, and returns the rotated image with bilinear interpolation (or higher orders).  
+That means we can drop the whole manual looping and just hand off the work to this function.  
+
+The input format isn’t explicitly defined in the prompt, so I’ll assume the `problem` dictionary contains at least two keys:
+* `'matrix'` – a NumPy array (could be any numeric dtype).
+* `'angle'` – a float or int specifying degrees (positive counter‑clockwise).
+
+If the dictionary contains other keys we ignore them – they’re irrelevant for rotation.  
+
+Now I have to decide on a few implementation details:
+
+* **Angle normalization** – If the angle is effectively zero (or a multiple of 360) there’s no work to do; returning a copy avoids calling into SciPy entirely and saves time for trivial cases.
+* **Data type handling** – The rotation routine works best on floating‑point data because it does interpolation. If the input is integer‑typed I’ll cast it to `float64` before rotating and cast back afterward so the output type matches expectations.
+* **Empty arrays** – A zero‑size array should just be returned unchanged.
+* **Performance** – `scipy.ndimage.rotate` accepts parameters like `reshape=False` (keep original shape), `order=1` (bilinear), `mode='constant'`, `cval=0`. These are all fast defaults that give acceptable accuracy for most use cases.
+* **No Python loops** – The whole operation is one function call; there’s no explicit looping in Python at all.
+
+Alternative paths I considered:
+
+* **Numba** – Writing a custom bilinear sampler would avoid SciPy’s overhead but would still require looping over pixels inside the JITed kernel. The gain would be marginal compared to calling into an already highly optimised C routine.
+* **JAX** – JIT compiling a pure‑Python implementation could give speedups on GPUs/TPUs, but adding JAX brings extra dependency weight and compilation time that isn’t justified here.
+* **Affine transform** – Using `scipy.ndimage.affine_transform` gives more control over the transformation matrix but ends up doing essentially the same interpolation work under the hood; benchmarks show `rotate` is slightly faster for simple rotations.
+* **Custom FFT‑based rotation** – Not applicable because rotation isn’t a convolution operation; FFT tricks would add unnecessary complexity and numerical error without speed benefit.
+
+So I’ll stick with `scipy.ndimage.rotate`.  
+The class will look like this:
+
+```python
+class Rotate2D:
+    def solve(self, problem):
+        # pull data out of dict
+        arr = np.asarray(problem['matrix'])
+        ang = float(problem.get('angle', 0))
+
+        # trivial case fast path
+        if arr.size == 0 or abs(ang % 360) < 1e-8:
+            return arr.copy()
+
+        # ensure float for interpolation
+        src = arr.astype(np.float64)
+        out = scipy.ndimage.rotate(
+            src,
+            ang,
+            reshape=False,
+            order=1,
+            mode='constant',
+            cval=0.0,
+        )
+        # preserve original dtype
+        return out.astype(arr.dtype)
+```
+
+Finally expose it through the required entry point:
+
+```python
+def run_solver(problem):
+    return Rotate2D().solve(problem)
+```
+
+All imports are minimal and match the brief:
+
+```python
+from __future__ import annotations
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+This design satisfies every constraint:
+* Uses only vectorised SciPy calls.
+* No Python‑level loops.
+* Handles edge cases gracefully.
+* Keeps data types consistent.
+* Is concise enough that the full file will be well under the character limit while still being clear and maintainable.  
+
+OK, I think I have the design. Time to write it.

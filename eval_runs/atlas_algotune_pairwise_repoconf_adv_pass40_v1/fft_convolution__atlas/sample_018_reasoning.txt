@@ -1,0 +1,51 @@
+We need to replace slow implementation with FFT-based convolution. Use numpy. Ensure same output shape, dtype float64. Use numpy.fft.fft. For real inputs, we can use np.fft.rfft? But easiest: use np.fft.fft with length L = next power of 2? But can use np.fft.fft directly; size is N+M-1. Use np.fft.fft(x, n=L), np.fft.fft(h, n=L). Then multiply and inverse. Use np.real. That returns complex due to rounding. Should cast to float64. Use np.fft.fft. Ensure dtype float64.
+
+Edge cases: small arrays. Use np.fft.fft. Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N+M-1
+    # compute next power of 2 for speed? not necessary. But we can use L directly. 
+    # But for small arrays, using next power of 2 might be fine. 
+    # Use np.fft.fft.
+    X = np.fft.fft(x, n=L)
+    H = np.fft.fft(h, n=L)
+    y = np.fft.ifft(X*H).real
+    return y
+
+But we need to ensure dtype float64. The result of ifft is complex64 or complex128 depending. Since inputs are float64, output will be complex128. Taking .real gives float64.
+
+But we need to return np.ndarray of dtype float64.
+
+Potential numerical errors: small imaginary residual due to rounding. Taking real should be fine. Use np.real.
+
+Edge: if inputs are not 1-D? Problem states 1-D arrays. Should handle.
+
+Also we need to import numpy. Use np.fft.
+
+Potential performance: For large arrays, using np.fft.fft is efficient.
+
+But we may also consider using np.fft.rfft for real inputs. rfft returns half-length array. But we can just use normal fft for simplicity.
+
+We also need to preserve dtype: The result of np.fft.ifft will be complex128. .real yields float64.
+
+Return y.
+
+Should we use np.fft.fft(x, n=L, dtype=np.float64)? But x is float64; okay.
+
+Edge: if L is 0? N or M could be 0? Not likely. But if one array length 0, conv length = -1? But not possible.
+
+Ok.
+
+Let's produce final code. Include docstring.
+
+Also we can optionally use np.fft.fftpack? But np.fft is fine.
+
+Return np.array.
+
+Test: conv1d(np.array([1,2,3]), np.array([0,1,0.5])) -> compute.
+
+Ok.
+
+Let's produce final answer.

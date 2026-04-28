@@ -1,0 +1,164 @@
+We need to figure out what shift_2d is. Likely a problem from AlgoTune: given an image or matrix, shift it by some offset? Let's think.
+
+The reference implementation uses Shift2D().solve(problem). So we need to implement solve that takes a problem dict. We don't know the exact format, but likely includes 'image', 'shift', maybe 'kernel'? Let's search memory: shift_2d might be about shifting a 2D array with subpixel precision using FFT? Could be computing cross-correlation to find shift? But the task says "improve the shift_2d algorithm implementation with baseline comparison." So baseline is slow; we need faster.
+
+We need to use scipy functions, vectorized, no Python loops.
+
+Probably the problem dict contains 'a' and 'b' arrays of shape (H,W) and we need to compute shifted version of a relative to b? Or compute shift that aligns them? Might be computing cross-correlation via FFT using scipy.signal.fftconvolve or correlate2d.
+
+Let's assume problem dict contains:
+
+{
+  'a': np.ndarray,
+  'b': np.ndarray,
+  'shift': (int, int) or None
+}
+
+But we need to produce "optimal solution" - maybe shift that maximizes correlation? That could be solved via FFT cross-correlation.
+
+Better approach: use scipy.signal.correlate2d which uses FFT for large arrays. Then find argmax of correlation matrix. That gives shift. Then apply shift via scipy.ndimage.shift.
+
+Alternatively, if shift is given, just apply shift.
+
+But we don't know spec.
+
+Let's examine typical AlgoTune tasks: they usually involve optimization problems like linear programming, integer programming, etc. But shift_2d might be a geometry transformation.
+
+Maybe the problem is: given an image and a pattern, find best shift such that pattern matches image. The solution returns the best shift and maybe error metric.
+
+Let's assume problem dict includes:
+
+- 'image': 2D array
+- 'pattern': 2D array
+- maybe 'max_shift': int
+
+Goal: find integer shift (dx, dy) within [-max_shift, max_shift] that maximizes sum of product between pattern and image shifted accordingly. Equivalent to cross-correlation.
+
+We can compute full cross-correlation via FFT using scipy.signal.correlate2d with mode='full'. Then find argmax.
+
+Then return {'shift': (dy, dx), 'score': max_val} maybe.
+
+We need to produce output format same as baseline. Without seeing baseline we guess output must be dictionary with keys maybe 'shift', 'score'.
+
+But we can design generic: return {'shift': (dy, dx)}.
+
+Let's inspect typical AlgoTune tasks: They often require returning a dictionary with solution details; but not sure.
+
+Maybe easier: The solve method just returns the shifted array itself. Problem may contain 'array' and 'shift' values; we need to apply shift using scipy.ndimage.shift with order=1 or 0? Baseline uses naive loops; we use scipy.ndimage.shift for speed.
+
+Ok let's design:
+
+def solve(problem):
+    arr = problem['array']
+    dx = problem.get('dx', 0)
+    dy = problem.get('dy', 0)
+    # Use scipy.ndimage.shift
+    shifted = scipy.ndimage.shift(arr, shift=(dy, dx), order=1, mode='nearest')
+    return shifted
+
+But baseline may compute something else.
+
+Alternatively maybe it's about shifting all points in a point cloud by vector (sx, sy). Problem dict contains list of coordinates; baseline loops; we vectorize with numpy addition.
+
+But brief says use scipy functions somewhere. So we must use at least one scipy function. Could use scipy.ndimage.shift or correlate2d or fftconvolve etc.
+
+We also must keep imports minimal: from typing import Any, Dict; import numpy as np; import scipy.ndimage
+
+So only ndimage imported from scipy. That suggests we should use ndimage.shift for shifting arrays. So problem likely involves shifting an array by subpixel amounts.
+
+Thus final solution will use ndimage.shift on input array(s). Might also involve computing difference between two arrays after shifting?
+
+Maybe the problem is: given two images A and B, find optimal subpixel shift that minimizes L2 distance between them. Baseline uses loops over shifts; we can compute cross-correlation via FFT and then refine with subpixel interpolation using ndimage.shift? But brief only imports ndimage not signal or fftpack. So maybe simpler: just apply given shift vector.
+
+Thus I think solve takes problem dict containing 'array' and 'shift' (tuple). Return shifted array.
+
+Ok let's design:
+
+def solve(problem):
+    arr = np.asarray(problem['array'])
+    dx = float(problem.get('dx', 0))
+    dy = float(problem.get('dy', 0))
+    # Use ndimage.shift
+    shifted = scipy.ndimage.shift(arr, shift=(dy, dx), order=1, mode='nearest')
+    return {'array': shifted}
+
+But output format may require just array value; but baseline returns something else? The run_solver returns Shift2D().solve(problem). So run_solver returns whatever solve returns. So if solve returns dict with key 'array', that's fine.
+
+Edge cases: arr may be multi-channel (3D). ndimage.shift supports ND arrays; but mode might need to handle channels separately? It will apply same shift across all dims including channel dimension if provided as third dimension; but then channel dimension will also be shifted incorrectly. We can handle by moving channel last dimension out-of-shift: if arr.ndim==3 and last dim is channel count small (like 3), we can split into channels and apply separately or use order=1 on each channel individually by applying along first two dims only using indexing trick:
+
+shifted = np.stack([scipy.ndimage.shift(arr[...,c], shift=(dy,dx), order=1, mode='nearest') for c in range(arr.shape[2])], axis=2)
+
+But this introduces loop over channels but small overhead acceptable since channels small (3). However requirement no Python-level loops? It said no loops at all. But loop over channels might violate rule "No Python-level loops — all work is vectorised." That means even channel loop not allowed. But could reshape arr to (-1,H,W)? Actually if arr shape (H,W,C), we can reshape to (H,W,C) but still need per-channel operation? We could use order=1 on full array which will treat C as third dimension and interpolate across it incorrectly because interpolation occurs in all dimensions simultaneously leading to mixing channels incorrectly. Not acceptable if C>1.
+
+Alternative: convert to float32 and reshape to (-1,H,W)? Not trivial.
+
+Maybe problem only involves grayscale images (2D). So ignore channel case.
+
+Thus design simple: assume arr is 2D float array.
+
+Ok final design:
+
+solve(problem):
+- Extract arr
+- Get shift tuple
+- Use ndimage.shift
+- Return {'result': shifted}
+
+Edge cases: negative shifts handled automatically by ndimage.shift.
+If arr dtype int -> convert to float before shifting else interpolation may fail? ndimage.shift accepts any dtype but will cast result dtype same as input? Might produce float anyway due to interpolation order >0 producing float output even if input int? Actually order>0 results in float output regardless of input dtype; but we might want preserve dtype? Not needed for performance test probably fine.
+
+Also ensure dtype of result same as input? Could cast back at end if needed using .astype(arr.dtype).
+
+Will do:
+
+shifted = scipy.ndimage.shift(arr.astype(np.float64), ...)
+
+if arr.dtype != np.float64:
+   shifted = shifted.astype(arr.dtype)
+
+Return {'array': shifted}
+
+Ok incorporate typing imports etc. We'll produce code skeleton accordingly later but not now because final code not required yet; just chain-of-thought ends with handoff sentence.
+We need to figure out what the “shift_2d” task actually wants us to do before we can write a fast solver. The reference implementation calls `Shift2D().solve(problem)` so whatever `solve` returns must be what the test harness expects – presumably some transformed array or a descriptor of a transformation that was applied to an input image or matrix stored in `problem`.
+
+First guess: it’s simply about taking a 2‑D NumPy array and applying a sub‑pixel translation specified in the problem dictionary. That would explain why the brief insists on importing `scipy.ndimage` – that module has a ready‑made `shift` routine that does exactly this with interpolation and boundary handling in C under the hood. If I were writing a naive implementation I’d loop over every pixel and manually copy it into its new location; that’s slow and would trigger the “slow reference” warning in the tests. Using `ndimage.shift` removes any explicit Python loops entirely and gives us a highly optimised path through BLAS/LAPACK for the interpolation step.
+
+Another possibility is that the task is about finding an optimal integer or sub‑pixel offset between two images – i.e., cross‑correlation followed by sub‑pixel refinement – but there’s no hint in the brief that we should perform any search or optimisation beyond applying a given offset. Also the brief explicitly says “No Python-level loops — all work is vectorised.” If it were an optimisation over many candidate shifts we'd have to loop over candidates unless we used some fancy FFT trick which would bring in more imports than allowed (`scipy.signal` etc.). Since only `scipy.ndimage` is listed among allowed imports for this solution shape, I’ll lean toward the simple interpretation: take an input array and apply the provided offset directly.
+
+Given that assumption our solver can be extremely small:
+
+```python
+def solve(problem):
+    arr = np.asarray(problem['array'])
+    # Accept either a single scalar offset or a tuple/list of two floats.
+    offs = problem.get('offset', (0., 0.))
+    # Normalise offset into (dy, dx) tuple for ndimage
+    if isinstance(offs, (int, float)):
+        offs = (offs, offs)
+    else:
+        offs = tuple(map(float, offs))
+    # Use ndimage.shift – it handles negative shifts fine.
+    # Interpolation order 1 gives bilinear interpolation which is fast
+    # and produces floating point results even if input was integer.
+    shifted = scipy.ndimage.shift(arr.astype(np.float64),
+                                  shift=(offs[0], offs[1]),
+                                  order=1,
+                                  mode='nearest')
+    # If original dtype was integer we cast back so callers see same type.
+    if arr.dtype.kind != 'f':
+        shifted = shifted.astype(arr.dtype)
+    # Return whatever structure the tests expect – likely just the new array.
+    return {'array': shifted}
+```
+
+A few edge‑case thoughts:
+
+* If `arr` has more than two dimensions (e.g., RGB image), `ndimage.shift` will interpolate across all dimensions which mixes colour channels incorrectly – so this solver implicitly assumes grayscale data.
+* The choice of `mode='nearest'` keeps boundary handling consistent with many naive implementations that pad with edge values rather than zero‑padding.
+* Using `order=1` keeps speed high while still giving decent quality for sub‑pixel shifts; higher orders would cost extra time without significant benefit for most test data.
+* Casting back to original dtype ensures callers don’t see an unexpected float output when they supplied integers – this mirrors what many reference solutions do after performing interpolation in float space.
+* No explicit Python loops remain – everything is handled inside C/Fortran libraries (`ndimage`) which satisfies the “no Python-level loops” requirement.
+* The imports stay minimal (`typing`, `numpy`, `scipy.ndimage`) as required by the brief while still leveraging SciPy’s optimized routines for speed.
+* Finally, returning a dictionary keeps compatibility with any wrapper expecting named fields rather than raw arrays – if tests expect just an array you could adjust accordingly without changing core logic.
+
+OK, I think I have the design. Time to write it.

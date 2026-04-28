@@ -1,0 +1,91 @@
+We need to implement conv1d faster. Use FFT-based convolution: use np.fft.fft, or scipy.signal.fftconvolve. Must return same result as np.convolve with mode='full'. Use np.fft.rfft? But input are real. Use np.fft.fft for general. Ensure dtype float64. Use np.fft.fft of length L = next power of two >= N+M-1? Actually we can just use length = N+M-1. But for speed, use next power of two to optimize. But we must return exactly same result (within tolerance). Using FFT rounding errors may produce small differences but acceptable with atol/rtol. Use np.fft.fft with length L = N+M-1. But need to zero-pad to that length. So:
+
+L = N+M-1
+X = np.fft.fft(x, L)
+H = np.fft.fft(h, L)
+Y = X*H
+y = np.fft.ifft(Y).real
+
+But ensure dtype float64. Use np.fft.rfft? Might produce small differences but fine. Use np.fft.fft.
+
+Edge cases: if N or M zero? arrays length zero? But conv of empty arrays? np.convolve returns array of length N+M-1. If either is empty, N+M-1 = ... If N=0, M>0 => length M-1? But np.convolve with empty? Let's test: np.convolve([], [1,2]) returns array of zeros? Actually np.convolve([], [1,2]) returns array of zeros of length 1? Let's check. In numpy, convolve expects sequences of length >0? Let's test mentally: np.convolve([], [1,2]) yields array([], dtype=float64). Actually if one array empty, length of output is len(x)+len(h)-1 = 0+2-1 = 1? But test: In numpy, np.convolve([], [1,2]) returns array([], dtype=float64)? I'm not sure. Let's test: In Python, np.convolve([], [1,2]) -> array([], dtype=float64). So maybe output length is 0? Let's confirm: len(np.convolve([], [1,2])) = 0. So our implementation should mimic that. But our algorithm would produce L = N+M-1 = 1. But zero padding: x zeros length 1? But x empty -> we need to handle empties: if N==0 or M==0: return np.array([], dtype=np.float64). Similarly if N==0 or M==0, conv is zero? Actually linear convolution of empty with anything should be empty. So implement early return.
+
+Also if one array length 1? Works.
+
+Also we need to preserve dtype float64. Use np.fft.fft which returns complex dtype. Use .real.
+
+Also to avoid rounding errors, we may round small imaginary parts: y.real.
+
+Return y.
+
+Let's implement.
+
+Additionally, we may consider using np.fft.rfft and irfft to reduce memory: but keep simple.
+
+We also need to ensure that we use numpy's fft functions; they may be slower for small arrays. But we can still use them.
+
+But we can also use np.fft.fft with length L. If L is small (<64?), may be slower. But test inputs may be large.
+
+Better to use np.fft.fft if L >= 64 else fallback to direct? But not required.
+
+Edge: x and h may be any shape? They are 1-D arrays. Use x.ravel().
+
+Also ensure input dtype is float64? The arrays may be float64. We'll cast to float64.
+
+Let's produce code:
+
+```
+import numpy as np
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    if N == 0 or M == 0:
+        return np.array([], dtype=np.float64)
+    L = N + M - 1
+    # use next power of two for speed? optional
+    # L_fft = 1 << (L-1).bit_length()
+    # but we can use L directly
+    X = np.fft.fft(x, L)
+    H = np.fft.fft(h, L)
+    Y = X * H
+    y = np.fft.ifft(Y).real
+    return y
+```
+
+This should be fine.
+
+But we need to consider that if x or h are not 1-D? But spec says 1-D. Use .reshape(-1).
+
+We might also use np.fft.rfft to reduce memory: Use rfft length L, multiply, irfft.
+
+But if we use rfft, we need to ensure same length output: np.fft.irfft(Y, n=L) returns real array length L. So we can do:
+
+```
+X = np.fft.rfft(x, n=L)
+H = np.fft.rfft(h, n=L)
+Y = X * H
+y = np.fft.irfft(Y, n=L)
+```
+
+This yields same result but may be slightly faster due to half-size. Use that.
+
+Let's implement with rfft.
+
+Edge: For odd length, rfft output length L//2+1. Works.
+
+Return y.
+
+Let's test: conv1d(np.array([1,2,3]), np.array([0,1,0.5])) should produce same as np.convolve.
+
+Ok.
+
+Also we might need to handle negative indices? Not.
+
+Also we need to ensure no imaginary residual due to numeric errors: y.real is fine. But irfft returns real.
+
+Ok.
+
+Let's produce final code.

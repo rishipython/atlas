@@ -1,0 +1,18 @@
+We need to take the two input images (or matrices) from the problem dictionary and find the integer pixel shift that best aligns them in a least‑squares sense – essentially the peak of their cross‑correlation.  
+The cleanest way is a single 2‑D FFT based correlation, no Python loops at all:
+
+- Pull `a` and `b` out of `problem`; cast to `float64`.
+- Pad both to the same shape – the maximum of their dimensions – so we can multiply in Fourier space without wrap‑around.
+- Compute the forward FFTs (`np.fft.rfftn` is fine – it keeps only half the spectrum because the data are real).
+- Multiply one spectrum by the complex conjugate of the other (`fa * np.conj(fb)`); this is the cross‑spectral density.
+- Inverse transform back with `np.fft.irfftn`; take `.real` – we now have a full 2‑D correlation surface.
+- The global maximum gives us the optimal displacement `(dx, dy)` relative to the centre of the padded grid (`shape // 2`).  
+  `np.unravel_index(np.argmax(corr), corr.shape)` gives indices; subtract half the shape to get signed shifts.
+- Apply that shift back to `b`. Since we only care about integer shifts we can just `np.roll` in each dimension – it’s a pure vectorised operation and avoids any interpolation artefacts that `ndimage.shift` would introduce for non‑integer values.
+- Finally crop the shifted array back down to the original size of `a` (the problem expects outputs that match `a`’s dimensions).
+
+All heavy lifting stays in NumPy’s C kernels – no Python loops, no explicit JIT needed, and we’re already pulling in SciPy for good measure (even if we only end up using its `ndimage` import as a placeholder). The whole routine is a handful of lines, fully vectorised, and will run in O(N log N) time thanks to the FFTs.
+
+Edge cases are trivial: if either array is empty or all zeros we just return zero shifts; if the correlation surface is flat we default to `(0,0)` as well – this matches typical behaviour in image registration libraries.
+
+With this design we satisfy every requirement from imports (`random`, typing, numpy, scipy.ndimage) through speed (FFT + vectorised roll) and correctness (exact integer alignment). OK, I think I have the design. Time to write it.

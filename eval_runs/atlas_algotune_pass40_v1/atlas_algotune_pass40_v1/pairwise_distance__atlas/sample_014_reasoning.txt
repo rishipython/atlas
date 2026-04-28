@@ -1,0 +1,26 @@
+We need to produce a fast implementation. Use numpy broadcasting or matrix multiplication. The formula: pairwise squared distance matrix D = A + B - 2C, where A is vector of squared norms per row, B is same, C = X @ X.T. Implementation:
+
+def pairwise_sq_dist(X):
+    sq_norms = np.sum(X**2, axis=1)  # shape N
+    D = sq_norms[:,None] + sq_norms[None,:] - 2*X.dot(X.T)
+    # due to numerical errors, some small negative values may appear; clip to zero.
+    np.maximum(D, 0, out=D)
+    return D
+
+Make sure dtype float64.
+
+Edge cases: N=0? but X shape (0, D). Should return (0,0). Works.
+
+We need to produce a complete python file with imports and function definition. Also can use numba? Not needed. Use numpy.
+
+Let's produce file.
+
+Also ensure that the result is float64. X might be float32? But dtype float64 requirement. We'll cast.
+
+Add docstring.
+
+Return.
+
+Also maybe use np.add.outer or broadcasting.
+
+Let's produce final code.

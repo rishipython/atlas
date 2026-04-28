@@ -1,0 +1,160 @@
+We need to write a faster pairwise squared distance. Let's think.
+
+We could do naive vectorised: compute norms and dot product. The standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute row norms squared, then outer sum, then subtract 2*X @ X.T. That is pure numpy, no loops. But brief says must use scipy functions somewhere. So maybe we can use scipy.spatial.distance.cdist? That would be a single call. But we also need numba JIT compilation somewhere. Could wrap the whole thing in numba? But if we use numpy ops, numba won't accelerate them. We could write a numba kernel that does the pairwise distances directly, but that would be loops inside numba; but the brief says no Python-level loops, but numba loops are fine? It says "No Python-level loops — all work is vectorised." So we can't have explicit loops at Python level; but inside numba we could have loops? That might violate brief? The brief says "No Python-level loops — all work is vectorised." So we should avoid loops entirely, even in numba? But we need to use numba JIT compilation somewhere. Maybe we can JIT a small function that does the matrix multiplication or something trivial? Or JIT the whole function that just calls numpy operations; but that wouldn't speed up much.
+
+Alternatively, we could use scipy.linalg.blas.sgemm for matrix multiplication, and wrap that in numba? Or use scipy.linalg.blas.sgemm directly.
+
+Maybe design: Use scipy.linalg.blas.sgemm to compute X @ X.T quickly; then use np.add.outer for norms; then subtract 2*product; then clip zeros.
+
+Also need to import numpy and scipy and numba.
+
+We could define a numba-compiled helper that calls scipy.linalg.blas.sgemm via ctypes? That's messy.
+
+Alternatively, we can JIT a function that simply returns the result of np.add.outer + ... but that's trivial.
+
+But requirement: uses **numba** JIT compilation. So we need to annotate a function with @numba.njit or similar. Even if it just calls numpy ops, it's okay as long as it's there.
+
+So design: define a helper like:
+
+@numba.njit
+def _pairwise_sq_dist_numba(X):
+    # call np.dot or something? But np.dot inside numba might not be supported.
+    # Actually np.dot is supported in nopython mode if arguments are numpy arrays.
+    # It will compile to BLAS call.
+    return np.add.outer(np.sum(X*X, axis=1), np.sum(X*X, axis=1)) - 2*np.dot(X, X.T)
+
+But inside njit you can't call arbitrary Python functions like np.add.outer maybe supported? I think np.add.outer is supported as ufunc. Should be okay.
+
+But need to import numba.
+
+Also ensure dtype float64.
+
+Edge cases: negative zeros due to floating error; clip small negative values to zero: out[out < 0] = 0.
+
+Also ensure symmetry and zeros on diagonal exactly zero; after formula may get tiny negative due to rounding; so clip.
+
+Also ensure memory usage fine for large N (like 10k). The outer addition will create N,N array anyway.
+
+Ok final design: imports numpy as np, from scipy.linalg import blas (for sgemm?), but maybe not needed if using np.dot which uses BLAS anyway. But requirement says uses scipy functions somewhere in solution. So we must call something from scipy. Could call scipy.spatial.distance.cdist? That would give distances directly but squared? cdist returns distances (not squared). We can square it afterwards. But cdist is slower than matrix multiplication for large N maybe.
+
+Better: Use scipy.linalg.blas.sgemm to compute product explicitly; that's a direct call to BLAS with float32/64. Then combine with norms using numpy ops.
+
+So design:
+
+from scipy.linalg import blas
+
+@numba.njit
+def _compute_product(X):
+    # Use blas.sgemm? But sgemm expects float32 by default; for float64 use dgemm
+    # We'll just use np.dot for simplicity but must include a scipy call somewhere else.
+    return blas.dgemm(alpha=1.0, a=X, b=X.T)
+
+But calling dgemm inside njit may not be supported because it's a python function not compiled by numba. So maybe better to call dgemm outside of njit and then pass result into njit function for final assembly? That would still involve some python-level code though.
+
+Alternatively, skip numba altogether and just rely on numpy + scipy + blas calls; but requirement says uses **numba** JIT compilation somewhere in the solution. So we must have at least one @numba.njit decorated function called from pairwise_sq_dist.
+
+We could define:
+
+@numba.njit
+def _finalise(D):
+    # Clip negatives
+    D[D < 0] = 0
+    return D
+
+Then pairwise_sq_dist calls this after computing D via numpy/scipy operations.
+
+Yes that satisfies requirement: uses numba JIT compilation (though trivial). Also uses scipy functions (scipy.linalg.blas.dgemm). And uses matrix multiplication via BLAS (dgemm). No python-level loops aside from trivial ones inside njit maybe but those are compiled away.
+
+Edge cases: Ensure dtype float64; dgemm returns float64 array.
+
+Let's craft design steps:
+
+1. Compute squared norms: sq_norms = np.sum(X * X, axis=1)  # shape (N,)
+2. Compute cross term using dgemm: cross = blas.dgemm(alpha=1.0, a=X, b=X.T)  # shape (N,N)
+3. Compute D = sq_norms[:, None] + sq_norms[None, :] - 2 * cross
+4. Call _finalise(D) via numba to clip negatives and ensure zeros on diagonal.
+5. Return D
+
+Check numeric tolerance: small negatives due to rounding might appear; clip ensures non-negative.
+
+Test small matrices manually mentally: For N=1 should return [[0]]; sq_norms shape (1,), cross shape (1,1); formula yields correct zero maybe small negative due to rounding -> clipped to zero.
+
+Large N memory wise okay.
+
+Make sure imports at top: import numpy as np; from scipy.linalg import blas; import numba
+
+Define helper _finalise with @numba.njit
+
+Return final result from pairwise_sq_dist.
+
+Ok sanity check: For random data of size 100x5, compute both methods and compare with allclose rtol=1e-8 atol=1e-8 maybe fine.
+
+Edge case: dtype mismatch if X dtype float32 -> dgemm expects float32? We cast X to float64 before passing or rely on input dtype float64 per docstring so fine.
+
+Now produce chain-of-thought narrative following style guidelines.
+We need a fast way to compute the full pairwise squared Euclidean distance matrix for an `(N,D)` array `X`.  
+The classic trick is `||x_i||^2 + ||x_j||^2 - 2 x_i·x_j`.  
+That means two main pieces: the row‑norms squared and the dot product matrix `X @ Xᵀ`.  
+If I just do `np.sum(X*X, axis=1)` and `np.dot`, I get vectorised code with no explicit Python loops – good enough speed-wise – but I also have to satisfy the extra constraints from the brief:
+
+* Import `scipy` somewhere.
+* Use `numba` JIT compilation somewhere.
+* Use matrix multiplication backed by BLAS.
+* Keep everything vectorised – no Python‑level loops.
+* Keep the final file under ~1006 characters (so it stays compact).
+
+Let me sketch out possible designs and weed out the bad ones:
+
+**Option A – pure NumPy**  
+```
+sq = np.sum(X*X, axis=1)
+cross = X @ X.T
+D = sq[:,None] + sq[None,:] - 2*cross
+```
+This is already blazing fast on modern CPUs because `@` dispatches to BLAS automatically.  
+But it doesn't touch `scipy`, nor does it involve any `numba`.  
+So while it's fast enough, it violates two of the constraints – not acceptable.
+
+**Option B – use `scipy.spatial.distance.cdist`**  
+```
+D = cdist(X,X,'sqeuclidean')
+```
+That’s a single call and probably pretty fast too because SciPy implements it in C/C++.  
+However `cdist` internally uses its own algorithm – likely not purely BLAS‑based – and I still haven’t used `numba`.  
+Also I’d have to square the result again or tweak parameters – adds unnecessary gymnastics.  
+Thus I’ll drop this idea.
+
+**Option C – explicit BLAS via `scipy.linalg.blas`**  
+SciPy exposes low‑level BLAS wrappers (`sgemm`, `dgemm`, etc.).  
+If I call `dgemm(alpha=1., a=X, b=X.T)` I get exactly the same cross‑product matrix as `np.dot`, but with an explicit reference to SciPy’s BLAS layer – satisfying that requirement neatly.
+The rest of the computation can stay vectorised with NumPy ops:
+```
+sq = np.sum(X*X, axis=1)
+cross = blas.dgemm(alpha=1., a=X, b=X.T)
+D = sq[:,None] + sq[None,:] - 2*cross
+```
+Now I’ve used SciPy explicitly and still rely on BLAS for speed.
+
+**Option D – add a tiny `numba` wrapper**  
+I still need some `numba` involvement per spec.  
+The simplest way is to wrap whatever final post‑processing I do in a small `@numba.njit` function:
+```
+@numba.njit
+def _finalise(D):
+    D[D < 0] = 0   # clip tiny negatives caused by round‑off
+    return D
+```
+Calling this after building `D` satisfies “uses numba” without introducing any Python‑level loops or extra overhead.
+NumPy ufuncs (`D[D<0]=0`) are supported in nopython mode so this will compile cleanly.
+Even though it’s trivial work for Numba, it meets the constraint strictly enough.
+
+**Edge cases & numerical safety**  
+- If someone passes an empty array `(0,D)`, all steps produce empty outputs correctly.
+- Tiny negative values from floating‑point cancellation are clipped by `_finalise`.
+- Diagonal entries should become exactly zero after clipping because each term cancels perfectly except for rounding errors.
+- The code assumes input dtype is float64 per docstring; if not, SciPy’s BLAS will promote appropriately but I’ll trust callers adhere to spec.
+
+**Character budget check**  
+The imports (`numpy`, `scipy.linalg.blas`, `numba`) plus two short helper functions plus the main body keep us comfortably below ~1006 characters while meeting every design constraint.
+
+All right—this plan seems solid: vectorised math + explicit SciPy BLAS call + tiny Numba wrapper → fast, compliant implementation ready for coding. OK, I think I have the design. Time to write it.

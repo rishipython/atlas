@@ -1,0 +1,111 @@
+We need to figure out what shift_2d problem is. Likely given a 2D array and shift parameters? Maybe we need to shift image. Let's think: Problem likely involves shifting a 2D array by some offset, maybe fractional? We need to implement solve that uses scipy.ndimage shift? Let's assume problem dict contains 'image', 'shift', maybe 'mode'. We need efficient vectorized solution, no loops. Use scipy.ndimage.shift which is fast C implementation. Use logging, typing.Any, Dict.
+
+We need to write run_solver that calls Shift2D().solve(problem). So we need a Shift2D class with solve method. Implementation: use scipy.ndimage.shift on input array with given shift vector. Use mode='nearest' or 'constant'? Probably problem provides mode.
+
+Edge cases: negative shifts, subpixel shifts, large arrays. Use order=1 (bilinear) or maybe order=0 (nearest). Use np.asarray for input.
+
+Also we must avoid loops: just call ndimage.shift once.
+
+Check dtype: use float64 for precision.
+
+Also consider memory: we can use in-place? ndimage.shift returns new array; fine.
+
+Now design imports: logging, typing.Any, Dict, numpy as np, scipy.ndimage.
+
+Define Shift2D class:
+
+class Shift2D:
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        image = np.asarray(problem['image'])
+        shift = tuple(problem.get('shift', (0,0)))
+        mode = problem.get('mode', 'nearest')
+        order = problem.get('order', 1)
+        logger = logging.getLogger(__name__)
+        logger.debug(f"Shifting image shape {image.shape} by {shift} mode {mode} order {order}")
+        shifted = scipy.ndimage.shift(image, shift=shift, mode=mode, order=order)
+        return shifted
+
+run_solver simply returns Shift2D().solve(problem).
+
+Edge cases: if image not 2D raise error; if shift length mismatch raise.
+
+We can also vectorize multiple images? But not needed.
+
+Also we can use scipy.ndimage.affine_transform for subpixel? But shift is simpler.
+
+Time complexity O(n). No loops.
+
+Check rtol/atol? Not needed.
+
+Now think about potential pitfalls: ndimage.shift uses interpolation which might be slower than pure numpy roll for integer shifts. If shift integers only, we could use np.roll which is vectorized and faster. But we don't know. We could detect if all shifts are integers and use np.roll else use ndimage.shift. That could speed up integer case.
+
+Implement:
+
+if all(isinstance(s,(int,np.integer)) for s in shift):
+    return np.roll(image, shift=shift)
+else:
+    return scipy.ndimage.shift(...)
+
+But need to handle negative ints too; np.roll handles wrap-around; but maybe want zero padding? Problem may expect constant mode; so using roll may not match expected behavior if out-of-bounds should be zero. So better use ndimage.shift always.
+
+But we can still optimize by using order=0 for integer shifts to avoid interpolation overhead. So set order = 0 if all ints else default 1.
+
+Also ensure dtype float64 for interpolation; but if image int we convert to float64 automatically by ndimage.
+
+Also we might want to cast result back to original dtype? Might not be required.
+
+Ok design settled.
+
+Now produce chain-of-thought exploring alternatives: loops vs vectorization; using numpy roll vs ndimage; using numba loops; using jax; etc. Conclude with chosen design.
+
+Let's write the chain-of-thought accordingly.
+We need to write a fast `run_solver` that calls `Shift2D().solve(problem)` and returns the correct shifted array.  
+The problem dictionary will at least contain an `'image'` key (a 2‑D array) and a `'shift'` key (a tuple of two numbers).  
+Maybe there are optional `'mode'` and `'order'` keys too – we should honour them but provide sensible defaults if missing.
+
+First thought: just hand‑roll the loop over every pixel and add the offset.  
+But that would be O(n) in Python and hopelessly slow for large images – we must avoid any Python‑level loops.  
+So I’ll rely on a C‑backed routine from SciPy or NumPy instead of writing a loop myself.
+
+NumPy offers `np.roll`, which is fully vectorised and fast when the shift is an integer number of pixels.  
+However `np.roll` wraps around at the edges – it doesn’t support constant padding or other modes that `scipy.ndimage.shift` does.  
+The reference implementation probably expects those more general behaviours (e.g., zero padding or nearest‑edge replication).  
+So the safest choice is `scipy.ndimage.shift`, which implements sub‑pixel shifting with interpolation and supports different boundary modes.
+
+Now I’ll think about how to keep it fast while still using `ndimage.shift`.  
+If the user supplies integer shifts only, I could skip interpolation by setting `order=0`.  
+If they supply floats (sub‑pixel), I’ll keep `order=1` (bilinear) – that's usually enough accuracy for most image tasks and still fast enough because SciPy uses optimized BLAS/LAPACK under the hood.
+
+Another idea was to write a tiny Numba JIT kernel that applies the shift directly in C‑like code without any library call.  
+But that would require me to implement interpolation myself or rely on Numba’s `guvectorize`, which would add complexity and risk subtle bugs around edge handling.  
+Given SciPy already has a battle‑tested implementation, I’ll stick with it – it’s simpler and likely faster than any custom Numba code I could write here.
+
+I also considered using JAX’s jit compilation for pure NumPy operations (`jax.numpy.roll`).  
+JAX would give me GPU acceleration if available, but it introduces a dependency on XLA and requires careful handling of device arrays – overkill for this simple task where SciPy already does everything efficiently on CPU.
+
+So the plan is:
+
+* Import `logging`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`.
+* Define a class `Shift2D` with a method `solve(self, problem: Dict[str, Any]) -> np.ndarray`.
+* Inside `solve`:
+  * Extract the image (`np.asarray`) and ensure it’s 2‑D.
+  * Grab the shift tuple; if only one value is provided treat it as both axes.
+  * Determine the boundary mode (`'nearest'` by default) and interpolation order (`1` by default).
+  * If both components of the shift are integers, set `order=0` because interpolation isn’t needed.
+  * Call `scipy.ndimage.shift(image, shift=shift_tuple, mode=mode_str, order=order_int)` – this is fully vectorised and uses BLAS under the hood.
+  * Return the resulting array.
+* The entry point function `run_solver(problem)` simply creates a `Shift2D()` instance and returns its `.solve(problem)` result.
+* Add some debug logging so that during profiling we can see what parameters were used without cluttering normal output.
+* No Python loops appear anywhere – all heavy lifting is done inside SciPy’s C implementation.
+* Edge cases handled:
+  * Non‑numeric shifts raise a clear error.
+  * If the image isn’t 2‑D we raise an informative exception.
+  * The function preserves the original data type of the input array (SciPy will cast to float64 internally but returns an array of that dtype unless otherwise specified).
+
+With this design I’m confident that:
+
+* The solution remains correct for all supported modes (constant padding, nearest edge replication, wrap).
+* The performance bottleneck is removed because every pixel operation runs in compiled C/Fortran code.
+* The code stays short (< 8000 characters) while satisfying all constraints from the brief (imports list matches exactly).
+
+OK, I think I have the design. Time to write it.

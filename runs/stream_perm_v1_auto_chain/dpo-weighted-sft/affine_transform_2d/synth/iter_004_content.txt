@@ -1,0 +1,54 @@
+We need to speed up affine_transform_2d. The baseline uses scipy.ndimage.affine_transform directly, which is already pretty optimized in C, but maybe we can reduce interpolation order or use float32. But we must keep same signature and output shape. We could precompute inverse matrix, use map_coordinates with order=1. But map_coordinates is also C-coded. Maybe use numba for custom interpolation? That might be slower due to overhead.
+
+We should consider that scipy.ndimage.affine_transform already does the heavy lifting; maybe the bottleneck is data conversion or array type. The input image is a list of lists; we convert to numpy array each time. We can change to use np.asarray once. Also ensure dtype float32 to reduce memory.
+
+Also we can set order=1 instead of 3 for speed, but that changes output; but spec says cubic spline interpolation order=3; but maybe baseline uses 3 but we can accept lower? The problem statement says cubic spline interpolation (order=3). So we must keep order=3 for correctness.
+
+Maybe the bottleneck is that affine_transform expects matrix shape (ndim, ndim+1) but we provide 2x3. That's fine.
+
+We could use numba to compute coordinates mapping manually and use bilinear interpolation? That would be slower.
+
+Perhaps the main speed gain is to avoid copying the image when converting from list to array: use np.array(problem["image"], dtype=np.float32, copy=False). But copy=False may not work if nested lists.
+
+Also we could use scipy.ndimage.affine_transform with precomputed inverse matrix and output_shape same as input shape.
+
+Maybe we can implement using scipy.ndimage.affine_transform but set prefilter=False? That might skip prefiltering for cubic? But prefilter is required for order>1; but we can set prefilter=True default.
+
+We can also use SciPy's transform.rotate or warp? Not better.
+
+Could we use OpenCV cv2.warpAffine? That's faster than scipy for large images. But cv2 not in allowed packages list? It's not listed; only numpy, scipy etc. So cannot.
+
+Could use numba to accelerate coordinate mapping and interpolation manually: generate grid of coordinates, compute transformed coordinates via matrix multiplication, then perform cubic interpolation using scipy's interpn? That would still call C code.
+
+Maybe the best is to just keep affine_transform but convert input image to np.float32 and output as np.float32, then cast back to list for solution. That might be faster due to less memory.
+
+Also ensure mode='constant', cval=0.0 explicitly.
+
+Also maybe avoid try/except overhead by assuming success unless exception occurs rarely.
+
+Also remove logging overhead by disabling debug logs.
+
+Thus design: in solve, convert image to np.array(dtype=np.float32), matrix as np.array(dtype=np.float32). Then call affine_transform with order=3, mode='constant', cval=0.0, prefilter=True (default). Capture result as float32. Then convert result back to list via .tolist().
+
+Also ensure that if exception occurs, return empty list as before.
+
+We also need is_solution: currently it recomputes reference solution each time; that may be heavy. But it's used only for validation by evaluator, not part of runtime performance? Might be called after solving; but still heavy. We could skip heavy recomputation by caching reference or using np.allclose directly on arrays? But it's okay because evaluation will call solve then is_solution; both run within time budget maybe small images.
+
+But we could speed up is_solution by avoiding conversion of proposed_list twice: just check type once.
+
+Also check shape equality early.
+
+Also avoid logging inside loops; reduce logging calls by using minimal level or disabling debug logs globally at start of module: logging.basicConfig(level=logging.ERROR).
+
+Also remove random import if unused.
+
+Also remove unused imports like List, Optional etc.
+
+Thus final code will import logging, typing Dict, Any, numpy as np, scipy.ndimage. Use numpy array conversion with dtype=np.float32. Use affine_transform directly with parameters specified. Return dict with transformed_image as list-of-lists (converted from array). In is_solution, convert proposed_list once if needed; check shape; compare with reference using np.allclose with rtol=1e-5 atol=1e-7 on float64 arrays (convert back to float64 maybe). Use np.asarray(proposed_list) dtype=float64 for comparison.
+
+Edge cases: if input image empty or shape mismatch? Should handle gracefully: if image array size 0 return empty list maybe. Also if matrix not 2x3 raise error.
+
+Also ensure that output shape matches input shape; if not raise error in is_solution accordingly.
+
+Ok design settled. Let's produce final handoff sentence.
+OK, I think I have the design. Time to write it.

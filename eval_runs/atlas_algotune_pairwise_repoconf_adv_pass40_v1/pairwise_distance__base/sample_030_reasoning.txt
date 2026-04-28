@@ -1,0 +1,49 @@
+We need to replace the slow implementation with efficient vectorized approach. The standard formula: pairwise squared distances can be computed as:
+
+Let G = X @ X.T (dot product). Then distances: D[i,j] = ||X[i]||^2 + ||X[j]||^2 - 2 * G[i,j].
+
+Compute squared norms: sq_norms = np.sum(X**2, axis=1). Then D = sq_norms[:, None] + sq_norms[None, :] - 2 * G.
+
+We need to ensure dtype float64, as input is float64. The result should be non-negative, but due to numerical errors may be slightly negative small values; we can clip to 0. Or we can let it be as is; np.allclose will allow small negative values. But to be safe, we can set negative values to 0: np.maximum(D, 0.0). But not necessary.
+
+We should also consider memory: for large N, N^2 might be huge. But that's expected.
+
+We just need to produce a complete file with imports and function.
+
+Also test for shape compatibility.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X * X, axis=1)
+    G = X @ X.T
+    D = sq_norms[:, None] + sq_norms[None, :] - 2 * G
+    # ensure symmetry and non-negative
+    # D = np.maximum(D, 0.0)
+    return D
+
+We need to ensure dtype float64. The operations produce float64.
+
+Edge cases: N=0? X shape (0,D). Then sq_norms is (0,), G is (0,0). D is (0,0). Works.
+
+We should handle if X is not 2D? But problem states 2-D.
+
+Return D.
+
+Also we might want to ensure that the result is exactly symmetric. The formula should produce symmetric. But due to floating errors, maybe not exactly symmetric; but fine.
+
+We could use np.dot.
+
+Use X @ X.T.
+
+Return D.
+
+Make sure we import numpy.
+
+Add if __name__ == "__main__": for testing? Not required.
+
+But we need to produce a single code block containing complete file.
+
+Let's craft final code.
+

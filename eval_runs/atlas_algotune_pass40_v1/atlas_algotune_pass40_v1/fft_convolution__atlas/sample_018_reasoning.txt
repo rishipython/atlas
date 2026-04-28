@@ -1,0 +1,59 @@
+We need to implement conv1d using FFT-based convolution. Use scipy.signal.fftconvolve or numpy. But must be efficient for large arrays. Use numpy.fft.fft with appropriate size. Need to handle real arrays. Use np.fft.rfft? For real inputs, rfft is efficient. But we need full convolution length N+M-1. We can compute rfft of size L>=N+M-1. Compute product in frequency domain, then inverse rfft. Use np.fft.rfft and irfft. That returns real output. Need to cast to float64. Should match np.convolve. The result length is N+M-1. rfft length is L//2+1. So:
+
+L = 1 << np.ceil(np.log2(N+M-1)). But we can just use N+M-1 as size; rfft will compute length L//2+1. But rfft of size N+M-1 might be slower due to not power of 2? Not big issue.
+
+But we need to use np.fft.rfft for real input.
+
+Compute:
+
+X = np.fft.rfft(x, n=L)
+H = np.fft.rfft(h, n=L)
+Y = X * H
+y = np.fft.irfft(Y, n=L)
+return y[:N+M-1]
+
+But the input arrays are float64. Output should be float64. Use dtype=float64.
+
+Edge cases: empty arrays? Not typical. But if either length zero, output zero? np.convolve with empty array returns empty? Let's test: np.convolve([], [1,2]) returns array([], dtype=float64). Our method: if N==0 or M==0, return np.array([], dtype=np.float64). Should handle.
+
+Also if input dtype not float64 but int? Accept.
+
+We can also use np.fft.fft and ifft on complex arrays but rfft is fine.
+
+Also we can use scipy.signal.fftconvolve if available. But maybe not necessary.
+
+We must avoid extra memory? It's fine.
+
+We need to preserve dtype? The reference returns dtype float64. So we output float64.
+
+Implement conv1d accordingly.
+
+Also test small arrays: 1 element each: conv1d([1],[2]) -> [2]. rfft with n=1? L=1+1-1=1. rfft of length 1 returns array of length 1. Works.
+
+If N=1, M=1: L=1. rfft of [1] length 1 returns [1]. Multiply gives [2]. irfft length 1 returns [2].
+
+If N=0 or M=0: return empty.
+
+Also ensure dtype float64: we can cast X*H to complex64? But we use float64.
+
+Ok.
+
+Also maybe use np.fft.fft with n=L, but that returns complex. rfft returns half complex.
+
+We'll implement.
+
+Now produce code.
+
+Make sure to import numpy.
+
+Edge: large arrays: choose L as next power of two for speed. Use np.fft.next_fast_len? There's np.fft.next_fast_len in numpy. Use that for speed. So L = np.fft.next_fast_len(N+M-1). Good.
+
+Return y[:N+M-1].
+
+Implement conv1d.
+
+Also handle when N+M-1==0? That means one is empty. Return empty.
+
+Ok.
+
+Let's produce final file.

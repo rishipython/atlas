@@ -1,0 +1,45 @@
+We need to provide a faster implementation. Use numpy's FFT. Need to handle dtype float64. For 1-D arrays. Use scipy.signal.fftconvolve if available. But we can implement ourselves: compute size L = N + M - 1; compute next power of two >= L. Use np.fft.rfft or fft. Since real arrays, we can use rfft for speed. But easier: use np.fft.fft with length L_fft = 2**ceil(log2(L)). Then compute X = fft(x, L_fft); H = fft(h, L_fft); Y = ifft(X*H); take first L elements, real part.
+
+Edge cases: x or h may be empty? They are arrays length N, M >0. We'll assume.
+
+Return np.real(Y[:L]) as float64.
+
+Also we can use np.fft.rfft for real and multiply using rfft and irfft. rfft length L_fft gives shape L_fft//2+1. Multiply, then irfft.
+
+Implementation:
+
+import numpy as np
+
+def conv1d(x, h):
+
+    N = x.shape[0]; M = h.shape[0]; L = N+M-1
+
+    nfft = 1 << (L-1).bit_length()   # next power of two
+
+    X = np.fft.rfft(x, nfft)
+
+    H = np.fft.rfft(h, nfft)
+
+    Y = np.fft.irfft(X*H, nfft)
+
+    return Y[:L]
+
+This returns float64. Might be slightly different numeric due to FFT errors but should be close.
+
+Alternatively use scipy.signal.fftconvolve for more accurate? but same.
+
+Edge: For small arrays, maybe FFT overhead high. But it's okay.
+
+Need to ensure dtype. Input dtype may be float64. rfft returns complex128. Multiplication yields complex128. irfft returns float64.
+
+Return Y[:L].
+
+Add import numpy as np.
+
+Also add if __name__ guard? Not necessary.
+
+Return as function.
+
+We must provide a full runnable file. Provide imports.
+
+Let's produce final code.

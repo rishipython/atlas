@@ -1,0 +1,33 @@
+We need to implement fast matrix exponential. We can use scipy.linalg.expm, but we need to import it. Problem likely expects to use scipy's implementation. We can simply call scipy.linalg.expm(A). But maybe they want a custom implementation. But easiest is to import scipy.linalg.expm. That returns same as reference? They say matches scipy.linalg.expm(A) within tolerance. So we can simply return that. The function signature same. We need to import numpy and scipy.linalg.
+
+But maybe the evaluation environment may not have scipy? It's standard scientific Python distribution. They said we can import scipy. So fine.
+
+Thus:
+
+```
+import numpy as np
+from scipy.linalg import expm as scipy_expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return scipy_expm(A)
+```
+
+But they might check that the function returns float64, same dtype. scipy_expm returns dtype of input. Should be fine.
+
+Alternatively, we could implement scaling and squaring with Pade approximants. But using scipy is simplest.
+
+Let's produce file.
+
+We should include docstring maybe.
+
+Return result.
+
+Edge cases: shape check? Not needed.
+
+Thus final code.
+
+But we should ensure that we import numpy as np. Use np.asarray? Accepts array. We'll just pass.
+
+Return type: np.ndarray.
+
+Let's produce final.

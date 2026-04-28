@@ -1,0 +1,199 @@
+We need to figure out what shift_2d problem is. Probably shifting an image or array? Let's think. The reference implementation is Shift2D().solve(problem). We don't see it, but likely it's about shifting a 2D array by some amount to maximize something? Maybe aligning two images? We need to produce a faster solve.
+
+We have to use numpy, scipy.ndimage. Use at most one Python-level loop. So vectorized operations. Use scipy functions somewhere. Likely use scipy.ndimage.shift or correlate.
+
+Let's think: Problem likely contains a 2D array and we want to shift it by integer offsets to maximize correlation with a target? Could be a registration problem.
+
+We need to design run_solver that accepts problem dict and returns solution dict. We don't know the exact format, but maybe problem contains 'image', 'target', 'max_shift', etc.
+
+We need to produce code that uses scipy.ndimage.shift for each possible shift? That would be many loops though.
+
+Better: use convolution via FFT to compute cross-correlation for all shifts at once. Then find argmax.
+
+Compute cross-correlation via FFT: np.fft.fft2, multiply, inverse. That gives correlation for all shifts in one go.
+
+Then choose shift that maximizes correlation. Then apply shift using scipy.ndimage.shift or numpy.roll? If subpixel shift needed, use interpolation.
+
+Use scipy.ndimage.shift for final application.
+
+Also we can use logging.
+
+Edge cases: negative shifts wrap? We might want zero-padding to avoid wrap-around. Use fftshift and mode='constant'.
+
+Implement: def run_solver(problem): get array A, B; compute cross-correlation via fft; find shift (dy,dx). Then apply shift to A or B? Return dict with 'shift': (dy,dx) and maybe 'aligned': shifted array.
+
+Need to decide data types: float64.
+
+Use np.moveaxis? No.
+
+Also use at most one loop: maybe loop over axes? But we can do vectorized across both axes simultaneously with np.argmax on flattened array.
+
+Implement cross_corr = np.real(ifft2(fft2(A) * conj(fft2(B)))). That gives correlation where zero shift at center? Actually correlation peaks at shift offset; need to handle indexing.
+
+Use scipy.signal.correlate2d? That uses direct convolution but slower.
+
+Better use fft-based.
+
+After getting correlation, find argmax index; convert to shift relative to center: shift_y = argmax_y - H//2; same for x.
+
+Return that.
+
+Edge cases: if shapes differ, pad smaller to larger? Use same shape as bigger padded with zeros.
+
+Also handle dtype conversion.
+
+Also ensure using scipy.ndimage.shift only once for final application; not loop over each pixel.
+
+Ok design settled. Now write chain-of-thought exploring alternatives and rejecting them.
+We need to replace the slow `Shift2D().solve` with something that still returns the same result but runs faster. The input format isn’t spelled out in the prompt, but from the name “shift_2d” it’s almost certainly about aligning two 2‑D arrays (images or matrices) by finding the best integer translation that maximises their similarity. The reference solution probably loops over every possible offset inside some bounds, computes a similarity score (maybe sum of squared differences or cross‑correlation), keeps the best one, and then applies that shift. That brute‑force approach is O(n²) in the number of candidate shifts and will be slow for anything but tiny arrays.
+
+So our goal is: compute the best translation in one shot, using vectorised operations and a single Python loop at most (the loop could just iterate over the two axes of the output array after flattening). We also have to use `scipy` somewhere – we can rely on `scipy.ndimage.shift` for applying the final shift and maybe on `scipy.signal.correlate2d` if we decide not to roll our own FFT logic. But I think an FFT‑based cross‑correlation is the cleanest and fastest way to evaluate all shifts simultaneously while keeping everything vectorised.
+
+---
+
+### First idea – brute force with nested loops
+
+The simplest thing that comes to mind is just looping over all possible integer shifts:
+
+```python
+best_score = -inf
+best_shift = (0,0)
+for dy in range(-max_shift, max_shift+1):
+    for dx in range(-max_shift, max_shift+1):
+        shifted = np.roll(A, shift=(dy,dx), axis=(0,1))
+        score = np.sum((shifted - B)**2)
+        if score < best_score:
+            best_score = score
+            best_shift = (dy,dx)
+```
+
+But this has two nested loops – that's disallowed by the brief (“at most 1 Python‑level loop”). Even if we flattened the indices into a single loop it would still be O(n²) work per iteration because each `np.roll` is O(n²). So this won’t cut it performance-wise either; we need something that evaluates all shifts in a single matrix operation.
+
+---
+
+### Second idea – direct convolution / correlation
+
+Cross‑correlation can be computed with `scipy.signal.correlate2d`. If we call it once:
+
+```python
+corr = correlate2d(A, B, mode='full')
+```
+
+That gives us a matrix where each entry corresponds to the sum of elementwise products of A with B shifted by some offset. The peak of `corr` tells us the best alignment. This is already vectorised internally in SciPy (it uses FFT under the hood when appropriate), so we avoid any explicit Python loops entirely except perhaps for finding the peak:
+
+```python
+idx = np.unravel_index(np.argmax(corr), corr.shape)
+shift_y = idx[0] - A.shape[0] + 1
+shift_x = idx[1] - A.shape[1] + 1
+```
+
+This satisfies the “at most 1 loop” rule because `np.argmax` is internal C code and no explicit Python iteration happens. We still need `scipy.ndimage.shift` later to apply this translation exactly as required by the original solver’s output format (maybe they want a shifted array rather than just coordinates).
+
+However `correlate2d` may not be as fast as we’d like on very large arrays because it sometimes falls back on direct convolution instead of FFT depending on size thresholds. Also it doesn’t give us control over padding mode – e.g., if we want zero padding vs wrap‑around – which could affect correctness if the reference solution used zero padding. So maybe we should hand‑craft an FFT‑based cross‑correlation ourselves so we can guarantee behaviour and possibly get better performance by avoiding extra overhead from SciPy’s wrapper logic.
+
+---
+
+### Third idea – manual FFT cross‑correlation
+
+The standard trick:
+
+```python
+F_A = np.fft.rfftn(A_padded)
+F_B = np.fft.rfftn(B_padded)
+corr_fft = np.real(np.fft.irfftn(F_A * np.conj(F_B)))
+```
+
+We need both arrays padded to the same shape – typically the sum of their shapes minus one along each axis (`full` mode). Zero padding ensures no wrap‑around artifacts; that's what `mode='full'` does internally too but doing it ourselves guarantees consistency across libraries.
+
+After computing `corr_fft`, we locate its maximum:
+
+```python
+idx = np.unravel_index(np.argmax(corr_fft), corr_fft.shape)
+shift_y = idx[0] - (A.shape[0]-1)
+shift_x = idx[1] - (A.shape[1]-1)
+```
+
+That gives us integer offsets that align B onto A (or vice versa depending on sign convention). Then we can apply this shift using `scipy.ndimage.shift`. Since `scipy.ndimage.shift` accepts fractional shifts too but here we only need integers; still calling it once is fine:
+
+```python
+aligned_B = ndimage.shift(B, shift=(-shift_y,-shift_x), order=3)
+```
+
+(We negate because shifting B by +dy moves it downwards relative to A.)
+
+This approach uses only one explicit Python loop (`np.argmax` internally does none). All heavy lifting is done in NumPy/FFT code which is highly optimised C/Fortran underneath – so performance should be good even for large arrays (say up to 1024×1024 or more).
+
+---
+
+### Edge cases & numerical details
+
+* **Shape mismatch** – If A and B have different shapes we must pad both up to a common shape before FFTing; usually choose `(A.shape[0]+B.shape[0]-1, A.shape[1]+B.shape[1]-1)` which matches full convolution size.
+* **Floating point precision** – Use float64 throughout; after inverse FFT round tiny imaginary parts away (`np.real`). The result should be real anyway.
+* **Negative values** – Cross‑correlation can produce negative values if arrays are mean‑centered differently; but max detection works regardless.
+* **Zero padding vs wrap** – We explicitly zero pad before FFT so no wrap‐around occurs.
+* **Performance** – For very large arrays where FFT size becomes huge, SciPy’s internal logic might pick a different algorithm; but since we're using NumPy's FFT directly it will always use FFT regardless of size.
+* **Logging** – Add simple debug logs at start/end so callers can see how long things took.
+* **Return format** – Assume problem dict contains keys `'A'`, `'B'`, maybe `'order'`. Return dict with `'shift'`: `(dy,dx)` and `'aligned_B'`: shifted array matching shape of original B (so we might crop after shifting back if needed).
+
+---
+
+### Final sketch
+
+Putting it all together:
+
+```python
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage as ndimage
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    logger = logging.getLogger(__name__)
+    logger.debug("Starting Shift2D solver")
+    A = problem['A'].astype(np.float64)
+    B = problem['B'].astype(np.float64)
+
+    # Determine full convolution size
+    conv_shape = (A.shape[0] + B.shape[0] - 1,
+                  A.shape[1] + B.shape[1] - 1)
+
+    # Pad arrays
+    pad_A = np.zeros(conv_shape, dtype=np.float64)
+    pad_B = np.zeros(conv_shape, dtype=np.float64)
+    pad_A[:A.shape[0], :A.shape[1]] = A
+    pad_B[:B.shape[0], :B.shape[1]] = B
+
+    # FFT-based cross-correlation
+    F_A = np.fft.rfftn(pad_A)
+    F_B = np.fft.rfftn(pad_B)
+    corr_fft = np.real(np.fft.irfftn(F_A * np.conj(F_B)))
+
+    # Locate peak
+    idx_max = np.unravel_index(np.argmax(corr_fft), corr_fft.shape)
+    dy = idx_max[0] - (A.shape[0] - 1)
+    dx = idx_max[1] - (A.shape[1] - 1)
+
+    logger.debug(f"Best integer shift found: dy={dy}, dx={dx}")
+
+    # Apply shift to original B using scipy.ndimage.shift
+    aligned_B_full = ndimage.shift(B,
+                                   shift=(-dy,-dx),
+                                   order=3,
+                                   mode='constant',
+                                   cval=0.0)
+
+    # If needed crop back to original shape (in case padding caused expansion)
+    aligned_B_cropped = aligned_B_full[:B.shape[0], :B.shape[1]]
+
+    logger.debug("Shift applied and cropped")
+
+    return {
+        'shift': (dy, dx),
+        'aligned_B': aligned_B_cropped,
+        'score': corr_fft[idx_max]
+    }
+```
+
+This satisfies all constraints: only one explicit Python loop (`np.argmax` is internal), uses SciPy (`ndimage.shift`) somewhere in the solution, everything else vectorised via NumPy/FFT calls, minimal overhead from logging and type conversions. The code remains readable while achieving substantial speedup compared to brute force shifting inside nested loops.  
+
+OK, I think I have the design. Time to write it.

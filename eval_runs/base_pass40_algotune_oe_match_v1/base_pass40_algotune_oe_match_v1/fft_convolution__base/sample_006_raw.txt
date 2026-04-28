@@ -1,0 +1,190 @@
+```python
+import logging
+import numpy as np
+
+# --------------------------------------------------------------------------- #
+# FFT Convolution implementation
+# --------------------------------------------------------------------------- #
+class FFTConvolution:
+    """
+    Optimised FFT based convolution solver.
+
+    Uses a hybrid strategy:
+    * For very small signals (full length <= 256) a direct convolution is used.
+    * For larger signals the real‑valued FFT is employed with a length chosen
+      by np.fft.next_fast_len to minimise padding and maximise FFT speed.
+    * Supports the three common convolution modes: 'full', 'same', 'valid'.
+    """
+
+    SMALL_THRESHOLD = 256  # length at which we switch to direct convolution
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def _fft_convolve(x: np.ndarray, y: np.ndarray, mode: str) -> np.ndarray:
+        """Return the convolution of x and y according to mode."""
+        # Handle empty inputs
+        if x.size == 0 or y.size == 0:
+            return np.array([], dtype=np.float64)
+
+        # Direct convolution for very small signals
+        full_len = x.size + y.size - 1
+        if full_len <= FFTConvolution.SMALL_THRESHOLD:
+            return np.convolve(x, y, mode=mode)
+
+        # Length for FFT (next fast length to reduce padding)
+        nfft = np.fft.next_fast_len(full_len)
+
+        # Real‑valued FFTs
+        X = np.fft.rfft(x, n=nfft)
+        Y = np.fft.rfft(y, n=nfft)
+
+        # Element‑wise multiplication in frequency domain
+        Z = X * Y
+
+        # Inverse FFT to time domain
+        z_full = np.fft.irfft(Z, n=nfft)[:full_len]
+
+        # Slice according to mode
+        if mode == "full":
+            return z_full
+
+        if mode == "same":
+            # Central part of length len(x)
+            start = (full_len - x.size) // 2
+            return z_full[start : start + x.size]
+
+        if mode == "valid":
+            start = min(x.size, y.size) - 1
+            valid_len = abs(x.size - y.size) + 1
+            return z_full[start : start + valid_len]
+
+        raise ValueError(f"Unsupported mode: {mode}")
+
+    def solve(self, problem: dict) -> dict:
+        """
+        Solve the FFT convolution problem.
+
+        Parameters
+        ----------
+        problem : dict
+            Dictionary containing:
+                - "signal_x": list or array of numbers
+                - "signal_y": list or array of numbers
+                - "mode": one of "full", "same", "valid" (default "full")
+
+        Returns
+        -------
+        dict
+            Dictionary with key "convolution" containing the result as a list.
+        """
+        try:
+            signal_x = np.asarray(problem["signal_x"], dtype=np.float64)
+            signal_y = np.asarray(problem["signal_y"], dtype=np.float64)
+            mode = problem.get("mode", "full")
+
+            conv = self._fft_convolve(signal_x, signal_y, mode)
+
+            return {"convolution": conv.tolist()}
+
+        except Exception as e:
+            logging.error(f"Error in solve method: {e}")
+            raise
+
+    def is_solution(self, problem: dict, solution: dict) -> bool:
+        """
+        Validate the solution against scipy.signal.fftconvolve.
+
+        Parameters
+        ----------
+        problem : dict
+            Original problem dictionary.
+        solution : dict
+            Dictionary returned by solve().
+
+        Returns
+        -------
+        bool
+            True if solution is valid, False otherwise.
+        """
+        import scipy.signal as sp_signal
+
+        if "convolution" not in solution:
+            logging.error("Solution missing 'convolution' key.")
+            return False
+
+        try:
+            student = np.asarray(solution["convolution"], dtype=np.float64)
+            if not np.all(np.isfinite(student)):
+                logging.error("Non‑finite values in result.")
+                return False
+        except Exception as e:
+            logging.error(f"Could not convert solution to array: {e}")
+            return False
+
+        signal_x = np.asarray(problem["signal_x"], dtype=np.float64)
+        signal_y = np.asarray(problem["signal_y"], dtype=np.float64)
+        mode = problem.get("mode", "full")
+
+        # Expected length according to mode
+        len_x, len_y = signal_x.size, signal_y.size
+        if mode == "full":
+            expected_len = len_x + len_y - 1
+        elif mode == "same":
+            expected_len = len_x
+        elif mode == "valid":
+            expected_len = max(0, abs(len_x - len_y) + 1)
+        else:
+            logging.error(f"Unsupported mode: {mode}")
+            return False
+
+        if len_x == 0 or len_y == 0:
+            expected_len = 0
+
+        if student.size != expected_len:
+            logging.error(
+                f"Result length mismatch: expected {expected_len}, got {student.size}"
+            )
+            return False
+
+        # Reference result
+        try:
+            reference = sp_signal.fftconvolve(signal_x, signal_y, mode=mode)
+        except Exception as e:
+            logging.error(f"Reference convolution failed: {e}")
+            return False
+
+        if expected_len == 0:
+            return True
+
+        if not np.allclose(student, reference, rtol=1e-6, atol=1e-6):
+            diff = np.abs(student - reference)
+            logging.error(
+                f"Numerical mismatch: max diff {diff.max():.2e}, mean diff {diff.mean():.2e}"
+            )
+            return False
+
+        return True
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
+def run_solver(problem: dict) -> dict:
+    """
+    Main entry point for the evaluator.
+
+    Parameters
+    ----------
+    problem : dict
+        Problem definition dictionary.
+
+    Returns
+    -------
+    dict
+        Solution dictionary.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)
+```

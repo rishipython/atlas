@@ -1,0 +1,56 @@
+We need to write efficient convolution. We can use np.fft or scipy.signal.fftconvolve. Since we can import scipy. Let's implement using numpy FFT.
+
+We need to ensure same output as np.convolve with mode='full', for float64 arrays. Use np.fft.rfft? but easier to use np.fft.fft. We need length L = N+M-1. We can compute next power of two >= L. Or use np.fft.rfft with same length. But for speed, we can use np.fft.fft with size L. Actually we can compute convolution via FFT with size L. But need to handle arrays of any length. Implementation:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    L=N+M-1
+    nfft = 1 << (L-1).bit_length()  # next power of two
+    X = np.fft.fft(x, nfft)
+    H = np.fft.fft(h, nfft)
+    y = np.fft.ifft(X*H).real
+    return y[:L]
+
+But we need to ensure float64 output. The result of ifft is complex due to rounding errors; we take real part. This should be numerically close to np.convolve.
+
+Alternatively use np.fft.rfft for real arrays and rfft/irfft. Might be faster. Use rfft with nfft. Then y = np.fft.irfft(X*H, nfft). real. Then slice.
+
+Let's implement.
+
+Edge cases: if x or h empty? But arrays of length >0. But we can handle.
+
+Also we might consider if both arrays small; but not needed.
+
+Also we can use scipy.signal.fftconvolve, but using scipy import might be heavy but okay.
+
+Let's implement.
+
+We'll import numpy as np.
+
+Return dtype float64.
+
+Implementation:
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N = x.shape[0]
+    M = h.shape[0]
+    L = N + M - 1
+    if L == 0:
+        return np.array([], dtype=np.float64)
+    nfft = 1 << (L - 1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X * H, nfft)
+    return y[:L]
+
+This should be fine.
+
+We need to keep same function name.
+
+Add __all__ maybe.
+
+Return.
+
+Ok produce final code.

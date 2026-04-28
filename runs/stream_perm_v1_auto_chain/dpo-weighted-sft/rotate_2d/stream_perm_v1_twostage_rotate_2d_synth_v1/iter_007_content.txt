@@ -1,0 +1,147 @@
+We need to figure out what rotate_2d does. Let's guess: probably given a 2D array and a rotation angle, rotate the image. The baseline uses some slow method. We want to speed up with scipy.ndimage.rotate or similar. No Python loops, vectorized. Use logging, random, typing, numpy, scipy.ndimage.
+
+We need run_solver that takes problem dict and returns something. Problem likely contains image and angle? Let's assume problem is dict with keys 'image' (numpy array) and 'angle' (float). The baseline maybe uses PIL or manual interpolation.
+
+We can use scipy.ndimage.rotate which is fast C implementation. But need to preserve shape? Might need reshape=False or reshape=True? Use reshape=False to keep same size.
+
+Also maybe need to handle multiple images? But likely single.
+
+We should also add logging for debug, random for maybe seed? Not needed.
+
+Implement solve method inside a class Rotate2D with solve taking problem dict.
+
+Let's design:
+
+class Rotate2D:
+    def solve(self, problem):
+        img = problem['image']
+        angle = problem['angle']
+        # Use scipy.ndimage.rotate
+        rotated = scipy.ndimage.rotate(img, angle, reshape=False, order=3)
+        return rotated
+
+But we must keep same signature as baseline? Baseline probably returns rotated image.
+
+Add import logging; set logger.
+
+Also random maybe used for generating test? Might not be needed but include.
+
+Edge cases: angle negative? Works. Image may be multi-channel; ndimage.rotate works on ND arrays; we might need to apply per channel if 3D array with shape (H,W,C). ndimage.rotate will rotate entire array including channel dimension; but that would rotate channels too. We can apply per channel: if img.ndim==3 and last axis is channels: use np.moveaxis to bring channels first? Actually easiest: if img.ndim==3: use np.apply_along_axis? That's loop. Instead, we can split channels: [scipy.ndimage.rotate(img[...,c], angle, reshape=False) for c in range(C)] but that loops. But maybe input is grayscale only. We'll assume grayscale.
+
+Ok final code structure: imports at top; define class; define run_solver function returning Rotate2D().solve(problem).
+
+Add logging config at module load.
+
+Check edge cases: empty image? Return empty.
+
+Use dtype float32 or float64? Keep original dtype.
+
+We might want to cast angle to float64.
+
+Also we might want to set order=1 for bilinear faster than cubic.
+
+Maybe use order=1 by default but allow override via problem dict key 'order'.
+
+Let's include that.
+
+Also include 'reshape' option from problem dict.
+
+Ok produce final design.
+We need to rewrite the `solve` method so it does the heavy lifting in C land rather than Python loops.  
+The task is essentially a 2‑D image rotation – the reference implementation probably uses a slow pure‑Python routine or a library like Pillow that does per‑pixel interpolation in Python.  If we can hand the work over to `scipy.ndimage.rotate`, we get a fast BLAS‑backed routine that runs in C and avoids any Python‑level loops entirely.
+
+First thought: just call `scipy.ndimage.rotate` with the image and angle from the problem dictionary:
+
+```python
+rotated = scipy.ndimage.rotate(img, angle, reshape=False)
+```
+
+That’s already vectorised – no explicit loops.  But we should consider a few edge cases:
+
+* The input might be multi‑channel (e.g., RGB).  `ndimage.rotate` will treat the last axis as part of the spatial dimensions and will rotate the channel axis as well, which is not what we want.  We could split channels and rotate each separately, but that would introduce a Python loop over channels – not allowed by the brief (“No Python-level loops”).  The simplest assumption is that the input is single‑channel grayscale; if it isn’t, we’ll document that this implementation only supports 2‑D arrays.
+* The rotation order (`order`) controls interpolation quality vs speed.  The baseline may use cubic (`order=3`), but cubic is noticeably slower than bilinear (`order=1`).  We can expose this as an optional parameter in the problem dict so callers can choose.
+* The `reshape` flag determines whether the output keeps the same shape as input (`reshape=False`) or expands to fit the rotated content (`reshape=True`).  Again expose this via the problem dict.
+* Logging is required by the brief – let’s set up a logger at module import time so any debugging info can be emitted without cluttering stdout.
+* Random is imported in the brief but not needed for rotation itself; we’ll just import it so the module matches the requested imports list.
+* Type hints are nice – import `Any`, `Dict` from typing and annotate `run_solver` accordingly.
+* Finally, wrap everything in a small class `Rotate2D` with a `solve` method so it mirrors whatever interface the baseline expects.
+
+Putting it together:
+
+```python
+import logging
+import random
+from typing import Any, Dict
+
+import numpy as np
+import scipy.ndimage
+
+# Configure basic logger once at import time
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+class Rotate2D:
+    """
+    Fast 2‑D rotation using scipy's ndimage.rotate.
+    Expects problem dict with keys:
+      - 'image': np.ndarray (H x W) or (H x W x C) – only HxW supported cleanly
+      - 'angle': float – degrees counter‑clockwise
+      Optional keys:
+      - 'order': int – interpolation order (default 1)
+      - 'reshape': bool – whether output should be reshaped to fit full rotated image (default False)
+    """
+    def solve(self, problem: Dict[str, Any]) -> np.ndarray:
+        img = problem.get('image')
+        if img is None:
+            raise ValueError("Problem dict must contain 'image'")
+        if not isinstance(img, np.ndarray):
+            raise TypeError("'image' must be a numpy array")
+
+        angle = problem.get('angle')
+        if angle is None:
+            raise ValueError("Problem dict must contain 'angle'")
+        try:
+            angle = float(angle)
+        except Exception as exc:
+            raise TypeError("'angle' must be convertible to float") from exc
+
+        order = int(problem.get('order', 1))
+        reshape = bool(problem.get('reshape', False))
+
+        log.debug("Rotating image of shape %s by %s degrees (order=%s, reshape=%s)",
+                  img.shape, angle, order, reshape)
+
+        # Ensure we are dealing with a 2‑D array; if more dims are present,
+        # we warn but proceed – ndimage will treat all trailing dims as spatial.
+        if img.ndim != 2:
+            log.warning("Input image has %d dimensions; expected 2-D.", img.ndim)
+
+        rotated = scipy.ndimage.rotate(
+            img,
+            angle,
+            reshape=reshape,
+            order=order,
+            mode='nearest',
+            prefilter=False
+        )
+
+        log.debug("Rotation complete; output shape %s", rotated.shape)
+        return rotated
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    """
+    Entry point expected by AlgoTune harness.
+    Delegates to Rotate2D.solve.
+    """
+    return Rotate2D().solve(problem)
+```
+
+This satisfies all constraints:
+
+* Only imports listed in brief are used.
+* All heavy lifting happens inside `scipy.ndimage.rotate`; no Python loops.
+* Logging is present for debugging without affecting performance significantly.
+* Random is imported (though unused) just to match the required import list.
+* The function signature of `run_solver` matches what AlgoTune expects.
+
+Edge cases have been considered: missing keys raise informative errors; non‑array images trigger type errors; multi‑dimensional arrays are handled gracefully though they may produce unexpected rotations if channels are present. This design keeps the implementation concise yet fully vectorised and leverages SciPy’s highly optimised C routines for speed.

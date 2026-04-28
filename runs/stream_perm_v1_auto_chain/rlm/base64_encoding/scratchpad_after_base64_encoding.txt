@@ -1,0 +1,1953 @@
+# ATLAS-RLM memory bank (softmax OE run)
+# Each entry below summarises one attempt by the base model at the
+# softmax Triton-kernel task.  Entries are sorted by score (best first).
+# Total entries: 39
+
+============================
+ENTRY 1  [unknown, score=0.000, iter=1]
+============================
+## Lesson
+We need to figure out what the problem actually is: base64_encoding. Likely given a problem dict with some data, we need to encode something to base64? Let's think.. Probably the input is a dictionary with some binary data, maybe a string or bytes. The baseline implementation uses Base64Encoding().solve(problem). We need to implement solve efficiently vectorised, no Python loops. Use numpy.. Maybe the problem is to take a list of integers and produce base64 encoded string of their binary representation? Or maybe it's to encode a 2D array into base64? Let's think about typical tasks: base64 encoding of an image or array.. Given the brief: imports include base64, typing Any, Dict, numpy as np. No Python-level loops. So likely we will use numpy operations to convert data to bytes then base64 encode.. The final solution ~3651 characters; that's quite long.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+import numpy as np
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+# ...(+77 more lines truncated)
+```
+
+============================
+ENTRY 2  [unknown, score=0.000, iter=2]
+============================
+## Lesson
+We need to take the `problem` dictionary that comes from the platform and produce a set of Base‑64 strings without writing any explicit Python `for` loops – everything must be expressed through NumPy vectorisation (or other bulk operations). The imports required are `base64`, `hmac`, `logging`, `os`, and typing utilities – nothing else will be referenced in the final file so that it stays close to the 5 kB target size while keeping the logic clear and fast.. The first question is what shape the input takes. In the reference implementation every test case contains a list under the key `"data"`. Each element is a hex string representing arbitrary binary payloads that have to be processed independently. If we naïvely do. ```python
+[base64.b64encode(bytes.fromhex(x)).decode() for x in problem["data"]]
+```. we end up with an explicit Python loop – something the brief forbids.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+import hmac
+import logging
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Task registration utilities
+# --------------------------------------------------------------------------- #
+def register_task(_name: str):
+    """Decorator to register a task class under a given name."""
+    def _d(cls):
+        return cls
+    return _d
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+
+    # ----------------------------------------------------------------------- #
+    # Problem generation
+    # ----------------------------------------------------------------------- #
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+# ...(+98 more lines truncated)
+```
+
+============================
+ENTRY 3  [unknown, score=0.000, iter=3]
+============================
+## Lesson
+We need to write a chain-of-thought exploring how to implement a fast base64 encoding solver. The design brief says imports: base64, typing, numpy. No Python loops, vectorised. Final solution ~3651 characters. So we need to think about how to encode data in base64 using numpy vectorization.. We need to produce chain-of-thought, not code. Let's think.. We need to implement run_solver(problem) that returns Base64Encoding().solve(problem). So we need Base64Encoding class with solve method that takes problem dict? Problem likely contains input string or bytes? We need to inspect reference baseline but not provided. We'll assume problem dict has 'data' key with bytes or string.. Goal: encode data to base64 string efficiently.. We can use numpy arrays of uint8 for bytes, then reshape into 3-byte groups, convert to 24-bit ints, map to 6-bit values, then index into base64 alphabet..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+import numpy as np
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+# ...(+77 more lines truncated)
+```
+
+============================
+ENTRY 4  [unknown, score=0.000, iter=4]
+============================
+## Lesson
+We need to figure out what base64_encoding problem is. Probably encode a list of bytes? Let's think. The reference implementation probably uses Python's base64 library but slow due to loops. We want vectorised approach with numpy.. We need to write solve method that takes problem dict? Let's assume problem contains 'data' key with bytes or array? Might be an integer array representing bytes. We need to output base64 string.. We can use numpy to chunk array into 3-byte groups, convert to 24-bit int, map to 6-bit indices, then use base64 alphabet.. We can predefine alphabet string: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/". Then we can compute indices via bit operations on uint32 array.. Edge cases: padding for remainder 1 or 2 bytes. We can handle by padding zeros and then replace last chars with '=' accordingly..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+import numpy as np
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+# ...(+77 more lines truncated)
+```
+
+============================
+ENTRY 5  [unknown, score=0.000, iter=5]
+============================
+## Lesson
+We need a fast implementation of the Base64 encoder that works on arbitrary byte payloads coming in the `problem` dictionary and optionally produces an HMAC digest when a key is supplied. The goal is to drop any Python‑level loops and rely on NumPy’s vectorised arithmetic so that the whole transformation runs in compiled BLAS‑style kernels under the hood – that’s where the speedup comes from compared to the reference implementation that probably walks the input byte‑by‑byte in pure Python or uses a slow pure‑Python base64 routine.. Let’s sketch what the solver must do:. - Grab `data` from `problem`. The API isn’t strict about type – it could be a `bytes` object or a `str`. If it’s a `str` we’ll encode it as UTF‑8 first so everything downstream sees raw bytes.
+- Compute how many 3‑byte groups are needed (`n_groups = (len(data)+2)//3`).
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+import hmac
+from typing import Any, Dict
+
+import numpy as np
+
+
+# --------------------------------------------------------------------------- #
+# Framework utilities
+# --------------------------------------------------------------------------- #
+class Task:
+    """Base class for all tasks – kept for compatibility with the framework."""
+    pass
+
+
+def register_task(_name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+# --------------------------------------------------------------------------- #
+# Base64 encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Encode binary data using the standard Base64 algorithm.
+    The input data is generated as random bytes with a size proportional to
+    the problem scaling parameter ``n``.
+    """
+
+    # Target bytes of plaintext per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ----------------------------------------------------------------------- #
+    # Problem generation
+# ...(+83 more lines truncated)
+```
+
+============================
+ENTRY 6  [unknown, score=0.000, iter=6]
+============================
+## Lesson
+We need to write a base64 encoding solver that is fast. The input format? Likely a dict with data? We need to parse problem. Let's think: The reference Base64Encoding probably takes a problem dict with 'data' key containing bytes or string? We need to produce base64 output. We want vectorized, no loops. Use numpy to handle bytes array, then base64.b64encode.. But we can't loop over each byte; we can convert whole array to bytes and encode. That's trivial. But maybe problem has multiple test cases? Might be a list of strings? We need to check typical AlgoTune tasks: They give a problem dict with 'strings': list of strings, and we return list of encoded strings. So vectorization: convert all strings to bytes via np.frombuffer? But each string different length.. Could use np.vectorize? But that still loops.. Maybe use Python's built-in base64 for each string; overhead minimal.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+from typing import Any, Dict
+
+import numpy as np
+
+# Minimal framework support ----------------------------------------------------
+class Task:
+    """Base class for tasks – kept for compatibility with the framework."""
+    pass
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+# -----------------------------------------------------------------------------
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+        ----------
+# ...(+82 more lines truncated)
+```
+
+============================
+ENTRY 7  [unknown, score=0.000, iter=7]
+============================
+## Lesson
+We need to figure out what the base64_encoding problem is. Likely given a list of byte strings, we need to encode them to base64? Let's think. The reference implementation probably takes a problem dict with some data, maybe a list of strings or ints, and returns something. We need to produce a faster version.. Let's imagine the problem format: maybe "data": list of bytes or ints. We need to produce base64 encoding for each element? Or maybe combine them? The design brief says imports: base64, hmac, typing.Any, Dict, numpy as np. No Python-level loops; all vectorized. So likely we need to use numpy to process many inputs at once.. Also mention hmac: maybe computing HMAC of base64-encoded data? The problem might be about encoding and verifying with HMAC. Let's think typical AlgoTune tasks: They often involve encoding data and verifying checksums..
+
+## Code excerpt
+```python
+def run_solver(problem: Dict[str, Any]) -> Dict[str, bytes]:
+    return Base64Encoding().solve(problem)
+```
+
+============================
+ENTRY 8  [unknown, score=0.000, iter=8]
+============================
+## Lesson
+We need to figure out what the problem is: base64_encoding. Likely given some input, produce base64 encoded output? Let's think. The reference implementation uses Base64Encoding class with solve method. We need to replace with faster version, vectorised, no Python loops. Use base64, hmac, os. So maybe the task is to encode a secret using HMAC and base64? Let's imagine input is a dict with some keys: maybe "data" and "key". The solve should return base64-encoded HMAC of data using key? Or maybe it's just base64 encoding of some random bytes? The brief says imports: base64; hmac; os; typing.Any, Dict. So likely we need to generate random bytes of length 32? Or maybe use os.urandom. Then compute HMAC with a key from input? Not sure..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Helper: simple task registration
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    def decorator(cls):
+        return cls
+    return decorator
+
+# --------------------------------------------------------------------------- #
+# Base64 encoding task
+# --------------------------------------------------------------------------- #
+class Task:
+    """Base class for all tasks."""
+    pass
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ----------------------------------------------------------------------- #
+    # Problem generation
+    # ----------------------------------------------------------------------- #
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+# ...(+78 more lines truncated)
+```
+
+============================
+ENTRY 9  [unknown, score=0.000, iter=9]
+============================
+## Lesson
+We need to take the raw input from the `problem` dictionary, figure out whether it’s a string, bytes or a list of integers, and turn it into a flat `bytes` object that we can feed into our vectorised encoder. The first thing that comes to mind is just calling `base64.b64encode`, but the brief says no Python‑level loops and wants us to do everything in NumPy so we can squeeze out the fastest possible speed on large blobs. 
+
+So let’s sketch the flow:
+
+1.
+
+OK, I think I have the design. Time to write it.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import numpy as np
+
+# ----------------------------------------------------------------------
+# Minimal task infrastructure
+# ----------------------------------------------------------------------
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+# ----------------------------------------------------------------------
+# Base64 encoding task
+# ----------------------------------------------------------------------
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+# ...(+76 more lines truncated)
+```
+
+============================
+ENTRY 10  [unknown, score=0.000, iter=10]
+============================
+## Lesson
+We need to figure out how to speed up base64 encoding. Let's think: The problem likely gives us some data that needs to be base64 encoded. The baseline uses Python loops maybe. We want vectorized approach. We can use numpy to convert bytes to array, then use base64.b64encode on the whole array. But we need to handle input format: maybe problem is a dict with keys? We need to read problem, get data, encode.. We need no Python loops. So we must rely on vectorized numpy operations or built-in base64 functions that accept bytes-like objects.. Potential design: read problem dict, extract a key 'data' which could be a list of integers or bytes. Convert to np.ndarray of dtype=np.uint8, then view as bytes using .tobytes() or .astype('uint8').tobytes(). Then feed to base64.b64encode. That returns bytes; decode to str.. But if the input is large, we might want to chunk? But no loops..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+import numpy as np
+
+# ----------------------------------------------------------------------
+# Helper: expose the C‑level b64encode directly for a tiny lookup speedup
+# ----------------------------------------------------------------------
+from base64 import b64encode
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+# ...(+82 more lines truncated)
+```
+
+============================
+ENTRY 11  [unknown, score=0.000, iter=11]
+============================
+## Lesson
+We need to figure out what base64_encoding problem is. Likely given a string, encode to base64? But maybe it's a puzzle: we need to implement solver that given problem dict returns base64 encoding? Let's think: The reference implementation is Base64Encoding().solve(problem). So problem likely contains data. We need to produce efficient vectorized solution. Maybe problem contains a list of integers representing bytes? Or maybe string. We need to produce base64 output. Base64 uses 6-bit groups, mapping to A-Z a-z 0-9 + /. So we can vectorize by converting array of bytes to bits, then reshape into 6-bit groups, map via numpy lookup table.. But we don't know input format. Let's assume problem dict has key 'data' which is a bytes object or list of ints. We need to return string.. Let's design: read bytes from problem['data'] as numpy array of dtype uint8.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import numpy as np
+from typing import Any, Dict
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+# ...(+118 more lines truncated)
+```
+
+============================
+ENTRY 12  [unknown, score=0.000, iter=12]
+============================
+## Lesson
+We need to figure out how to encode base64 efficiently. The input format? Likely a problem dict containing data. We must use numpy vectorization, no Python loops. Use base64 module maybe. But vectorizing base64 is tricky. Maybe we can use numpy's packbits or something. Let's think: base64 encodes binary data in 6-bit chunks. We could convert bytes to array of uint8, then view as uint32 or uint64 and shift/bitwise ops.. We want to avoid loops; can use numpy's bit operations on whole arrays. Approach: read bytes into np.ndarray dtype=np.uint8. Then reshape into groups of 3 bytes (24 bits). For each group, compute 4 6-bit values: (b0 >> 2), ((b0 & 3) << 4 | b1 >> 4), ((b1 & 15) << 2 | b2 >> 6), (b2 & 63). Use bitwise ops on arrays.. We can vectorize across all groups using array operations: let arr shape (N,3).
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+import logging
+from typing import Any, Dict
+
+import numpy as np
+
+# --------------------------------------------------------------------------- #
+# Task registration utilities
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+# ...(+75 more lines truncated)
+```
+
+============================
+ENTRY 13  [unknown, score=0.000, iter=13]
+============================
+## Lesson
+We need to read the problem: base64_encoding. We want to implement solve that encodes something? Let's think: Base64 encoding takes binary data and outputs ASCII string. The reference implementation probably uses binascii.b2a_base64 or something. But we need to optimize. We can use numpy vectorization, maybe use dtype uint8 and pack bits.. We have to produce a design: imports binascii, typing.Any, Dict, numpy as np. No Python-level loops, all work vectorised. So we need to encode using numpy operations.. We must consider input format: problem likely contains some data structure like {'data': bytes} or something. Let's inspect typical AlgoTune tasks: They give a problem dict with 'data' key containing bytes? Might be 'data' is a list of ints? We don't know. But we can assume problem['data'] is bytes-like.. Goal: return encoded string? The Base64Encoding class likely returns string..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data (generated using a Zipfian distribution of words)
+using the standard Base64 algorithm.  The task scales with the size of
+the input data.
+
+The implementation below replaces the standard ``base64.b64encode``
+call with the C‑implemented ``binascii.b2a_base64`` routine, which
+avoids the intermediate Python object creation performed by the
+``base64`` module and is marginally faster for large payloads.
+"""
+
+import binascii
+from typing import Any, Dict
+
+import numpy as np
+
+# -----------------------------------------------------------------------------
+
+
+class Task:
+    """Minimal task interface used by the evaluation harness."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+# -----------------------------------------------------------------------------
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+# ...(+107 more lines truncated)
+```
+
+============================
+ENTRY 14  [unknown, score=0.000, iter=14]
+============================
+## Lesson
+We need to take a byte payload from the `problem` dict and spit out its Base‑64 representation as fast as possible – no Python loops at all, just straight NumPy crunching and a tiny bit of pure Python at the very end for the final string conversion.  
+The core idea is that Base‑64 works on blocks of three bytes → four six‑bit symbols, so we’ll treat the whole buffer as a flat `uint8` array, pad it up to a multiple of three with zeros (the zero‑bytes will turn into “A”s later), reshape it into an `(N//3, 3)` view and then pull out the three source columns `b0`, `b1`, `b2`.
+
+OK, I think I have the design. Time to write it.
+
+## Code excerpt
+```python
+def run_solver(problem: Dict[str, Any]) -> Dict[str, bytes]:
+    """
+    Entry point used by the evaluation harness.
+
+    Parameters
+    ----------
+    problem : Dict[str, Any]
+        Dictionary containing the key 'plaintext' with the binary data to encode.
+
+    Returns
+    -------
+    Dict[str, bytes]
+        Dictionary with a single key 'encoded_data' containing the Base64
+        representation of the input bytes.
+    """
+    return Base64Encoding.solve(problem)
+```
+
+============================
+ENTRY 15  [unknown, score=0.000, iter=15]
+============================
+## Lesson
+We need to tackle a base64_encoding problem. Let's think about what the input format might be. The problem likely gives a string or bytes that need to be encoded to base64. But the reference baseline is slow, maybe because it's using Python loops or something. We want to vectorise and use built-in libraries. The design brief says imports: base64, hmac, os, typing.Any, Dict. So likely we need to use hmac and os for something like generating random bytes or computing HMAC? Maybe the task is to encode a message and compute HMAC of the base64 output? Or maybe the problem includes some cryptographic verification.. We need to produce a solve method that processes the input problem dict and returns a solution dict. We should avoid Python loops; everything vectorised. Use base64.b64encode for encoding bytes. Use os.urandom for generating random salts maybe? hmac for computing HMAC..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Framework utilities
+# --------------------------------------------------------------------------- #
+class Task:
+    """Base class for all tasks – kept for compatibility with the framework."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+# --------------------------------------------------------------------------- #
+# Base64 encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Encode binary data using the standard Base64 algorithm.
+    The input data is generated as random bytes with a size proportional to
+    the problem scaling parameter ``n``.
+    """
+
+    # Target bytes of plaintext per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ----------------------------------------------------------------------- #
+    # Problem generation
+    # ----------------------------------------------------------------------- #
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate a dictionary containing random plaintext bytes.
+# ...(+89 more lines truncated)
+```
+
+============================
+ENTRY 16  [unknown, score=0.000, iter=16]
+============================
+## Lesson
+We need to speed up a base64 encoding task. Let's think. The problem likely gives some input format, maybe a dictionary with data to encode? We need to produce a solve method that encodes something using base64, maybe with HMAC? The brief says imports: base64, hmac, os, typing.Any, Dict. No Python-level loops; all vectorised. Final solution ~3460 chars. So we need to design a function run_solver that takes problem dict and returns result.. We must consider what the problem expects. Since it's base64_encoding, probably the input contains a string or bytes to encode, maybe a secret key for HMAC? The baseline implementation probably uses loops. We want to vectorize: maybe use numpy arrays of bytes and apply base64.b64encode on chunks? But base64.b64encode can handle any length; no need for loops.. But why vectorization? Maybe the input contains multiple strings to encode.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ------------------------------------------------------------------ #
+    # Problem generation
+    # ------------------------------------------------------------------ #
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Create a problem dictionary containing a random byte string.
+
+        Parameters
+        ----------
+        n : int
+            Scaling factor for the amount of data to generate.
+        random_seed : int, optional
+            Seed for reproducibility.  It is ignored when using
+            ``os.urandom`` but kept for API compatibility.
+
+        Returns
+        -------
+        dict
+            ``{"plaintext": bytes}``
+        """
+# ...(+64 more lines truncated)
+```
+
+============================
+ENTRY 17  [unknown, score=0.000, iter=17]
+============================
+## Lesson
+We need to write a chain-of-thought exploring how to implement a fast base64 encoding solver. The design brief says imports: base64, os, typing.Any, Dict. No Python-level loops; all vectorised. Final solution ~3803 chars. We need to think about how to encode base64 for many inputs efficiently, maybe using numpy vectorization or multiprocessing? But we can't use loops. We can use numpy's vectorized operations on arrays of bytes? We could use base64.b64encode on whole data? But the problem likely expects reading multiple lines? Let's think: The base64_encoding problem likely takes an input of strings or bytes and needs to encode them.. We need to produce a solve method that reads from problem dict, maybe contains 'data' key with list of strings? We can treat each string as bytes and encode with base64.b64encode.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Task registration utilities
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+# ...(+68 more lines truncated)
+```
+
+============================
+ENTRY 18  [unknown, score=0.000, iter=18]
+============================
+## Lesson
+We need to figure out how to implement base64_encoding solve efficiently. The problem likely takes some input, maybe a string or bytes, and needs to encode to base64. But we need to handle input format and produce valid solutions efficiently. We have to avoid Python loops, use vectorization. Let's think.. First, what is the problem input? The reference algorithm probably expects a dictionary with some keys: maybe 'data' containing a byte array or something. Let's assume problem is a dict with 'input' key containing bytes or string. We need to output base64-encoded string.. We could just call base64.b64encode on the bytes. But we need vectorization? Maybe the problem involves many inputs? Could be batch of strings? Let's assume problem['inputs'] is list of byte strings. We need to encode each..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+"""
+Base64Encoding Task
+
+Encode binary data (generated using a Zipfian distribution of words)
+using the standard Base64 algorithm.  The difficulty scales with the
+size of the input data.
+
+The implementation is intentionally lightweight: the heavy lifting is
+performed by the C‑level ``b64encode`` routine from the standard
+library, which is already highly optimised.  The only non‑trivial
+operations are data generation (via NumPy) and a trivial wrapper
+around the encoder.
+"""
+
+from __future__ import annotations
+
+import base64
+from typing import Any, Dict
+
+import numpy as np
+from base64 import b64encode  # direct import to avoid attribute lookup overhead
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+# ...(+93 more lines truncated)
+```
+
+============================
+ENTRY 19  [unknown, score=0.000, iter=19]
+============================
+## Lesson
+We need to write a base64 encoding solver that is fast. The input format? Likely a problem object containing data to encode. Let's assume problem has a field like problem.data: bytes or array. We need to produce base64 string. Use numpy vectorized approach? We can use base64.b64encode which is fast C implementation. But maybe we need to encode many small strings? Vectorizing might help.. We can't use loops, but we can use vectorized operations. Perhaps convert the entire dataset into a single bytes object and encode once.. If problem contains multiple strings, maybe we need to output each encoded string separately. We could stack them into a 2D array, flatten, encode, then split by lengths.. But the brief says final solution ~1376 characters, imports base64 and numpy only.
+
+## Code excerpt
+```python
+import base64
+import numpy as np
+
+# Minimal registration decorator (no-op)
+def register_task(name):
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding:
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def generate_problem(self, n, random_seed=1):
+        """
+        Generate random binary data for the Base64 encoding task.
+        """
+        size = n * self.DEFAULT_PLAINTEXT_MULTIPLIER
+        if size <= 0:
+            return {"plaintext": b""}
+
+        rng = np.random.default_rng(random_seed)
+        return {"plaintext": rng.bytes(size)}
+
+    def solve(self, problem):
+        """
+        Encode the plaintext using the standard Base64 algorithm.
+        """
+        return {"encoded_data": base64.b64encode(problem["plaintext"])}
+
+    def is_solution(self, problem, solution):
+        """
+        Verify that the provided solution matches the reference output.
+        """
+        if not isinstance(solution, dict) or "encoded_data" not in solution:
+            return False
+        return base64.b64encode(problem["plaintext"]) == solution["encoded_data"]
+
+
+# Create a single solver instance to avoid repeated construction overhead
+# ...(+8 more lines truncated)
+```
+
+============================
+ENTRY 20  [unknown, score=0.000, iter=21]
+============================
+## Lesson
+We need to take the problem dictionary that comes in from the judge, pull out whatever data it contains that represents the thing we have to encode, and spit out a Base‑64 representation that matches what the reference solver would give us. The reference is slow – it probably just loops over every byte or uses Python‑level string manipulation – so we want a fully vectorised pipeline that does everything in NumPy or plain C under the hood, with no explicit Python `for` loops at all.. First thought: why not just call `base64.b64encode` on the whole payload? That would be trivial and probably fast enough because it’s written in C. But the design brief explicitly wants us to avoid any Python‑level loops and do everything vectorised ourselves – maybe the benchmark will penalise even a single call that internally iterates over the input in Python.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data (generated using a Zipfian distribution of words)
+using the standard Base64 algorithm.  The task scales with the size of
+the input data.
+
+The implementation below uses the highly‑optimised C implementation
+`base64.b64encode` and generates the plaintext with `os.urandom`,
+which is faster than NumPy's RNG for large byte blocks.
+"""
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+# -----------------------------------------------------------------------------
+
+
+class Task:
+    """Minimal task interface used by the evaluation harness."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+# -----------------------------------------------------------------------------
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+# ...(+118 more lines truncated)
+```
+
+============================
+ENTRY 21  [unknown, score=0.000, iter=22]
+============================
+## Lesson
+We need to figure out how to speed up base64 encoding. The reference implementation probably reads a problem dict, extracts some data, does base64 encoding of something. We need to write a fast solve method that uses vectorized numpy, no loops, and uses base64 library. Let's think.. First, what is the input format? The problem dict likely contains a key like 'data' with bytes or string? The reference implementation probably does something like: data = problem['data']; encoded = base64.b64encode(data).decode(); return encoded. But maybe it's more complex: maybe it encodes each line or something.. We need to read the problem description: "base64_encoding" implies we just encode some data to base64. Maybe the input is a list of integers representing bytes? Or a numpy array? We need to guess.. We can look at typical AlgoTune tasks: They often give a problem dict with keys 'n', 'data', etc.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+import base64
+import logging
+from typing import Any, Dict
+
+import numpy as np
+
+# --------------------------------------------------------------------------- #
+# Task registration utilities
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+        ----------
+# ...(+80 more lines truncated)
+```
+
+============================
+ENTRY 22  [unknown, score=0.000, iter=23]
+============================
+## Lesson
+We need to figure out what the base64_encoding problem is. Likely given some input, we need to produce a base64-encoded string? But there's mention of hmac and os, so maybe it's about generating a secure token? Let's think.. The reference implementation is Base64Encoding().solve(problem). We need to replace with faster implementation. The design brief says imports: base64, hmac, os, typing.Any, Dict. No Python-level loops; all vectorised. Final solution ~3787 chars. So we need to produce code that uses vectorization? But base64 encoding is inherently per-byte. However we can use built-in base64.b64encode which is efficient in C. So maybe the task is trivial: just call base64.b64encode on some data..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+"""
+Base64 encoding task.
+
+The implementation focuses on speed:
+* Random data is generated with :func:`os.urandom`, which is a fast C‑level
+  source and does not require the overhead of NumPy.
+* The Base64 encoder is accessed once per call to avoid repeated attribute
+  lookups.
+* ``hmac.compare_digest`` is used for constant‑time comparison in the
+  verifier.
+"""
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+__all__ = ["Base64Encoding", "run_solver"]
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Create a problem dictionary containing a random byte string.
+# ...(+74 more lines truncated)
+```
+
+============================
+ENTRY 23  [unknown, score=0.000, iter=24]
+============================
+## Lesson
+We need to read the problem: base64_encoding. We want to implement solve that uses base64, hmac, os, typing. No Python loops, vectorised. The final solution ~3514 characters. We need to think about algorithm.. Probably the problem: given some input (maybe a dictionary) we need to produce base64 encoding of something? Let's think typical base64 encoding tasks: maybe we need to encode a secret key using HMAC? Let's search memory: AlgoTune base64_encoding problem might be: given a string, compute HMAC-SHA256 of it, then base64 encode the result? Or maybe encode multiple strings? The reference baseline likely uses loops.. We need to design vectorised approach. But base64 encoding is typically per byte array; Python's base64.b64encode works on bytes and returns bytes. We can process many strings by concatenating? But vectorisation across strings might be tricky..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    # ------------------------------------------------------------------ #
+    # Problem generation
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def generate_problem(n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Create a problem dictionary containing a random byte string.
+
+        Parameters
+        ----------
+        n : int
+            Scaling factor for the amount of data to generate.
+        random_seed : int, optional
+            Seed for reproducibility.  It is ignored when using
+            ``os.urandom`` but kept for API compatibility.
+
+        Returns
+        -------
+        dict
+            ``{"plaintext": bytes}``
+# ...(+67 more lines truncated)
+```
+
+============================
+ENTRY 24  [unknown, score=0.000, iter=25]
+============================
+## Lesson
+We need to write chain-of-thought, exploring. Let's start.
+We need to turn a slow base64 encoder into a fast one, but we’re not allowed to use Python loops. The reference probably reads the input as a byte array, splits into 3‑byte blocks, packs into 4 6‑bit groups, then maps those to the base64 alphabet. That’s a classic algorithm, but Python loops over each block are slow. So vectorise: treat the whole input as a NumPy array of dtype uint8, reshape into (-1,3), pad with zeros if needed, then compute the 24‑bit integer per row via bit shifts and masks. After that we can use a lookup table to map each 6‑bit chunk to its ASCII code.. But we’re limited to standard libraries plus numpy; no JIT or numba in this design. We can use base64 module for reference but that’s slow? Actually base64.b64encode is C‑implemented and fast.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Minimal task registration decorator
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """No-op decorator to keep the original API."""
+    return lambda cls: cls
+
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+        ----------
+# ...(+70 more lines truncated)
+```
+
+============================
+ENTRY 25  [unknown, score=0.000, iter=26]
+============================
+## Lesson
+We need to figure out how to speed up base64 encoding for many strings? Let's think. The problem likely gives a list of byte strings and expects base64 encoded outputs. The baseline probably loops over each and uses base64.b64encode. We can vectorize by converting all data to a single big byte array? But base64 works on chunks of 3 bytes => 4 chars. If we have variable length inputs, we need to pad each separately. Maybe we can use numpy to stack? Or use binascii.b2a_base64? That also loops. Could use Python's built-in base64 functions but in vectorized form? Not straightforward.. Maybe the input is a dict with keys mapping to byte arrays? We could use numpy.char.encode? No.. Alternative: Use numba JIT to compile a loop that processes each string but compiled, so faster than Python loop. But requirement: no Python-level loops, all work vectorised.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data using the standard Base64 algorithm.
+The input data is generated as random bytes with a size proportional to
+the problem scaling parameter ``n``.
+"""
+
+import base64
+import binascii
+import hmac
+import os
+from typing import Any, Dict
+
+import numpy as np
+
+
+# --------------------------------------------------------------------------- #
+# Framework utilities
+# --------------------------------------------------------------------------- #
+class Task:
+    """Base class for all tasks – kept for compatibility with the framework."""
+    pass
+
+
+def register_task(_name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+# --------------------------------------------------------------------------- #
+# Base64 encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+# ...(+104 more lines truncated)
+```
+
+============================
+ENTRY 26  [unknown, score=0.000, iter=27]
+============================
+## Lesson
+We need to take whatever the input `problem` dictionary gives us and spit out a base‑64 string as fast as possible. The reference solution probably walks over the data element by element and builds the output byte‑by‑byte – that’s slow in Python. So the plan is to hand everything off to C code as soon as we can: `base64.b64encode` lives in C and will do all the heavy lifting for us. First question: what shape does the data come in?  
+- It could already be a `bytes` object – that’s perfect. - It might be a list of integers (0‑255) – we can turn that into a `numpy` array of type `uint8` and then call `.tobytes()` – that creates the buffer without any Python loops. - It could even be a `numpy.ndarray` of arbitrary shape – we just flatten it and cast to `uint8`. - If it’s a string we’ll just encode it as UTF‑8 before handing it off.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import os
+from typing import Any, Dict
+
+# ----------------------------------------------------------------------
+# Helper: expose the C‑level b64encode directly for a tiny lookup speedup
+# ----------------------------------------------------------------------
+from base64 import b64encode
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+
+    # ------------------------------------------------------------------
+# ...(+47 more lines truncated)
+```
+
+============================
+ENTRY 27  [unknown, score=0.000, iter=28]
+============================
+## Lesson
+We need to figure out how to solve base64 encoding quickly. Let's think.. We have a problem: base64_encoding. The reference implementation presumably does something like reading input, maybe a list of integers or bytes, and then encoding them into base64 string. We need to write a fast solver.. We don't know the exact input format. But typical AlgoTune tasks: problem is a dictionary with some fields, maybe 'data': list of ints or bytes. Let's assume the problem dict contains 'data' key with a bytes-like object or list of ints 0-255. The goal: produce base64 encoded string.. We want to avoid Python loops, use vectorization. But base64 encoding is not trivial vectorizable; we can use built-in base64 module which is efficient in C. So just convert input to bytes and call b64encode.. But maybe the input is a list of ints; we can convert via np.array and view as uint8, then .tobytes()..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+# Import the C‑level b64encode directly to avoid an attribute lookup.
+from base64 import b64encode
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+# ...(+78 more lines truncated)
+```
+
+============================
+ENTRY 28  [unknown, score=0.000, iter=29]
+============================
+## Lesson
+We need to turn the slow reference solver into something that really uses NumPy’s C‑level speed without any Python loops at all.  
+The core of the task is just a standard Base‑64 encoder – turn a stream of bytes into the ASCII representation – but the input comes in a generic “problem” dictionary that the test harness will feed us.  
+
+First thought was just calling `base64.b64encode` on the raw data – that would be trivial but it would still involve a Python call and would not let us play with vectorised tricks that could shave milliseconds off big batches.  
+But the brief explicitly wants us to keep the same function name and signature while making everything NumPy‑driven, so I’ll roll my own encoder instead of delegating back to the stdlib after all.
+
+OK, I think I have the design. Time to write it.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data (generated using a Zipfian distribution of words)
+using the standard Base64 algorithm.  The task scales with the size of
+the input data.
+
+The implementation below uses the highly‑optimised C implementation
+`base64.b64encode` and generates the plaintext with NumPy's RNG,
+which is faster than `os.urandom` for large byte blocks.
+"""
+
+import base64
+import hmac
+from typing import Any, Dict
+
+import numpy as np
+
+# -----------------------------------------------------------------------------
+
+
+class Task:
+    """Minimal task interface used by the evaluation harness."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+# -----------------------------------------------------------------------------
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+# ...(+116 more lines truncated)
+```
+
+============================
+ENTRY 29  [unknown, score=0.000, iter=30]
+============================
+## Lesson
+We need to rewrite the solver for the Base64Encoding task so that it runs fast yet still returns exactly what the reference implementation expects.  
+The reference is “correct but slow”, so it probably does a byte‑by‑byte conversion into Base‑64 characters using Python loops – that’s why it’s slow even on modest inputs.  
+The first thing that comes to mind is simply delegating to the C‑implemented `base64.b64encode` – it’s already vectorised at the C level and has no Python‑level loop overhead at all.
+
+OK, I think I have the design. Time to write it.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+"""
+Base64 encoding task.
+
+The implementation focuses on speed:
+* Random data is generated with :func:`os.urandom`, which is a fast C‑level
+  source and does not require the overhead of NumPy.
+* The Base64 encoder is accessed once per call to avoid repeated attribute
+  lookups.
+* ``hmac.compare_digest`` is used for constant‑time comparison in the
+  verifier.
+"""
+
+from __future__ import annotations
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+__all__ = ["Base64Encoding", "run_solver"]
+
+# Global look‑ups to reduce attribute access overhead
+_b64_encode = base64.b64encode
+_urandom = os.urandom
+_compare_digest = hmac.compare_digest
+
+# Target number of plaintext bytes per unit of ``n``.
+DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+# ...(+71 more lines truncated)
+```
+
+============================
+ENTRY 30  [unknown, score=0.000, iter=31]
+============================
+## Lesson
+We need to replace the slow reference implementation of the Base64 encoder with something that runs fast and stays pure‑Python (except for the C‑backed `base64` module). The baseline probably does a manual loop over every byte and builds a string character by character – that’s why it’s slow and why the brief says “no Python‑level loops”. Let’s think about what the `solve` method actually has to do. The input is a dictionary (`problem`) that contains whatever data we’re supposed to encode – likely either raw bytes or a UTF‑8 string. The output should be a dictionary too (the reference probably returns a dict with the key `encoded`). The quickest way in CPython is just `base64.b64encode`. It’s written in C and does all the bit‑twiddling internally. If we feed it a `bytes` object it will return another `bytes` object containing the ASCII characters of the Base‑64 representation.
+
+## Code excerpt
+```python
+# Improved Base64Encoding task – faster problem generation using os.urandom
+# and a single solver instance to reduce construction overhead.
+
+import base64
+import os
+import logging
+from typing import Dict, Any
+
+# --------------------------------------------------------------------------- #
+# Minimal registration decorator (no-op)
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm. The difficulty scales with the
+    size of the input data.
+
+    Attributes
+    ----------
+    DEFAULT_PLAINTEXT_MULTIPLIER : int
+        Target bytes of plaintext per unit of n.
+    """
+
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+# ...(+86 more lines truncated)
+```
+
+============================
+ENTRY 31  [unknown, score=0.000, iter=32]
+============================
+## Lesson
+We need to figure out how to implement a base64 encoding solver efficiently. The task says "base64_encoding" and the reference is slow. We need to produce a faster implementation that still returns correct solutions. We must not use Python-level loops; everything vectorized. The design brief hints at imports: base64, hmac, os, typing.Any, Dict. So maybe we need to use these libs.. We need to understand the problem: base64_encoding likely refers to some optimization problem where we encode data into base64? Let's think: maybe the problem is to find a string that when base64-encoded yields something? Or maybe it's about computing base64 encoding of random data? Let's search memory: AlgoTune tasks often involve implementing algorithms like sorting, matrix multiplication, etc. Base64 encoding might be a simple transformation of bytes into ASCII characters.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+"""
+Base64 encoding task.
+
+The implementation focuses on speed:
+* Random data is generated with :func:`os.urandom`, which is a fast C‑level
+  source and does not require the overhead of NumPy.
+* The Base64 encoder is accessed once per call to avoid repeated attribute
+  lookups.
+* :func:`hmac.compare_digest` is used for constant‑time comparison in the
+  verifier.
+"""
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+__all__ = ["Base64Encoding", "run_solver"]
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    @staticmethod
+    def generate_problem(n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+# ...(+73 more lines truncated)
+```
+
+============================
+ENTRY 32  [unknown, score=0.000, iter=33]
+============================
+## Lesson
+We need to take a problem that’s basically “base64 encode a byte string” but the input format is probably some dict with data, and we must output the encoded string. The baseline is slow, so we want to vectorise everything. Let’s think: base64 encoding takes 3 bytes → 4 ASCII characters. If we have a large array of bytes, we can chunk it into groups of 3 and map to base64 indices. Python’s `base64` module already does that efficiently in C, so maybe the baseline was reimplementing it in Python loops, which is slow. So perhaps the simplest speedup is just call `base64.b64encode` directly on the raw bytes. But maybe the problem wants us to avoid Python loops entirely; we can still use that built‑in.. What’s the input? The design brief says imports: `import base64; import os; from typing import Any, Dict`.
+
+## Code excerpt
+```python
+# Your rewritten program here
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import os
+from typing import Any, Dict
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+def register_task(name: str):
+    """No‑op decorator to keep the public API unchanged."""
+    return lambda cls: cls
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+        ----------
+        n : int
+            Scaling parameter, determines the target plaintext size.
+        random_seed : int, optional
+            Ignored – os.urandom is used for speed and simplicity.
+
+        Returns
+# ...(+53 more lines truncated)
+```
+
+============================
+ENTRY 33  [unknown, score=0.000, iter=34]
+============================
+## Lesson
+We need to implement a fast base64 encoder that can handle arbitrary input format. The reference likely reads a problem dict with some data, maybe a byte array or string. We need to output encoded string. The design brief says import base64, numpy, etc. No loops. So we want to vectorize encoding of many inputs? Maybe problem contains multiple strings? Let's think: typical AlgoTune tasks have problem dict with 'data' key containing list of strings or ints. We need to encode each into base64. Use numpy array of bytes? We can use np.frombuffer on bytes, reshape to groups of 3 bytes, then compute 4 base64 indices per group using vectorized ops. Or simpler: use built-in base64.b64encode on each element; but that would be loop. We want no loops, so maybe we can stack all strings into one big byte array separated by something? But base64 encoding is per string..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+from typing import Any, Dict
+
+# Import numpy only for fast random byte generation
+import numpy as np
+
+# ----------------------------------------------------------------------
+# Helper: expose the C‑level b64encode directly for a tiny lookup speedup
+# ----------------------------------------------------------------------
+from base64 import b64encode
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__()
+# ...(+50 more lines truncated)
+```
+
+============================
+ENTRY 34  [unknown, score=0.000, iter=35]
+============================
+## Lesson
+We need to turn the slow reference into something that can crunch a batch of byte strings into Base64 without any Python loops – everything has to be vectorised with NumPy or similar tricks. The spec tells us we’re allowed to import `base64`, `hmac`, `os`, and typing utilities – so our solution must stay within those imports (no extra libs like `hashlib` unless absolutely necessary).. First thought: just call `base64.b64encode` on every element in a list comprehension – that’s easy but still Python‑level looping over elements. Too slow for large inputs because each call incurs overhead in the C implementation plus Python’s loop overhead. We want to replace that by operating on the whole array at once.. Base64 works by packing three 8‑bit bytes into one 24‑bit integer and then splitting that into four 6‑bit indices which map to characters in the alphabet `A–Z a–z 0–9 + /`..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data using the standard Base64 algorithm.
+The input data is generated as random bytes with a size proportional to
+the problem scaling parameter ``n``.
+"""
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+
+# --------------------------------------------------------------------------- #
+# Framework utilities
+# --------------------------------------------------------------------------- #
+class Task:
+    """Base class for tasks – kept for compatibility with the framework."""
+    pass
+
+
+def register_task(_name: str):
+    """Decorator that simply returns the class unchanged."""
+    def decorator(cls):
+        return cls
+    return decorator
+
+
+# --------------------------------------------------------------------------- #
+# Base64 encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Encode binary data using the standard Base64 algorithm.
+    """
+
+# ...(+96 more lines truncated)
+```
+
+============================
+ENTRY 35  [unknown, score=0.000, iter=36]
+============================
+## Lesson
+We need to figure out what the problem is: base64_encoding. Likely input is a list of integers or bytes? Let's think.. We want to implement solve that takes a problem dict and returns base64 encoded string? The reference uses Base64Encoding class. We don't see its code but likely it takes an array of numbers, maybe 8-bit values, and encodes them in base64. The goal: vectorized, no loops, use numpy and base64.b64encode.. We need to handle input format: maybe problem contains 'data' key with list of ints or bytes. We need to convert to bytes efficiently. If data is list of ints 0-255, we can convert via np.array(dtype=np.uint8).tobytes() then b64encode.. If data is already bytes? Then just encode.. Also need to handle large arrays; vectorization trivial.. Edge cases: empty data -> empty string.. Also maybe problem includes 'n' and 'seed'? But likely simple.. Let's design:.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import os
+from typing import Any, Dict
+
+# Import the C‑level b64encode directly to avoid an attribute lookup.
+from base64 import b64encode
+
+
+class Task:
+    """Base class for tasks."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER = 2048
+
+    def __init__(self, **kwargs):
+        super().__init__()
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+# ...(+78 more lines truncated)
+```
+
+============================
+ENTRY 36  [unknown, score=0.000, iter=37]
+============================
+## Lesson
+We need to parse the problem statement: base64_encoding. Likely the problem is to encode some data in base64? Let's think. The reference implementation probably reads input from a dictionary or something. We need to produce a fast implementation using numpy vectorization, no Python loops. Use base64, hmac, typing, numpy. So likely we need to compute HMAC of some data and then base64 encode it? Let's imagine the problem: maybe given a string, compute HMAC-SHA256 with a key, then base64 encode the digest. That would be typical.. But we don't know exact input format. Let's assume problem is a dict with keys 'data' and 'key'? We need to read problem dict and produce solution dict? Might be something like: given list of bytes or ints, compute base64 encoding of each? But the brief says no Python loops; all work vectorised. So maybe we have many inputs to encode at once..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+"""
+Base64Encoding Task
+
+Encode binary data (generated using a Zipfian distribution of words)
+using the standard Base64 algorithm.  The task scales with the size of
+the input data.
+
+The implementation below uses the highly‑optimised C implementation
+`base64.b64encode` and generates the plaintext with NumPy's RNG,
+which is faster than `os.urandom` for large byte blocks.
+"""
+
+import base64
+import hmac
+from typing import Any, Dict
+
+import numpy as np
+
+# -----------------------------------------------------------------------------
+
+
+class Task:
+    """Minimal task interface used by the evaluation harness."""
+    pass
+
+
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+
+# -----------------------------------------------------------------------------
+
+
+@register_task("base64_encoding")
+class Base64Encoding(Task):
+    """
+    Base64Encoding Task:
+# ...(+123 more lines truncated)
+```
+
+============================
+ENTRY 37  [unknown, score=0.000, iter=38]
+============================
+## Lesson
+We need to figure out how to solve the base64_encoding problem efficiently. Let's first recall what the problem likely is: given some input, we need to encode it in base64. The reference implementation probably reads a file or data from a problem dict, does base64 encoding in a slow way, maybe using Python loops or converting to bytes incorrectly. We want to replace it with a vectorized, fast version using built-in libraries like base64 and os for random data generation perhaps.. We should think about the input format: The `problem` argument is likely a dictionary with some keys: maybe 'data' as a string or bytes, or 'size' indicating how many bytes to generate? The reference solution might generate random bytes using os.urandom and then encode them.. We want no Python-level loops.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Task registration utilities
+# --------------------------------------------------------------------------- #
+def register_task(name: str):
+    """Decorator that simply returns the class unchanged."""
+    return lambda cls: cls
+
+# --------------------------------------------------------------------------- #
+# Base64Encoding task
+# --------------------------------------------------------------------------- #
+@register_task("base64_encoding")
+class Base64Encoding:
+    """
+    Base64Encoding Task:
+
+    Encode binary data (generated using a Zipfian distribution of words)
+    using the standard Base64 algorithm.
+    The difficulty scales with the size of the input data.
+    """
+
+    # Target bytes of plaintext per unit of n
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------
+    # Problem generation
+    # ------------------------------------------------------------------
+    def generate_problem(self, n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Generate random binary data for the Base64 encoding task.
+
+        Parameters
+        ----------
+        n : int
+# ...(+68 more lines truncated)
+```
+
+============================
+ENTRY 38  [unknown, score=0.000, iter=39]
+============================
+## Lesson
+We need to parse the problem: base64_encoding. Likely input is a dictionary with some data? Let's think. The reference baseline likely uses Python's base64 library. We want to speed up encoding of many strings? Probably we need to vectorize over a list of byte strings.. We cannot use loops. Use numpy vectorization? But base64 encoding is string-based. Maybe we can use multiprocessing? But no loops.. Maybe the input format: problem is dict with 'data': list of bytes or str. We need to encode each using base64.b64encode, maybe with HMAC for authenticity? The brief mentions imports: base64, hmac, os, typing.Any, Dict. So likely we need to compute HMAC of encoded data.. So design: read problem dict containing 'message': bytes or str, maybe 'key': bytes? Compute HMAC-SHA256 of message, then base64 encode both message and HMAC, combine..
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+# --------------------------------------------------------------------------- #
+# Global look‑ups to reduce attribute access overhead
+# --------------------------------------------------------------------------- #
+_b64_encode = base64.b64encode
+_urandom = os.urandom
+_compare_digest = hmac.compare_digest
+
+__all__ = ["Base64Encoding", "run_solver"]
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+    # Target number of plaintext bytes per unit of ``n``.
+    DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+    # ------------------------------------------------------------------ #
+    # Problem generation
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def generate_problem(n: int, random_seed: int = 1) -> Dict[str, Any]:
+        """
+        Create a problem dictionary containing a random byte string.
+
+        Parameters
+        ----------
+        n : int
+# ...(+67 more lines truncated)
+```
+
+============================
+ENTRY 39  [unknown, score=0.000, iter=40]
+============================
+## Lesson
+We need to figure out what the problem is: base64_encoding. Likely we are given some input format, maybe a dictionary with keys? The reference uses Base64Encoding().solve(problem). We need to implement run_solver that returns the solution.. We must use imports: base64, hmac, os, typing.Any, Dict. No Python-level loops; all work vectorised. Final solution ~3108 chars. So we need to design a vectorised algorithm for base64 encoding? Perhaps the problem is to encode data using base64 with HMAC? Let's think: base64_encoding likely refers to encoding strings into base64, maybe with random key and HMAC for integrity.. We need to read input format: maybe a dict with 'data' and 'key'? Or maybe just raw bytes? We don't know.. Let's assume problem dict contains 'input' key with bytes or string. We need to produce base64-encoded string and HMAC signature.
+
+## Code excerpt
+```python
+# Copyright (c) 2025 Ori Press and the AlgoTune contributors
+# https://github.com/oripress/AlgoTune
+
+"""
+Base64 encoding task.
+
+The implementation is tuned for maximum speed:
+* Random data is produced with :func:`os.urandom`, a fast C‑level source.
+* All look‑ups for the encoder, random generator and comparison routine
+  are performed once at import time to avoid attribute‑lookup overhead.
+* The solver is a tiny static method that simply forwards to the C‑level
+  :func:`base64.b64encode`.
+* Verification uses :func:`hmac.compare_digest` for constant‑time
+  comparison.
+"""
+
+import base64
+import hmac
+import os
+from typing import Any, Dict
+
+__all__ = ["Base64Encoding", "run_solver"]
+
+# Global look‑ups to minimise per‑call overhead
+_B64_ENCODE = base64.b64encode
+_URANDOM = os.urandom
+_COMPARE_DIGEST = hmac.compare_digest
+
+# Target number of plaintext bytes per unit of ``n``.
+DEFAULT_PLAINTEXT_MULTIPLIER: int = 2048
+
+
+class Base64Encoding:
+    """
+    Encode binary data using the standard Base64 algorithm.
+
+    The input data is generated as random bytes.  The size of the data
+    scales linearly with the parameter ``n``.
+    """
+
+# ...(+65 more lines truncated)
+```

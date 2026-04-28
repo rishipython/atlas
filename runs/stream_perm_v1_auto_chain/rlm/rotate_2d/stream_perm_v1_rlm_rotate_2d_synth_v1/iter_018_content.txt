@@ -1,0 +1,164 @@
+We need to take a problem dict, extract whatever data the Rotate2D solver expects, and feed it into a fast routine that does the same thing as the reference but without Python loops. The reference probably takes an array of points, a rotation angle, maybe a center, and outputs rotated coordinates or an image. Since we have to use scipy somewhere, `scipy.ndimage.rotate` is a natural candidate for image rotation, but if the input is just points we can use matrix multiplication with broadcasting.
+
+First thought: just call `np.dot(points, R)` where `R` is the rotation matrix built from the angle. That’s already vectorised and cheap. But we need to handle arbitrary input shapes: maybe the problem dict contains a 2D array of shape (N, 2). The reference might also support rotating around a pivot or scaling afterwards. If pivot is given, we can subtract it, rotate, then add back.
+
+But the brief says to use scipy somewhere; we could use `scipy.linalg.expm` or `scipy.spatial.transform.Rotation`. But those are overkill for 2D. Another idea: if the input is an image (grayscale), use `scipy.ndimage.rotate`. That would satisfy "use scipy functions somewhere". But if it's points, we could still call `scipy.ndimage.rotate` on a sparse matrix representation? Not ideal.
+
+Let's check typical Rotate2D tasks: they often involve rotating an image by an arbitrary angle with interpolation. So likely the problem dict contains an image array and an angle. In that case, using `scipy.ndimage.rotate` is perfect: it handles interpolation, reshape flag, mode etc.
+
+But if it's points only, maybe they want us to rotate them and output a new array; then we could still use numpy only but must mention scipy usage somewhere else like in a helper function.
+
+We must avoid Python-level loops; everything vectorised.
+
+Edge cases: angle zero -> return original; negative angles -> handled by rotation matrix; large angles -> modulo 360 not necessary as sin/cos handle.
+
+If input includes multiple angles or multiple images? Probably not.
+
+Let's design:
+
+```
+def run_solver(problem):
+    # extract fields
+    img = problem['image']   # numpy array
+    angle = problem['angle'] # float
+    # optional center
+    center = problem.get('center', None)
+    # optional reshape flag
+    reshape = problem.get('reshape', True)
+    # optional mode
+    mode = problem.get('mode', 'constant')
+    # optional cval
+    cval = problem.get('cval', 0)
+    
+    # call scipy.ndimage.rotate
+    rotated = scipy.ndimage.rotate(img, angle, reshape=reshape,
+                                   mode=mode, cval=cval,
+                                   prefilter=False)   # prefilter False speeds up for integer data
+    return rotated
+```
+
+But this uses only numpy for extraction; no loops. We used scipy.ndimage.rotate which satisfies requirement.
+
+But what about random import? The brief says imports include random; maybe we need to seed something? Maybe the problem includes randomness? Could be that test harness expects deterministic output; random import might be unused but allowed.
+
+Better to include random usage: e.g., if no center provided, pick random center within bounds? But that would change behavior from reference which probably defaults to image center. So don't alter semantics.
+
+Maybe random used to generate test cases only; not needed in solver.
+
+But requirement says import random; so just import it even if unused.
+
+Now think about shape of output: must match reference's shape exactly (maybe same dtype). Use dtype of input.
+
+Also consider using `prefilter=False` for speed if input is integer; but might affect interpolation quality slightly. But reference may use default prefilter=True; but that's fine as long as output acceptable within tolerance.
+
+If image has multiple channels (3D array), rotate will apply to each channel separately? `ndimage.rotate` rotates all axes except the first two? Actually it rotates along first two axes by default; for multi-channel images you might need to specify axes=(0,1). We'll set axes=(0,1).
+
+Also handle case where img is 1D? Not likely.
+
+Edge cases: angle > 360 or negative handled by sin/cos inside rotate.
+
+If problem contains 'points' instead of 'image', we need to detect type: if array shape[-1]==2 and ndim==2 maybe treat as points list and rotate via matrix multiplication:
+
+```
+pts = problem['points']
+theta = np.deg2rad(problem['angle'])
+c,s=np.cos(theta), np.sin(theta)
+R=np.array([[c,-s],[s,c]])
+rotated_pts = pts @ R.T
+```
+
+Return rotated_pts.
+
+But then how do we choose path? Check key names: 'image' vs 'points'. We'll branch accordingly.
+
+Also ensure no loops: matrix multiplication handles many points at once.
+
+Now think about potential numeric issues: rotating integer arrays with ndimage will produce float output; maybe cast back to original dtype after clipping [0,255] if uint8. We'll preserve dtype via astype(original.dtype). But careful with rounding errors; clip before cast.
+
+So final design:
+
+- Import random (unused), typing.Any/Dict for type hints.
+- Import numpy as np.
+- Import scipy.ndimage.
+- Define run_solver(problem: Dict[str, Any]) -> Any:
+  - If 'image' in problem:
+      - Get img = np.asarray(problem['image'])
+      - angle = float(problem.get('angle', 0))
+      - Call rotate with parameters.
+      - If original dtype is uint8 or uint16 etc., clip [0,max] then cast back.
+      - Return result.
+  - Else if 'points' in problem:
+      - pts = np.asarray(problem['points'])
+      - angle_rad = np.deg2rad(float(problem.get('angle', 0)))
+      - Compute R and multiply.
+      - Return rotated pts.
+  - Else raise ValueError.
+- End of file includes run_solver function only.
+
+This satisfies all constraints: uses scipy.ndimage.rotate for images; uses numpy for point rotation; no loops; vectorised; imports include random though unused but present; final file ~5800 chars likely enough including docstring etc.
+
+Now sanity check edge cases:
+
+- If image is empty array -> rotate returns empty.
+- If points empty -> return empty.
+- Angle zero -> returns same array due to rotate handling zero quickly.
+- Large angles -> handled by sin/cos internally.
+- Data types preserved except when casting after clipping for uint8/uint16.
+- For multi-channel images shape (... ,C) will be rotated correctly because ndimage.rotate rotates first two axes by default leaving channels unchanged when axes not specified? Actually default rotates along first two axes regardless of channel dimension. So fine.
+
+Potential bug: ndimage.rotate with prefilter=False may produce different interpolation than reference which might use default prefilter=True leading to slight differences > tolerance? But maybe tolerance high enough or test expects exact same values? Hard to know. Could set prefilter=True to match reference exactly but slower. We can keep default True since requirement not strict on speed vs accuracy? The baseline slower but correct may use default True. So better keep default True for correctness. We can still pass prefilter=False optionally if speed critical but risk mismatch. I'll keep default True for safety.
+
+Also consider mode param default 'constant'; reference may use 'nearest' or 'reflect'? Might affect edges. We could read from problem dict or set 'nearest' which preserves edges better for images without background fill. But unknown spec. We'll just use mode='nearest' maybe more common in image rotation tasks (to avoid black corners). Let's choose mode='nearest'.
+
+Ok finalize design accordingly.
+We need to take whatever data the Rotate2D solver receives and feed it into a fast routine that does exactly what the reference does but without any Python loops. The specification doesn’t tell us whether the input is an image grid or a list of (x,y) coordinates, so we’ll branch on what keys exist in the `problem` dictionary – either an `'image'` key or a `'points'` key – and handle each case separately with fully vectorised code.
+
+First thought was just build a rotation matrix and do a dot product on any point set:
+
+```python
+theta = np.deg2rad(angle)
+c,s = np.cos(theta), np.sin(theta)
+R   = np.array([[c,-s],[s,c]])
+rotated_points = points @ R.T
+```
+
+That’s cheap and loop‑free but it never touches SciPy – one of our constraints says “Uses **scipy** functions somewhere in the solution.” So unless all tests are point‑based we’ll miss that requirement.
+
+The other possibility is that the tests provide an image (a 2‑D or 3‑D NumPy array) that needs to be rotated by an arbitrary angle with interpolation – this is exactly what `scipy.ndimage.rotate` does best. Using that function satisfies the SciPy requirement automatically and keeps everything vectorised because SciPy’s implementation calls optimized C/Fortran code under the hood.
+
+So I’ll implement two paths:
+
+1. **Image path** – detect `'image'` key:
+   * Grab the NumPy array (`img`) and cast it with `np.asarray`.
+   * Pull out optional parameters from the dictionary (`angle`, `reshape`, `mode`, `cval`).  
+     If any are missing we’ll fall back to sensible defaults (`reshape=True`, `mode='nearest'`, etc.).
+   * Call `scipy.ndimage.rotate(img, angle, reshape=reshape,
+                               mode=mode, cval=cval,
+                               prefilter=True)` – leaving prefilter at its default ensures behaviour matches the reference implementation (which usually uses spline interpolation).
+   * Preserve dtype: if the input was unsigned integer we clip back into `[0,max]` before casting so that rounding errors don’t push values outside their valid range.
+   * Return the rotated array unchanged in shape semantics (i.e., whatever shape SciPy returns given our flags).
+
+2. **Point path** – detect `'points'` key:
+   * Convert points list/array into an `(N,2)` NumPy array (`pts`).
+   * Compute rotation matrix as above and perform matrix multiplication (`pts @ R.T`).  
+     No loops here – all done in one BLAS call.
+   * Return the resulting `(N,2)` array with the same dtype as input (or float64 if conversion happened).
+
+If neither key is present raise a clear error so debugging is easy.
+
+We also need to import `random`, even though it won’t be used – that satisfies the brief “Imports: import random”. The rest of imports are straightforward: typing utilities (`Any`, `Dict`) for type hints, NumPy as `np`, and SciPy’s ndimage module for rotation.
+
+Edge‑case checks:
+* Empty arrays → returned unchanged (ndimage handles empties gracefully).
+* Zero‑degree rotation → identity transformation via SciPy/Matrix math.
+* Negative angles → handled naturally by sine/cosine or SciPy’s internal logic.
+* Multi‑channel images → ndimage rotates over first two axes only, preserving channel dimension automatically.
+* Integer images → clipping before casting avoids overflow/underflow after interpolation.
+* Points list may come as list of tuples – converting with `np.asarray` covers both lists and tuples cleanly.
+* If someone passes both keys simultaneously our code will pick `'image'` first which matches typical precedence rules in similar libraries; otherwise raise error if ambiguous—though unlikely in tests.
+
+With this design every operation is vectorised and no Python‑level loop appears anywhere in our code path. We satisfy all constraints: imports include random, typing.Any/Dict, numpy as np, scipy.ndimage; we use SciPy’s rotate function; everything else uses NumPy’s fast BLAS routines; final file size should comfortably sit around six thousand characters once comments and docstrings are added.
+
+
+
+OK, I think I have the design. Time to write it.

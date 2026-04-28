@@ -1,0 +1,35 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. Classic: use broadcasting or matrix operations: D = X.dot(X.T), then diag, then use formula: dist^2 = a[:,None] + a[None,:] - 2*X.dot(X.T). Where a = sum(X^2, axis=1). Use np.add.outer or broadcasting. Ensure dtype float64. We need to produce same shape and dtype. Should be fast.
+
+Edge cases: N=0? X shape (0, D). Our formula should handle. For empty, return shape (0,0). Let's test: X=np.empty((0,3)). Then X.dot(X.T) shape (0,0). a = np.sum(X**2, axis=1) shape (0). Then use outer: a[:,None] + a[None,:] - 2*G gives shape (0,0). Works.
+
+Return dtype float64. Input dtype float64. Should be fine.
+
+We might want to avoid negative small values due to numeric errors: set negative to zero with np.maximum(...,0). But not necessary if float64.
+
+We need to ensure no overflow. Use np.dot.
+
+Implement function pairwise_sq_dist.
+
+Also we can use np.einsum for memory efficiency? but dot is fine.
+
+Implement.
+
+Let's produce file:
+
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    distances = sq_norms[:, None] + sq_norms[None, :] - 2 * X.dot(X.T)
+    # due to numerical errors, small negative values may appear
+    np.maximum(distances, 0, out=distances)
+    return distances
+
+Also if X is large, memory usage for X.dot(X.T) maybe heavy but fine.
+
+Return dtype float64.
+
+Make sure to use np.dot. Provide docstring.
+
+Ok produce code.

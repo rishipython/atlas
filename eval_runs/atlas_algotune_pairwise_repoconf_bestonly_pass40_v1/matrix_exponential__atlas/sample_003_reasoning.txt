@@ -1,0 +1,44 @@
+We need to write a fast implementation of matrix exponential, matching scipy.linalg.expm. Use scipy.linalg.expm or implement Pade approximation. The simplest: import scipy.linalg.expm and just call it. But the function signature expects same name. That would be acceptable. But might be disallowed? The problem likely expects to use a faster algorithm, but calling scipy.linalg.expm is acceptable as it's a fast implementation. But we need to be careful: we should not import heavy modules? It's allowed.
+
+But the reference implementation is naive; we can replace with scipy.linalg.expm. That will produce same result within tolerance. But we need to return numpy array.
+
+So code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+But we need to ensure dtype float64. expm returns same dtype.
+
+But we may also implement Pade approximation manually. But easiest is to call scipy.
+
+But maybe the evaluator will check that function returns correct shape etc. Should be fine.
+
+But we might need to avoid overhead of importing scipy? It's okay.
+
+But the problem statement says "You may import numpy, scipy, numba, or any other package from a standard scientific-Python distribution." So using scipy is fine.
+
+So final code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    """Return the matrix exponential of a square float64 matrix A."""
+    return expm(A)
+
+That's it.
+
+But maybe they want to avoid using scipy? But it's allowed. The problem says "Your solution must define the same top-level function name and signature." So it's fine.
+
+Return a complete runnable file. So we need to include imports, function, maybe if __name__ == "__main__": for tests? Not required.
+
+Thus final answer: code block with the function.
+
+But to be safe, we can also include a fallback using scipy's expm or implement Pade if scipy not available. But it's fine.
+
+We just return expm(A). Ensure dtype is float64. If A is float64, expm returns float64.
+
+Thus final.

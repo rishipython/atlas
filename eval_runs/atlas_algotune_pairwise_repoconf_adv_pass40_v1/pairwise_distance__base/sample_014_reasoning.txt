@@ -1,0 +1,24 @@
+We need to produce a faster implementation. Standard approach: compute Gram matrix and use broadcasting: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So we can compute dot = X @ X.T, norms = np.sum(X**2, axis=1). Then distances = norms[:,None] + norms[None,:] - 2*dot. Ensure dtype float64. Might have small negative due to numerical errors; clip to zero. That is straightforward.
+
+Edge cases: X shape (N,D). Return symmetrical matrix.
+
+Implementation: def pairwise_sq_dist(X): N,D = X.shape; norms = np.sum(X**2, axis=1); dist = norms[:,None] + norms[None,:] - 2 * X @ X.T; dist[dist < 0] = 0.0; return dist.
+
+We can also cast to float64. Use np.dot.
+
+Also note that X might not be float64, but we can cast.
+
+Better: X = np.asarray(X, dtype=np.float64). But spec says dtype float64.
+
+Ok.
+
+We need to return same shape.
+
+Test with small examples.
+
+Let's produce file.
+
+Also import numpy.
+
+Let's output.
+

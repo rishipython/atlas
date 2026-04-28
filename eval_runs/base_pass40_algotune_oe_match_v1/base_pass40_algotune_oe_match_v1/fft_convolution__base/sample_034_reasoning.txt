@@ -1,0 +1,65 @@
+We need to improve solve method for speed. Using numpy FFT or scipy. For real signals, use np.fft.rfft. But we need mode handling. We can implement efficient conv using numpy. Use np.fft.fft with proper padding length = next power of 2 of len_x+len_y-1 maybe. For "full": compute full. For "same": take central part. For "valid": take overlapped part.
+
+We can also use np.fft.rfft for real signals: input real. Use rfft to half size. For length N = len_x+len_y-1. Next power of 2: m = 1<<ceil_log2(N). Use rfft of size m. Multiply. Inverse rfft to size m, then take first N elements. For same and valid, slice accordingly.
+
+Implement solve to use numpy only, avoid scipy overhead. Should be faster.
+
+Edge cases: empty signals -> return empty array. Mode same: output length = max(len_x,len_y). Standard definition: if len_x >= len_y then same gives len_x. For len_y > len_x, same gives len_y. But typical numpy.convolve same returns len_x if len_x>=len_y else len_y? Let's check: np.convolve returns full. For same, we can compute full then slice. But we can compute using indices.
+
+Simpler: compute full, then slice.
+
+Compute full using FFT. Then for same: start = (len_y-1)//2, end = start+len_x. For odd length y, same? For general, same length = max(len_x,len_y). For full length N. For same: if len_x>=len_y: start = (len_y-1)//2, end = start+len_x. If len_y>len_x: start = (len_x-1)//2, end = start+len_y. This matches typical definition. For valid: output length = max(len_x-len_y+1, len_y-len_x+1, 0). For len_x>=len_y: start = len_y-1, end = len_y-1+len_x-len_y+1 = len_x. For len_y>len_x: start = len_x-1, end = len_x-1+len_y-len_x+1 = len_y. So we can compute start = min(len_x,len_y)-1; end = start + abs(len_x-len_y)+1. That yields correct length. For empty inputs, return empty.
+
+Implement solve returning {"result": convolution_array.tolist()}. The earlier code used key "convolution". In is_solution expects "convolution". So keep same key. But the problem statement says output key "result". But is_solution expects "convolution". We must match is_solution: they check solution["convolution"]. So we keep key "convolution". Provide list.
+
+Let's implement.
+
+Also consider small signals: if len_x * len_y < 256 maybe use direct convolution for speed. But FFT overhead small? We can implement threshold 256. Use np.convolve for small.
+
+Implementation:
+
+def solve(problem):
+   x = np.array(problem["signal_x"], dtype=float)
+   y = np.array(problem["signal_y"], dtype=float)
+   mode = problem.get("mode","full")
+   if x.size==0 or y.size==0:
+       return {"convolution":[]}
+   if x.size*y.size <= 256:
+       full = np.convolve(x,y)
+   else:
+       n = x.size + y.size -1
+       m = 1 << (n-1).bit_length()
+       # rfft
+       fx = np.fft.rfft(x, n=m)
+       fy = np.fft.rfft(y, n=m)
+       f = fx*fy
+       conv = np.fft.irfft(f, n=m)[:n]
+       full = conv
+   # slice
+   if mode=="full":
+        res=full
+   elif mode=="same":
+        if x.size>=y.size:
+            start = (y.size-1)//2
+            end = start + x.size
+        else:
+            start = (x.size-1)//2
+            end = start + y.size
+        res=full[start:end]
+   elif mode=="valid":
+        if x.size>=y.size:
+            start = y.size-1
+            length = x.size - y.size +1
+        else:
+            start = x.size-1
+            length = y.size - x.size +1
+        res=full[start:start+length]
+   else:
+        raise ValueError
+   return {"convolution": res.tolist()}
+
+Make sure to handle negative length? If length <=0 return empty.
+
+Edge: valid with no overlap -> empty.
+
+Let's code.

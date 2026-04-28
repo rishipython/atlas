@@ -1,0 +1,37 @@
+We need to provide faster implementation. Use broadcasting or vectorized operations: compute squared norms and use identity: ||x-y||^2 = ||x||^2 + ||y||^2 - 2 x·y.
+
+Implementation: compute sum_X = np.sum(X**2, axis=1). Then compute dist = sum_X[:,None] + sum_X[None,:] - 2*X.dot(X.T). Ensure dtype float64. Might produce negative due to numerical errors; set negative to zero. Optionally use np.maximum.
+
+Return matrix. Should match exactly? Might produce slight differences due to floating errors but np.allclose will accept.
+
+Edge cases: N=0? shape (0,D). Then sum_X empty. dot will produce shape (0,0). Works.
+
+Return dtype float64.
+
+Let's produce code. Use numpy import. Provide function.
+
+Also include __all__? Not needed.
+
+Return out. Ensure shape.
+
+We could use np.add.outer or broadcasting.
+
+Implementation:
+
+def pairwise_sq_dist(X):
+    X = np.asarray(X, dtype=np.float64)
+    norms = np.sum(X**2, axis=1)
+    dist = norms[:,None] + norms[None,:] - 2*np.dot(X, X.T)
+    # Numerical errors
+    dist[dist < 0] = 0.0
+    return dist
+
+But careful: For large N, memory of X.dot(X.T) may be large but unavoidable. But we can compute using np.inner for memory? X dot X.T same.
+
+Could use np.einsum('ij,ik->jk', X, X) which is same.
+
+Ok.
+
+Return.
+
+Let's produce file.

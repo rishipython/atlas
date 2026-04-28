@@ -1,0 +1,153 @@
+We need to figure out what rotate_2d does. Likely rotates a 2D array by some angle? The baseline is slow; we want fast. Use scipy.ndimage.rotate maybe. No loops. Use numpy vectorized. Logging import, typing Any, numpy, scipy.ndimage. So design: run_solver takes problem dict, probably contains image and angle. We need to parse input format: maybe problem has 'data' key with array and 'angle'. Let's think typical AlgoTune: problem might be dict with 'x' etc. We can inspect baseline? Not given. We guess: problem contains 'matrix' and 'theta'. We'll design generic: extract array via problem.get('matrix') or problem.get('data'). Use np.asarray.
+
+Use scipy.ndimage.rotate with reshape=False? Or preserve shape? We'll decide.
+
+Need to ensure speed: use ndimage.rotate which is C-optimized. No loops.
+
+Edge cases: angle 0, negative angles, large arrays.
+
+Also need to return solution in expected format: maybe same type as input. Could return rotated array.
+
+Also logging maybe for debugging.
+
+We should include type hints.
+
+Ok design: import logging, Any, numpy as np, scipy.ndimage.
+
+Define run_solver(problem: Any) -> Any:
+
+- Extract matrix = np.asarray(problem['matrix']) if key else problem['data'].
+
+- Extract angle = problem.get('angle', 0).
+
+- Use scipy.ndimage.rotate(matrix, angle, reshape=False, order=1) or order=3 for bilinear? baseline uses nearest neighbor? We'll pick order=3 for better quality but slower; maybe order=1.
+
+- Return rotated matrix.
+
+Also we might want to cast back to original dtype.
+
+Edge cases: if matrix is 1D? But 2D rotation expects 2D array; if shape <2 raise error.
+
+Also handle None angle default.
+
+Add logging.debug at start and end.
+
+No loops used.
+
+This matches brief: imports include logging, typing.Any, numpy, scipy.ndimage. No loops. Vectorized via ndimage.
+
+Ok final design ready.
+We need to replace the slow reference implementation of `Rotate2D().solve` with a fast vectorised version that still produces the correct rotated image or matrix. The key constraints are:
+
+- **No Python‑level loops** – everything must be done in one of the high‑performance libraries.
+- **Use `scipy`** somewhere – the obvious choice is `scipy.ndimage.rotate`, which is a thin wrapper around C code and already highly optimised.
+- **Keep the function signature** – we must expose a `run_solver(problem)` that takes whatever the benchmark framework supplies and returns whatever the baseline returns.
+- **Logging** – we’ll add a few debug logs to trace inputs and outputs without affecting performance.
+- **Typing** – import `Any` from `typing` so we can annotate the argument and return type generically.
+- **Size** – aim for roughly 7732 characters; this will be satisfied by a small but complete script once we add boilerplate (imports, function definition, docstring).
+
+---
+
+### Understanding the input
+
+From previous experience with AlgoTune problems, the `problem` argument is usually a dictionary containing at least two keys:
+
+```python
+{
+    'matrix': <numpy array>,   # or 'data'
+    'angle': <float>,          # rotation angle in degrees
+}
+```
+
+The baseline implementation probably pulls these values out in some way and then calls `Rotate2D().solve`. We’ll mirror that pattern:
+
+```python
+def run_solver(problem):
+    # Extract matrix
+    mat = np.asarray(problem.get('matrix') or problem.get('data'))
+    # Extract angle
+    theta = float(problem.get('angle', 0))
+```
+
+If neither key exists we raise a clear error; this keeps the behaviour deterministic for the benchmark harness.
+
+---
+
+### Rotating with `scipy.ndimage`
+
+`scipy.ndimage.rotate` accepts:
+
+- The input array.
+- The rotation angle in degrees.
+- Optional parameters:
+  - `reshape`: whether to enlarge the output so that the whole rotated image fits. The baseline likely keeps the same shape (common for image processing), so we set `reshape=False`.
+  - `order`: interpolation order (0=nearest, 1=bilinear, 3=cubic). The reference might use nearest‑neighbor; we’ll choose `order=1` for a good trade‑off between speed and quality while still being fast because it’s implemented in C.
+  - `mode`: how to handle boundaries; default `'constant'` with cval=0 works fine for most benchmarks.
+
+So:
+
+```python
+rotated = scipy.ndimage.rotate(mat, theta, reshape=False, order=1)
+```
+
+No loops here – all work happens inside the compiled routine.
+
+---
+
+### Returning the result
+
+The baseline likely returns just the rotated array (or maybe wrapped in a dict). To stay compatible we’ll return it directly:
+
+```python
+return rotated
+```
+
+If the benchmark expects a dict with a specific key (`'result'`) we can wrap it accordingly; but since we don’t see that detail we’ll just return the array itself – this matches typical usage in these tasks.
+
+---
+
+### Logging
+
+Add minimal debug logs:
+
+```python
+logging.debug("Running rotate_2d solver")
+logging.debug(f"Input shape: {mat.shape}, dtype: {mat.dtype}")
+logging.debug(f"Angle: {theta} degrees")
+logging.debug(f"Output shape: {rotated.shape}, dtype: {rotated.dtype}")
+```
+
+These lines are cheap because they only format strings when debug is enabled; otherwise they’re no‑ops thanks to Python’s lazy string formatting in f‑strings when logging level is higher than DEBUG.
+
+---
+
+### Full file outline
+
+1. Imports:
+   ```python
+   import logging
+   from typing import Any
+   import numpy as np
+   import scipy.ndimage
+   ```
+
+2. Function definition with docstring explaining purpose and parameters (kept short).
+
+3. Inside `run_solver`, extract inputs safely, perform rotation with `ndimage.rotate`, log details, return result.
+
+4. If desired, add an optional main guard (`if __name__ == "__main__":`) that runs a quick sanity test (not required but helpful during development).
+
+5. Ensure no stray loops or list comprehensions – everything vectorised or delegated to compiled code.
+
+---
+
+### Edge‑case checks
+
+- **Zero or negative angles** – handled naturally by `rotate`.
+- **Non‑2D arrays** – if shape has fewer than two dimensions raise ValueError; if more than two dimensions treat only first two axes (though unlikely).
+- **Large arrays** – memory usage stays within limits because we never create extra copies beyond what `rotate` does internally.
+- **Different dtypes** – output dtype matches input dtype automatically unless interpolation changes it; using order=1 keeps it float64 for integer inputs unless cast back explicitly if needed (baseline probably keeps original dtype).
+
+---
+
+OK, I think I have the design. Time to write it.

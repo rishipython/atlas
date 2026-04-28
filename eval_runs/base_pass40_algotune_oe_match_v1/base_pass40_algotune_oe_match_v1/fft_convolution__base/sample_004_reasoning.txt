@@ -1,0 +1,66 @@
+We need to produce a fast implementation of FFT convolution. Use numpy. Probably use np.fft.rfft for real signals. But we need to support arbitrary mode. We can implement direct convolution for small sizes. Use np.fft.fft. Use np.fft.fft2? Just 1D.
+
+We need to handle empty signals: if either empty, return empty array.
+
+Implement function:
+
+def fft_convolve(x, y, mode='full'):
+
+- Determine lengths, compute n = next_fast_len(len_x + len_y -1). Use scipy.fft.next_fast_len. But we can approximate.
+
+We have scipy available. Use scipy.fft.fft. We can use scipy.fftpack. But better use numpy.fft.fft.
+
+But we can use scipy.fft.rfft to handle real signals. Use np.fft.rfft. For complex signals, use fft.
+
+But signals are lists of numbers; they could be floats.
+
+We'll implement:
+
+If len_x==0 or len_y==0: return empty array.
+
+If min(len_x, len_y) < threshold (like 64) use np.convolve directly.
+
+Else use FFT: compute n = len_x + len_y -1. next power of two maybe.
+
+Compute X = np.fft.rfft(x, n). Y = np.fft.rfft(y, n). Multiply: Z = X * Y. z = np.fft.irfft(Z, n). Round small errors. Then slice based on mode.
+
+For mode 'full': return z[:n]
+
+For 'same': return z[(n - len_x)//2 : (n - len_x)//2 + len_x] if len_x==len_y? Actually same length as max(len_x, len_y). For general, we can compute start = (len_y -1)//2, end = start + max(len_x, len_y). But easier: Use scipy.signal.fftconvolve for reference. But we want speed. Could compute indices manually.
+
+Better: use np.convolve for small; else use FFT and then compute slice.
+
+Compute full length n. For 'same', we want output length = max(len_x, len_y). Let m = max(len_x, len_y). For full output length n. For same, we need central part: start = (n - m)//2. If n - m is odd, start floor. end = start + m. Return z[start:end].
+
+For 'valid': output length = max(0, len_x - len_y +1) if len_x>=len_y else max(0, len_y - len_x +1). But actual valid length: max(len_x, len_y) - min(len_x, len_y) +1. That equals m - min +1. Let's compute diff = abs(len_x - len_y). valid_len = diff +1? Wait if len_x >= len_y, valid_len = len_x - len_y +1. else len_y - len_x +1. So valid_len = abs(len_x - len_y)+1. For case len_x==len_y, valid_len =1.
+
+Start index for valid: if len_x >= len_y: start = len_y -1. else start = len_x -1. In full array z, start = len_y -1 if x longer. For general, start = min(len_x, len_y)-1? Wait full output indices correspond to n indices from 0 to n-1. The valid convolution corresponds to indices where the kernel fully overlaps. For x length Lx, y length Ly, valid indices: k from Ly-1 to Lx-1 if Lx>=Ly. So start = Ly-1. If Ly > Lx, start = Lx-1. So start = min(Lx, Ly)-1. End = start + valid_len.
+
+Thus implement.
+
+Edge cases: if valid_len <=0 return empty.
+
+Return as list.
+
+Also need to output dict key "convolution" or "result"? The original code uses "convolution". But the problem description says output key "result". But the is_solution expects "convolution". In original code, they used "convolution". So keep same.
+
+Let's implement.
+
+Also we need to use next_fast_len for padding. Use scipy.fft.next_fast_len.
+
+We have scipy.fft. Let's import from scipy.fft import next_fast_len.
+
+Implement threshold 64 maybe.
+
+Also use rfft for real signals. We can check if x and y are real (dtype float). Use np.isrealobj.
+
+We'll use np.fft.rfft for real signals else np.fft.fft.
+
+Implement.
+
+We need to ensure we use numpy arrays. Avoid converting to lists in intermediate.
+
+Return solution dict with "convolution": result.tolist().
+
+Let's code.
+

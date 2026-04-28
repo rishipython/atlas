@@ -1,0 +1,224 @@
+We need to figure out what base64_encoding problem is. Likely given a string, encode to base64? But maybe it's a puzzle: we need to implement solver that given problem dict returns base64 encoding? Let's think: The reference implementation is Base64Encoding().solve(problem). So problem likely contains data. We need to produce efficient vectorized solution. Maybe problem contains a list of integers representing bytes? Or maybe string. We need to produce base64 output. Base64 uses 6-bit groups, mapping to A-Z a-z 0-9 + /. So we can vectorize by converting array of bytes to bits, then reshape into 6-bit groups, map via numpy lookup table.
+
+But we don't know input format. Let's assume problem dict has key 'data' which is a bytes object or list of ints. We need to return string.
+
+Let's design: read bytes from problem['data'] as numpy array of dtype uint8. Pad to multiple of 3 bytes with zeros. Compute 24-bit groups: (b0 << 16) | (b1 << 8) | b2. Then shift right by multiples of 6 and mask 0x3F to get six indices. Map via table array of chars.
+
+We can vectorize using numpy's bitwise operations and reshaping.
+
+Edge cases: padding: if original length mod3==1 -> add two '='; if mod3==2 -> add one '='.
+
+Implement mapping table as np.array(list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/')).astype('U1').
+
+Then produce output by flattening indices and selecting chars, join into string.
+
+Need to handle empty input: return ''.
+
+Performance: use np.packbits? But packbits gives bits not groups. Our approach fine.
+
+Also avoid Python loops: all numpy ops.
+
+We should also consider using np.ndarray.reshape(-1,3) then compute groups vectorized.
+
+Implementation steps:
+
+- data = np.frombuffer(problem['data'], dtype=np.uint8) if bytes else np.array(problem['data'], dtype=np.uint8)
+
+- n = len(data); pad_len = (3 - n%3)%3
+
+- if pad_len>0: pad with zeros: data = np.pad(data, (0,pad_len), 'constant')
+
+- reshape into (-1,3): chunks = data.reshape(-1,3)
+
+- compute 24-bit ints: groups = (chunks[:,0].astype(np.uint32)<<16)|(chunks[:,1].astype(np.uint32)<<8)|chunks[:,2].astype(np.uint32)
+
+- compute six indices: idx0 = (groups>>18)&63; idx1=(groups>>12)&63; idx2=(groups>>6)&63; idx3=groups&63
+
+- stack and flatten: idxs = np.stack([idx0,idx1,idx2,idx3], axis=1).reshape(-1)
+
+- map via table[idxs]
+
+- convert to string via ''.join(map(str, ...)) but better use ''.join(table[idxs]) but table is array of str length1; we can use ''.join(table[idxs]) works because each element is str length1; but join expects iterable of str; we can do ''.join(table[idxs]) fine.
+
+- Add padding: if pad_len==1 -> replace last two chars with '='? Wait base64 padding rules: If original length mod3==1, output two real chars from first group, then two '='. Our method produced four chars per group; for last group we need adjust accordingly. Simpler: after generating string, slice off appropriate number of chars and append '=' accordingly:
+
+If pad_len==1 -> remove last two chars and add '==' ; if pad_len==2 -> remove last char and add '='.
+
+Compute output_len = len(output) ; if pad_len>0: output = output[:-pad_len] + '='*pad_len
+
+But careful: For pad_len=1 original length mod3=2? Wait formula earlier: pad_len = (3 - n%3)%3 gives 0,1,2 where 1 means need one padding byte? Actually if n%3==2 => pad_len=1 ; if n%3==1 => pad_len=2 . So mapping:
+
+if pad_len==1 -> add one '=' at end? Wait check standard: For input length mod 3 == 2 => one byte missing => output has two '='? No standard says if input length mod 3 == 2 => output has one '=' ; if mod 3 == 1 => two '=' . Let's confirm: Example "M" (one byte) -> "TQ==" ; "Ma" (two bytes) -> "TWE=" . So yes:
+
+mod=1 -> '==' ; mod=2 -> '='
+
+Our pad_len computed as (3 - n%3)%3 gives for mod=1 => pad_len=2 ; for mod=2 => pad_len=1 . So we can set paddings accordingly:
+
+if pad_len==2 -> output = output[:-2] + '==' ; elif pad_len==1 -> output = output[:-1] + '='
+
+Ok.
+
+Edge case empty data length=0 => return ''.
+
+Now design final code skeleton:
+
+import numpy as np
+from typing import Any, Dict
+
+def run_solver(problem):
+    data = problem.get('data')
+    # ensure bytes
+    if isinstance(data, str):
+        data_bytes = data.encode()
+    elif isinstance(data, bytes):
+        data_bytes = data
+    else:
+        data_bytes = bytes(data)
+    # vectorized encoding
+    arr = np.frombuffer(data_bytes, dtype=np.uint8)
+    n = arr.size
+    if n == 0:
+        return ''
+    pad_len = (3 - n % 3) % 3
+    if pad_len:
+        arr = np.pad(arr,(0,pad_len),'constant')
+    chunks = arr.reshape(-1,3)
+    groups = (chunks[:,0].astype(np.uint32)<<16)|(chunks[:,1].astype(np.uint32)<<8)|chunks[:,2].astype(np.uint32)
+    idxs = ((groups>>18)&63).astype(np.int32)
+    idxs = np.concatenate([idxs,
+                           ((groups>>12)&63).astype(np.int32),
+                           ((groups>>6)&63).astype(np.int32),
+                           (groups&63).astype(np.int32)])
+    table = np.array(list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'), dtype='U1')
+    encoded_array = table[idxs]
+    encoded_str = ''.join(encoded_array.tolist())
+    # adjust padding
+    if pad_len == 2:
+        encoded_str = encoded_str[:-2] + '=='
+    elif pad_len == 1:
+        encoded_str = encoded_str[:-1] + '='
+    return encoded_str
+
+Return type likely string.
+
+Make sure no python loops except maybe small loops for mapping table creation but that's fine.
+
+Edge cases with large input maybe memory heavy but acceptable.
+
+Also consider using np.packbits? Not needed.
+
+Ok final design ready.
+We need to write a fast Base64 encoder that takes the problem dictionary and returns the correct string without any Python loops. The only thing we’re allowed to do is vectorised NumPy operations – that’s the key speed lever here.
+
+First thing that comes to mind is the classic “group three bytes → four base‑64 characters” trick. If we can get the whole byte stream into a NumPy array of `uint8`, padding it up to a multiple of three is trivial with `np.pad`. Then we reshape into an `(N//3, 3)` view so every row is one chunk of three bytes. From there we just combine the three columns into a single `uint32` per chunk (`(b0<<16)|(b1<<8)|b2`) and pull out the four six‑bit indices by shifting and masking (`>>18`, `>>12`, `>>6`, `& 63`). All those operations are pure NumPy and will hit BLAS‑level performance on large inputs.
+
+The only subtlety is the padding logic at the end. The amount of zero‑bytes we added (`pad_len`) tells us how many “=” signs we need in the final string:
+* If `pad_len` is **2** (original length mod 3 = 1), drop the last two real characters and append `"=="`.
+* If `pad_len` is **1** (original length mod 3 = 2), drop the last real character and append `"="`.
+* If `pad_len` is **0**, nothing changes.
+
+The lookup table from index to character can be a fixed NumPy array created once from the base‑64 alphabet string; indexing that array with our integer indices gives an array of single‑character strings which we simply join into the final result.
+
+We also have to be robust about how the input comes in – it might be a `bytes` object, a UTF‑8 string that needs encoding, or even an iterable of ints. Converting everything with `bytes()` or `.encode()` guarantees we end up with a contiguous buffer that `np.frombuffer` can read directly without copying unnecessarily.
+
+Putting it together:
+
+```python
+import numpy as np
+from typing import Any, Dict
+
+# Base‑64 alphabet as a NumPy array for fast indexing.
+BASE64_TABLE = np.array(
+    list('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'),
+    dtype='U1'
+)
+
+def run_solver(problem: Dict[str, Any]) -> str:
+    """
+    Encode the binary payload in problem['data'] using Base‑64.
+    
+    The payload may be supplied as a bytes object or any iterable that can be
+    turned into bytes.
+    
+    Returns:
+        A standard Base‑64 encoded string.
+    """
+    
+    # Grab the raw payload.
+    payload_raw = problem.get('data')
+    
+    # Normalise it to a bytes buffer.
+    if isinstance(payload_raw, str):
+        payload_bytes = payload_raw.encode()
+    elif isinstance(payload_raw, bytes):
+        payload_bytes = payload_raw
+    else:
+        # Anything else – try converting via bytes().
+        payload_bytes = bytes(payload_raw)
+    
+    # Quick exit for empty input.
+    if not payload_bytes:
+        return ''
+    
+    # Turn into a uint8 array without copying when possible.
+    byte_arr = np.frombuffer(payload_bytes, dtype=np.uint8)
+    
+    # Pad up to a multiple of three so each row represents exactly three input
+    # bytes for later processing.
+    n_bytes   = byte_arr.size
+    pad_needed   = (3 - n_bytes % 3) % 3   # yields 0/1/2
+    
+    if pad_needed:
+        byte_arr = np.pad(byte_arr, (0, pad_needed), mode='constant')
+    
+    # Reshape into rows of three bytes.
+    chunks_abc   = byte_arr.reshape(-1, 3)
+    
+    # Combine each row into a single 24‑bit integer.
+    groups_24bit   =
+        (chunks_abc[:, 0].astype(np.uint32) << 16) |
+        (chunks_abc[:, 1].astype(np.uint32) << 8 ) |
+         chunks_abc[:, 2].astype(np.uint32)
+    
+    # Extract four six‑bit indices per group.
+    idx_a   = ((groups_24bit >> 18) & 63).astype(np.int32)
+    idx_b   = ((groups_24bit >> 12) & 63).astype(np.int32)
+    idx_c   = ((groups_24bit >>   6) & 63).astype(np.int32)
+    idx_d   = ((groups_24bit      ) & 63).astype(np.int32)
+    
+    # Concatenate all indices into one flat vector.
+    flat_indices =
+        np.concatenate([idx_a, idx_b, idx_c, idx_d])
+    
+    # Map indices → characters via the pre‑built lookup table.
+    encoded_chars =
+        BASE64_TABLE[flat_indices]
+    
+    # Join into one string – each element is already a single‑character string.
+```
+
+At this point you have an array like `['T', 'W', 'V', ...]`. Joining them gives the raw Base‑64 representation *without* any padding characters added yet. Now just apply the standard padding rules based on how many zero‑bytes were appended earlier:
+
+```python
+encoded_str =
+     ''.join(encoded_chars.tolist())   # convert array → Python list → str
+    
+# Add back “=” signs where required.
+if pad_needed == 2:
+     encoded_str =
+         encoded_str[:-2] + '=='      # original len % 3 == 1
+elif pad_needed == 1:
+     encoded_str =
+         encoded_str[:-1] + '='       # original len % 3 == 2
+    
+return encoded_str
+```
+
+That’s it – no Python loops at all beyond tiny construction steps that are negligible compared with the bulk vectorised work done by NumPy on large inputs. The algorithm runs in linear time relative to the number of input bytes and uses only O(n) additional memory for intermediate arrays.
+
+Edge cases are handled gracefully:
+* Empty input → empty string.
+* Input already divisible by three → no padding added or stripped.
+* Non‑byte inputs are coerced via `bytes()` so callers don’t have to worry about type mismatches.
+
+OK, I think I have the design. Time to write it.

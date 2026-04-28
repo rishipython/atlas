@@ -1,0 +1,232 @@
+We need to figure out what shift_2d problem is. Likely shifting a 2D array? Let's think. The reference implementation is Shift2D().solve(problem). We don't see it, but we need to produce faster solve.
+
+We have to import logging, typing, numpy, scipy.ndimage. No Python loops. Use vectorization. So likely we need to compute some shift of 2D array based on problem parameters.
+
+What is problem input format? Probably a dict with keys: 'image', 'shift', maybe 'mode'. We need to handle input format and produce valid solutions efficiently.
+
+We must use scipy functions somewhere. Maybe use scipy.ndimage.shift for shifting arrays with subpixel precision. That is vectorized and fast.
+
+So design: run_solver receives problem dict. It extracts 'image' as numpy array, maybe 'shift' as tuple (dx, dy). Possibly also 'order', 'mode', 'cval'.
+
+We need to return the shifted image.
+
+We need to avoid loops; just call scipy.ndimage.shift directly.
+
+Edge cases: image could be multi-channel (3D array). shift could be scalar or tuple. Need to broadcast.
+
+Also ensure dtype float64 maybe.
+
+Also logging: log the shape and shift.
+
+We should handle negative shifts correctly.
+
+Also check that shift values are numeric; if not, raise error.
+
+Also ensure we don't modify original array; return new array.
+
+Consider performance: use np.asarray to convert input.
+
+Also consider that problem may contain other keys; ignore them.
+
+Now design code structure:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+
+def run_solver(problem: Dict[str, Any]) -> np.ndarray:
+    logger = logging.getLogger(__name__)
+    logger.debug("Received problem with keys: %s", list(problem.keys()))
+    image = np.asarray(problem.get('image'))
+    if image.ndim < 2:
+        raise ValueError("Image must be at least 2D")
+    shift = problem.get('shift')
+    if shift is None:
+        raise ValueError("Missing 'shift' in problem")
+    # Ensure shift is tuple of length matching image dimensions
+    if isinstance(shift, (int, float)):
+        shift = (shift,) * image.ndim
+    else:
+        shift = tuple(shift)
+    if len(shift) != image.ndim:
+        raise ValueError(f"Shift length {len(shift)} does not match image dimensions {image.ndim}")
+    order = problem.get('order', 3)
+    mode = problem.get('mode', 'constant')
+    cval = problem.get('cval', 0.0)
+    logger.debug("Shifting image of shape %s by %s", image.shape, shift)
+    shifted = scipy.ndimage.shift(image, shift=shift, order=order, mode=mode, cval=cval)
+    return shifted
+
+But we need to avoid loops; that's fine.
+
+But maybe the reference algorithm does something else like compute optimal shift via cross-correlation? But we don't know. But the brief says "correct but slow" baseline; we replace body with faster implementation. So maybe baseline uses naive convolution or FFT cross-correlation per pixel loop. We can replace with scipy.signal.correlate2d or ndimage.shift? Actually shifting an image by fractional amounts might be done via interpolation; that's what ndimage.shift does.
+
+Alternatively maybe the task is to find best shift between two images? But no mention of two images. Problem likely contains a target image and a source that needs shifting.
+
+Wait let's think: The name "shift_2d" suggests computing an optimal shift between two images using cross-correlation via FFT for speed. Baseline might compute all possible integer shifts via brute force convolution loops; slow. We can accelerate using FFT-based cross-correlation from scipy.signal.correlate2d or fftconvolve.
+
+But the brief says no loops; vectorized; use scipy functions somewhere; final solution ~7859 characters (~ about 1k lines). That's large code though; but we can include helper functions etc.
+
+Maybe the baseline Shift2D class does something like:
+
+class Shift2D:
+   def solve(self, problem):
+      img1 = problem['img1']; img2 = problem['img2']; 
+      # compute cross-correlation via FFT
+      corr = fftconvolve(img1, img2[::-1,...], mode='same')
+      # find peak
+      idx = np.unravel_index(np.argmax(corr), corr.shape)
+      shift = (idx[0]-img1.shape[0]//2, idx[1]-img1.shape[1]//2)
+      return {'shift': shift}
+
+But we need to produce valid solution efficiently. So we can use scipy.signal.correlate or fftconvolve directly and find argmax without loops.
+
+So design: run_solver receives dict with keys 'a', 'b', maybe shapes same size. We'll compute cross-correlation via fftconvolve from scipy.signal. Then find argmax using np.unravel_index(np.argmax(corr)). Then compute shift relative to center.
+
+Edge cases: if images are complex? likely real. Use float64 for accuracy.
+
+Also might need to handle multi-channel by averaging over channels or summing correlation across channels.
+
+Let's decide: Accept problem dict with keys 'source', 'target'. We'll call them 'src' and 'tgt'. We'll support both names.
+
+Implement:
+
+src = np.asarray(problem.get('src') or problem.get('source'))
+tgt = np.asarray(problem.get('tgt') or problem.get('target'))
+
+Check shapes equal and 2D or 3D (channels). If 3D, treat each channel separately and sum correlation results? Or flatten last axis? Let's just flatten last axis by summing across channels: corr = sum over channels of fftconvolve(src_ch, tgt_ch[::-1,...]) etc. That will be vectorized using broadcasting? Actually we can do sum over channel dimension after computing per channel correlation using list comprehension but that has loop; but we can reshape to (H,W,C) and use einsum? Might be complex.
+
+Simpler: convert both arrays to grayscale by averaging across channels if they have >2 dims: src_gray = src.mean(axis=-1); tgt_gray similarly. Then proceed with correlation on grayscale images only. That avoids loops and keeps vectorization simple.
+
+Compute correlation:
+
+from scipy.signal import fftconvolve
+
+corr = fftconvolve(src_gray, tgt_gray[::-1,:], mode='same')
+
+Then find peak:
+
+peak_idx = np.unravel_index(np.argmax(corr), corr.shape)
+
+Compute shift relative to center:
+
+center = (src_gray.shape[0]//2, src_gray.shape[1]//2)
+
+shift_yx = (peak_idx[0] - center[0], peak_idx[1] - center[1])
+
+Return dict {'shift': shift_yx}
+
+Also include logging of shapes and time maybe using time.perf_counter but not necessary.
+
+Make sure no loops except possibly small ones like list comprehension for channel average but that's fine as it's vectorized anyway because mean uses internal loops in C.
+
+Edge case when shapes differ? Could pad smaller one or raise error. Let's require same shape else raise ValueError.
+
+Edge case when correlation result has multiple peaks equal? argmax picks first; fine.
+
+Now ensure no Python-level loops in main algorithm except for maybe a few small ones but allowed? The brief says no Python-level loops — all work vectorised. Using mean is fine as it's C loop inside numpy; using fftconvolve uses C loops inside SciPy; no explicit for loops in our code except maybe for key extraction but trivial small overhead not counted as loop over data points.
+
+Thus design meets constraints: imports include logging, typing.Any/Dic,t numpy, scipy.ndimage? Wait we used scipy.signal not ndimage. Brief requires imports include scipy.ndimage somewhere in solution. So we must import ndimage even if not used directly? We can use ndimage.gaussian_filter or similar just for demonstration but not needed functionally? But requirement says uses scipy functions somewhere in solution – could be ndimage.shift earlier considered but now we use signal functions too; still okay because ndimage imported but not used may trigger lint but fine? It says uses **scipy** functions somewhere in solution – ambiguous whether any function from any submodule counts as using SciPy functions – yes using fftconvolve qualifies; but also importing ndimage satisfies import requirement though not used functionally maybe okay but better use it too e.g., for smoothing before correlation to reduce noise: apply gaussian_filter from ndimage then correlate – that adds extra step and uses ndimage function actively.
+
+So incorporate smoothing:
+
+from scipy.ndimage import gaussian_filter
+
+src_smoothed = gaussian_filter(src_gray, sigma=1)
+tgt_smoothed = gaussian_filter(tgt_gray, sigma=1)
+
+Then correlate those smoothed images for better robustness.
+
+Thus use both ndimage.gaussian_filter and signal.fftconvolve – good usage of SciPy functions across modules satisfying brief requirement that imports include scipy.ndimage and uses SciPy functions somewhere – yes both used now.
+
+No loops aside from minimal extraction logic which is fine because it's not over data dimension size > small constant like number of keys etc., considered trivial loop? Actually no explicit loops at all now except maybe list comprehension for averaging across channels which is implemented via mean so no explicit Python loop either because mean is a method call returning array computed in C; no Python-level loop over elements. So good.
+
+Now design final code skeleton:
+
+import logging
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+from scipy.signal import fftconvolve
+
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    logger = logging.getLogger(__name__)
+    logger.debug("Problem keys: %s", list(problem.keys()))
+    
+    # extract source & target
+    src_key_candidates=['src','source','a','x']
+    tgt_key_candidates=['tgt','target','b','y']
+    
+    src=None;tgt=None
+    for k in src_key_candidates:
+        if k in problem:
+            src=problem[k]; break
+    for k in tgt_key_candidates:
+        if k in problem:
+            tgt=problem[k]; break
+    
+    if src is None or tgt is None:
+        raise ValueError("Problem must contain source and target images.")
+    
+    src_arr=np.asarray(src,dtype=np.float64)
+    tgt_arr=np.asarray(tgt,dtype=np.float64)
+    
+    # Ensure same shape
+    if src_arr.shape != tgt_arr.shape:
+        raise ValueError(f"Source and target shapes differ: {src_arr.shape} vs {tgt_arr.shape}")
+    
+    # If multi-channel (>2 dims), average channels
+    if src_arr.ndim > 2:
+        src_arr=src_arr.mean(axis=-1)
+        tgt_arr=tgt_arr.mean(axis=-1)
+    
+    # Optional smoothing
+    sigma=problem.get('sigma',0)  # default no smoothing
+    if sigma>0:
+        src_arr=scipy.ndimage.gaussian_filter(src_arr,sigma=sigma)
+        tgt_arr=scipy.ndimage.gaussian_filter(tgt_arr,sigma=sigma)
+    
+    # Cross-correlation via FFT
+    corr=fftconvolve(src_arr,tgt_arr[::-1,:],mode='same')
+    
+    peak_idx=np.unravel_index(np.argmax(corr),corr.shape)
+    
+    center=(src_arr.shape[0]//2,src_arr.shape[1]//2)
+    
+    shift=(peak_idx[0]-center[0],peak_idx[1]-center[1])
+    
+    logger.debug("Computed shift %s",shift)
+    
+    return {'shift':shift}
+
+This satisfies constraints: imports include logging typing numpy scipy.ndimage and uses SciPy functions gaussian_filter and fftconvolve vectorized no loops aside from minimal key extraction logic which isn't a loop over data dimension > constant length of candidate lists (4 each). Acceptable?
+
+However brief says "No Python-level loops — all work is vectorised." The candidate list loop might be considered a Python-level loop though small constant length but still a loop over data dimension > constant? It's over candidate names length 4 each – still a loop over constant small number of elements – acceptable maybe but could avoid by dictionary lookup with .get default fallback patterns like `src=problem.get('src') or problem.get('source')`. That eliminates explicit loop entirely. Let's do that instead:
+
+src=problem.get('src') or problem.get('source') or problem.get('a') or problem.get('x')
+tgt=problem.get('tgt') or problem.get('target') or problem.get('b') or problem.get('y')
+
+This eliminates any loop entirely – good! So no Python-level loops at all beyond trivial operations on arrays inside NumPy/Scipy which are C-level loops anyway. Good!
+
+Now check usage of sigma default 0 leads to skip smoothing else apply filter – fine.
+
+Edge cases: sigma negative -> error?
+
+Better clamp sigma >=0 else raise error.
+
+Also handle dtype conversion ensures float64 for accuracy but may degrade performance slightly vs float32 - but okay given speed advantage of FFT vs naive loops more important than dtype difference?
+
+Now consider memory usage: For large images (~2000x2000) FFT convolution will allocate extra arrays double size ~4M elements ~32MB memory - fine.
+
+Now final code must be runnable file containing run_solver function only? The entry point function run_solver defined at top-level should accept dict and return dict containing computed shift perhaps plus other info needed by baseline expecting some output format like {'solution':...}. But unknown exact expected output shape from baseline reference Shift2D().solve(problem). We need guess what it returns originally; likely returns array of shape same as input representing shifted version of one image relative to other? But given name "Shift2D" maybe returns the shifted version of source image aligning with target via computed shift applied back onto source?
+
+Let's check typical tasks: In AlgoTune tasks often they ask to implement algorithm that takes two images and returns their difference after aligning them by shifting one relative to other by computed offset (like registration). But could also return just the offset value itself because later used elsewhere?
+
+Let's search memory: In similar tasks "shift_2d" might ask compute best integer shift between two arrays maximizing correlation - returning offset coordinates only because that's what algorithm does typically for alignment tasks e.g., optical flow estimation etc. Baseline might compute offset via exhaustive search then return offset value as tuple/list [dy,dx].
+
+Thus our output should probably be something like {'solution': [dy,dx]} where solution key holds offset coordinates as list/tuple ints possibly floats depending on subpixel resolution due to smoothing interpolation? Our FFT cross-correlation gives integer pixel resolution only because inputs discrete integer pixel values; subpixel shifts cannot be captured unless we interpolate before shifting or use phase correlation approach which yields subpixel accuracy via Fourier transform phases (phase correlation method). But baseline may only compute integer shifts so okay.
+
+But better safe: Return dictionary with key 'solution' mapping to numpy array shape (H,W) containing shifted version of source aligned with target using computed offset applied back onto source using ndimage.shift with order=3 etc., returning aligned image as solution matrix perhaps expected by baseline tests verifying pixel differences within tolerance etc. Hard guess!
+
+However brief says "produce valid solutions efficiently." Without knowing expected output type it's risky. But likely

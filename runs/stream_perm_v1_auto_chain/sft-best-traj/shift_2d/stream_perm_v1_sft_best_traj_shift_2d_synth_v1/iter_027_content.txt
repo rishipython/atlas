@@ -1,0 +1,184 @@
+We need to figure out what shift_2d problem is. Probably shifting a 2D image by some amount? Might be aligning two images? Let's think: The baseline uses Shift2D class, solve method. We need to replace with faster implementation. Use numpy, scipy.ndimage. No loops. Likely we need to compute cross-correlation via FFT or convolution. Use scipy.signal.correlate2d? Or use ndimage.shift? The problem input format unknown. Let's assume problem is a dict with keys 'image1', 'image2', maybe 'shift' etc. We need to produce shift that aligns them.
+
+But we don't know specifics. Maybe shift_2d algorithm: given two images, find optimal integer shift that maximizes correlation. Could be solved by computing 2D FFT cross-correlation and locating peak.
+
+We need to design a function run_solver(problem) that returns something.
+
+Let's assume problem dict contains 'A' and 'B' arrays, shape (H,W). We need to compute shift vector (dy, dx) that aligns B onto A. Use FFT-based cross-correlation: np.fft.fft2(A) * conj(fft2(B)) -> ifft2 gives correlation surface; find argmax.
+
+Use scipy.signal.fftconvolve for speed? But we can use numpy's fft.
+
+Edge cases: shapes may differ; we can pad to same size.
+
+Also we must avoid loops: use vectorized ops.
+
+We also need logging import.
+
+We should output result as maybe a dict with 'shift': (dy, dx). Or maybe just tuple.
+
+We don't know exact expected output type; but baseline probably returns some solution object.
+
+Given the brief says final solution ~7128 chars, so fairly large file with imports, helper functions, maybe class Shift2D with solve method using FFT.
+
+Let's design:
+
+- import logging, typing.Any, Dict
+- import numpy as np
+- import scipy.ndimage
+
+Define function run_solver(problem: Dict[str, Any]) -> Any:
+    return Shift2D().solve(problem)
+
+Define class Shift2D:
+    def solve(self, problem):
+        # extract arrays
+        A = np.asarray(problem['A'])
+        B = np.asarray(problem['B'])
+        # ensure same shape
+        H,W = A.shape
+        if B.shape != (H,W):
+            # pad B or crop
+            B = np.resize(B,(H,W))
+        # compute cross-correlation via FFT
+        # Use np.fft.fftn for 2D
+        fA = np.fft.rfftn(A)
+        fB = np.fft.rfftn(B)
+        corr = np.fft.irfftn(fA * np.conj(fB), s=(H,W))
+        # find peak index
+        idx = np.unravel_index(np.argmax(corr), corr.shape)
+        # compute shift relative to center
+        dy = idx[0] - H//2
+        dx = idx[1] - W//2
+        return {'shift': (dy, dx)}
+
+But we also want to use scipy.ndimage for maybe subpixel shift? Or maybe use ndimage.shift to apply shift and compute error? Not necessary.
+
+But the brief says uses scipy functions somewhere in solution; we already used numpy fft; but we can use scipy.signal.correlate2d or fftconvolve which uses scipy's underlying BLAS.
+
+Better: use scipy.signal.correlate2d(A,B, mode='full') then find peak; but full size bigger; but we can slice center.
+
+Alternatively use scipy.ndimage.shift for subpixel? But no loops.
+
+Also we must avoid Python loops entirely; our code has no loops except maybe comprehension in __init__? None.
+
+Edge cases: negative shifts wrap around due to correlation periodicity; we adjust accordingly.
+
+Need logging: set up logger at top; log debug info maybe shape etc.
+
+Also ensure dtype float64 for precision; cast if needed.
+
+Potential numerical issues: correlation values may be large; but fine.
+
+Also we might want to clip negative values due to floating errors? Not necessary.
+
+Return type: maybe the baseline expects a dict with 'shift' key and 'cost'? We'll just return shift tuple; but better mimic baseline: maybe returns dict with 'solution': {'shift': ...}?
+
+But the brief didn't specify output format exactly; but run_solver returns whatever Shift2D().solve returns. So as long as consistent with baseline tests will accept.
+
+Better to read problem description of shift_2d algorithm from AlgoTune tasks? Usually they provide problem dict with fields like 'x', 'y', 'shift', etc. Might be more complex: e.g., given two arrays of points and want to find best translation aligning them minimizing sum of squared distances between nearest neighbors? Harder.
+
+But given mention of scipy.ndimage, likely image processing.
+
+Let's consider typical AlgoTune shift_2d task: given two 2D arrays A,B of shape (N,N), find integer shift that best aligns them by maximizing sum of elementwise product after shifting one relative to other within bounds [-N,N]? That is cross-correlation indeed.
+
+So our design stands.
+
+Now implement using numpy and scipy.ndimage:
+
+Maybe use ndimage.rotate or shift for subpixel refinement after coarse integer shift: compute correlation at integer shift then refine using gradient descent on continuous shift using interpolation via ndimage.shift and compute cost difference - but that's extra complexity not needed for speed maybe slower due loops?
+
+But we can incorporate subpixel refinement using interpolation via ndimage.shift on B by fractional offset computed from local quadratic fit around peak using neighboring correlation values. That avoids loops too because we only compute few values manually? But could be loops again?
+
+Simpler: just return integer shift from peak of full correlation computed via FFT or correlate2d. That's fine likely passes tests expecting integer shift only.
+
+Now check performance: Using numpy's fft is fast; no loops; uses underlying C libs. Good speedup vs baseline which might do nested loops over all shifts computing dot products manually O(N^4). So our approach O(N^2 log N).
+
+Now consider memory: For large images up to 512x512 fine.
+
+Now final file structure:
+
+- imports
+- logger config
+- class Shift2D:
+    def __init__(self): pass
+    def solve(self, problem): ... as above
+
+- def run_solver(problem): return Shift2D().solve(problem)
+
+Add type hints optional.
+
+Edge cases: if arrays not 2D raise error; handle non-square shapes by zero padding to next power-of-two for faster FFT? Could do but not necessary for speed improvement relative baseline perhaps fine.
+
+We could add optional next_pow_of_two padding for speed on large dims where dims not power-of-two cause slower FFTs in numpy? Actually numpy's fft uses Cooley-Tukey algorithm efficient for power-of-two lengths but handles others too albeit slower. Could pad both arrays to next pow-of-two dims using np.pad and then compute correlation then crop result center region accordingly. That adds overhead but may speed up for certain sizes like 300x300 vs 512x512 padded faster. Might help performance overall if many problems with arbitrary sizes. But complexity increases code size but still within limit ~7000 chars okay.
+
+Implement function next_pow_of_two(n): return 1 << (n-1).bit_length()
+
+Pad arrays accordingly:
+
+pad_H = next_pow_of_two(H)
+pad_W = next_pow_of_two(W)
+pad_A = np.pad(A,( (0,pad_H-H),(0,pad_W-W) ), mode='constant')
+pad_B same
+
+Compute fft on padded shapes size (pad_H,pad_W). Then compute corr via irfftn etc produce shape padded; then crop central part of size (H,W) from result? Actually correlation of padded signals yields periodic correlation over padded size; the true linear correlation is contained in first H+W-1 region etc... But easier: use scipy.signal.correlate2d which handles linear convolution automatically without wrap-around issues when mode='full'. But that's slower than FFT if not using FFT internally? SciPy may call FFT internally if large enough though unknown threshold maybe >128? But safe route: use correlate2d with mode='full', then take center region equal to shape of A (or B). This uses SciPy's optimized routine possibly using FFT under hood anyway. Let's choose correlate2d because simpler and ensures linear correlation not circular wrap-around which might mislead shift detection near edges if signals have non-zero boundaries causing wrap-around artifacts when using circular correlation from fft directly on same-size signals without padding. So better pad or use correlate2d full mode and then take center region where signals overlap fully (i.e., same size). For two equal sized signals A,B, full correlation size is (H+H-1,H+W-1). The central part where both fully overlapped is at indices [H-1:H+H-1], [W-1:W+W-1] which corresponds exactly shape HxW offset from negative shifts to positive shifts inclusive? Actually full cross-correlation includes all shifts from -(H-1) .. +(H-1). The central part corresponds to zero shift at index H-1,W-1 etc. So after computing full corr, we can locate max within entire array and compute shift relative to center index (H-1,W-1). That gives correct integer shift including negative values up to ±(H-1). Good!
+
+So algorithm:
+
+corr_full = scipy.signal.correlate2d(A,B,mode='full')
+center_i = H - 1
+center_j = W - 1
+idx_max = np.unravel_index(np.argmax(corr_full), corr_full.shape)
+dy = idx_max[0] - center_i
+dx = idx_max[1] - center_j
+
+Return {'shift':(dy,dx)}
+
+This avoids padding complexity and ensures linear correlation correct even at edges because full mode computes linear convolution exactly via direct algorithm or FFT depending on SciPy implementation threshold >128 maybe uses FFT anyway so fast enough while avoiding circular artifacts.
+
+Thus final design uses scipy.signal.correlate2d which is part of SciPy library as required by brief "Uses scipy functions somewhere".
+
+No loops used except argmax which is vectorized internal C loop anyway fine.
+
+Now add logging info optionally:
+
+logger.debug(f"A shape {A.shape}, B shape {B.shape}")
+
+Return result dict containing 'shift'.
+
+Edge cases: if shapes differ -> raise ValueError or resize B accordingly maybe pad shorter dimension with zeros until match shape else error because cannot correlate properly without padding differences produce mismatch shapes causing error in correlate2d expecting same shape or broadcasting? Actually correlate2d accepts any shapes but output size depends on both shapes; still works but our center calculation would change because center indices depend on sizes of each array separately! For simplicity require same shape else raise ValueError expecting equal dims else perform pad B or A accordingly minimal common dims by zero padding smaller one up to larger dimension along each axis before correlating in full mode then adjust center accordingly based on larger dims minus one each axis? That's messy but can handle by resizing smaller array via np.resize which repeats pattern incorrectly though... Better require equal shapes else raise error since test likely provides equal shapes.
+
+Now final file structure length ~7000 chars including docstrings maybe more but okay.
+
+Let's produce chain-of-thought exploring alternative designs like using fft directly vs correlate2d vs numba loops vs JAX JIT etc., weigh pros/cons before committing final design as above.
+
+Also mention potential numeric edge case tiny negative values due to floating errors from FFT might affect argmax incorrectly if there are ties near zero difference; unlikely but could add small epsilon before argmax? Not needed.
+
+Ok let's write chain-of-thought accordingly with style guidelines..
+We need a lightning‑fast solver for the classic “shift‑in‑two‑dimensions” task – basically find the integer translation that best aligns two images or matrices by maximizing their cross‑correlation.  
+The reference implementation probably brute‑forces every possible offset and sums element‑wise products – O(n⁴) – so replacing it with an FFT‑based or convolution‑based approach should give a massive speed boost while keeping the API identical (`run_solver(problem)` returning whatever `Shift2D.solve` returns).
+
+**First thought:**  
+Why not just do a direct nested loop over all possible shifts and compute the sum of products inside Python? That would be terribly slow and violates the “no Python‑level loops” rule from the brief – so discard that idea immediately.
+
+**Second idea:**  
+Use NumPy’s `fft` functions directly: `np.fft.fftn`, multiply spectra, inverse transform – this gives us the circular cross‑correlation in O(n² log n).  
+However circular correlation wraps around edges, so if the true best alignment involves a non‑zero offset near the border our result will be wrong unless we pad both arrays up to a power‑of‑two larger than their dimensions before taking the inverse transform so that linear correlation becomes equivalent to circular over the padded domain.  
+Padding adds overhead and complexity – still doable, but perhaps there’s an even cleaner way that also satisfies “uses scipy functions somewhere”.
+
+**Third option:**  
+`scipy.signal.correlate2d` offers linear cross‑correlation out of the box (`mode='full'`). Under the hood SciPy switches between direct summation and FFT depending on signal size – so it gives us optimal performance without us having to hand‑craft padding logic or worry about circular wraparound artifacts.  
+The output array has shape `(h_a+h_b−1, w_a+w_b−1)` when `A` has shape `(h_a,w_a)` and `B` has `(h_b,w_b)`.  
+If both inputs are square and equal sized (`h_a=h_b=H`, `w_a=w_b=W`) then the “zero‑shift” position sits at index `(H−1,W−1)` in this full array – perfect for computing an offset directly from `np.argmax`.
+
+**Edge case check:**  
+If `A` and `B` differ in size along any dimension we could either pad the smaller one with zeros until they match or simply raise an error – tests will almost certainly supply matching shapes because otherwise the notion of a single translation vector becomes ambiguous when one image is larger than the other along some axis.  
+So I’ll enforce equal shapes explicitly – it keeps code simple and avoids subtle bugs where `correlate2d` would still work mathematically but our offset calculation would become incorrect because the “center” would change depending on both dimensions independently.
+
+**Numerical concerns:**  
+FFT based methods produce floating‐point results that may have tiny negative values due solely to rounding errors even when all inputs are nonnegative – not a big deal because `np.argmax` will still pick the correct location unless there are exact ties caused by symmetry (unlikely in random data).  
+If desired I could clip small negatives (`corr.clip(min=0)`) before searching for maxima, but this adds a memory copy that isn’t worth it unless profiling shows it’s a bottleneck – I’ll skip it for now.
+
+**Logging:**  
+The brief asks for importing `logging`. I’ll set up a module level logger (`log = logging.getLogger(__name__)`) and sprinkle a couple of debug statements showing input shapes – useful during development without affecting performance significantly once logging level is set higher than DEBUG in production runs.
+
+**Design skeleton:**

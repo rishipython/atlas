@@ -1,0 +1,32 @@
+We need to produce faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to import. Let's use scipy.signal.fftconvolve. But to be safe maybe not rely on scipy if not available? The instructions allow. We'll use scipy.signal.fftconvolve.
+
+But we also need to maintain dtype float64. Use np.fft.fft to compute.
+
+Implementation: compute next power of two length L = N+M-1, then zero-pad to next power of two maybe for speed but not necessary. But we can just compute convolution via fft of length Lp = 2**ceil(log2(L)). Use np.fft.rfft? Use np.fft.fft.
+
+Simpler: use scipy.signal.fftconvolve(x, h, mode='full'). It handles dtype. But to avoid extra dependency, we can implement ourselves.
+
+Let's implement:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    n = x.shape[0]
+    m = h.shape[0]
+    size = n + m - 1
+    # next power of two
+    Nfft = 1 << (size-1).bit_length()
+    X = np.fft.rfft(x, Nfft)
+    H = np.fft.rfft(h, Nfft)
+    y = np.fft.irfft(X * H, Nfft)
+    return y[:size]
+
+This uses real FFT, efficient.
+
+Need to import numpy. Provide function.
+
+Also ensure that shape of x/h is 1-D. Accept.
+
+Edge cases: if one array empty? But length >0 likely.
+
+Let's produce final code.

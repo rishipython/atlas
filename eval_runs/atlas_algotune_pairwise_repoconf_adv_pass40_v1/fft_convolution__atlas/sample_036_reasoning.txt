@@ -1,0 +1,33 @@
+We need to produce efficient implementation of 1D convolution. Use numpy. We can use scipy.signal.fftconvolve but maybe not available? But allowed to import scipy. Let's implement using numpy FFT. Steps: compute next power of two length >= N+M-1. Use np.fft.rfft for real signals. Use rfft of length L. Multiply element-wise. Inverse rfft. Then truncate to length N+M-1. Ensure dtype float64. Use np.fft.rfftn? For 1D use rfft. Implementation:
+
+def conv1d(x,h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    L = 1 << (N + M - 1 - 1).bit_length()  # next power of 2
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+
+But we need to ensure memory. For large arrays, this is fine.
+
+Edge cases: if N+M-1 <= 1? But arrays at least length 1.
+
+Return dtype float64. Should be okay.
+
+Also could use np.fft.fft if want general but rfft is efficient.
+
+Return y.
+
+Test with small arrays: compare to np.convolve.
+
+Will produce accurate results.
+
+Now produce full file.
+
+Let's include import numpy as np. Optionally import scipy? Not needed.
+
+Thus produce code.
+

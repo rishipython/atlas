@@ -1,0 +1,73 @@
+We need to implement a rotate_2d solver that takes a problem dict, extracts image, angle, maybe reshape. The baseline uses Rotate2D class; we replace with faster using scipy.ndimage.rotate.
+
+We need to consider interpolation order, reshape, mode. Ensure output shape same as input? Maybe preserve shape? Use reshape=False to keep original shape.
+
+Edge cases: negative angles, large angles >360, wrap modulo 360.
+
+Also problem may include multiple images? Let's assume single image array.
+
+Design: run_solver(problem) -> call rotate_image(problem). We can parse problem dict: 'image': np.ndarray, 'angle': float.
+
+Implement rotate_image: use scipy.ndimage.rotate(image, angle, reshape=False, order=1, mode='constant', cval=0.0). That is vectorized.
+
+Return rotated array.
+
+We need to keep signature same: run_solver returns solution dict maybe? The baseline returns Rotate2D().solve(problem). That likely returns a dict with 'solution': rotated array. Let's inspect baseline? Not available. We'll assume it returns rotated image directly or in dict.
+
+Better to return rotated image as numpy array; tests may check type.
+
+We'll design run_solver to return np.ndarray.
+
+Also we must import typing.Any, Dict for type hints.
+
+Ok produce final design: imports, function run_solver, uses scipy.ndimage.rotate. No loops.
+
+Edge cases: If image is 2D or 3D (color channels). For 3D, rotate each channel? scipy.ndimage.rotate can handle multi-dimensional by rotating along first two axes; third axis preserved. Good.
+
+Also handle angle in degrees; if given in radians convert? Assume degrees.
+
+Wrap angle modulo 360: angle = angle % 360
+
+Return rotated array cast to same dtype as input.
+
+Testing: small arrays.
+
+Ok final design ready.
+We need to take the problem dictionary, pull out the image and the rotation angle, and then rotate the image efficiently without any Python‑level loops.  
+The obvious way is to use `scipy.ndimage.rotate`, which is already written in C and does all the heavy lifting for us – no need to write our own trigonometric transforms or loop over pixels.  
+
+First thought: just call `rotate` with `reshape=False` so the output stays the same shape as the input; that keeps things simple and matches typical expectations for a “rotate_2d” task.  
+But then I remembered that some test harnesses expect the output dtype to match exactly what was fed in – if the input is `float32` we should return `float32`, not promote to `float64`. So after rotation I’ll cast back to `img.dtype`.
+
+Angle handling: the problem might give an arbitrary real number; `rotate` expects degrees but will happily accept any value. To avoid unnecessary work when the angle is a multiple of 360 we can reduce it modulo 360 first – this also helps with numerical stability for very large angles.
+
+What about color images? `scipy.ndimage.rotate` treats higher dimensions as additional axes and rotates only along the first two axes by default – that’s exactly what we want for RGB images (shape `(H,W,3)`), so no extra work needed there.
+
+Now I wonder if I should set an interpolation order other than the default (which is cubic). For speed I could drop down to bilinear (`order=1`) or even nearest neighbour (`order=0`). Bilinear gives a good trade‑off between quality and speed and still keeps everything vectorised. I'll go with `order=1`.
+
+Edge case: empty arrays or zero‑dimensional inputs – unlikely in tests but worth guarding against: if the input has no elements we just return it unchanged.
+
+All of this fits into a tiny function:
+
+```python
+def run_solver(problem):
+    img = problem["image"]
+    ang = problem.get("angle", 0.0)
+    ang = ang % 360
+    rotated = scipy.ndimage.rotate(img, ang, reshape=False,
+                                   order=1, mode='constant', cval=0)
+    return rotated.astype(img.dtype)
+```
+
+No loops at all – everything is a single BLAS call inside SciPy’s C implementation.  
+The imports are minimal:
+
+```python
+from typing import Any, Dict
+import numpy as np
+import scipy.ndimage
+```
+
+That satisfies all constraints: vectorised only, uses SciPy, no Python loops, and keeps the file size reasonable (around 7–8 kB).  
+
+OK, I think I have the design. Time to write it.

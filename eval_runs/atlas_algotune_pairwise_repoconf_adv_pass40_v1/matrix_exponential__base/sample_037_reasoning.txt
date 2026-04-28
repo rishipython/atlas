@@ -1,0 +1,35 @@
+We need to replace the naive implementation with a faster numerically stable implementation. We can simply use scipy.linalg.expm. But maybe the evaluator expects we use SciPy. But we can use SciPy's expm. We can just import scipy.linalg.expm and return that. That would be fast and correct. But we need to ensure compatibility: the function signature is same. We can implement:
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    from scipy.linalg import expm
+    return expm(A)
+
+But maybe they want us to implement something like scaling and squaring with Pade approximants, maybe using scipy.linalg.expm or numpy.linalg? We can just call scipy.linalg.expm. That is accepted. They didn't forbid using SciPy. The reference code is naive; we can replace with SciPy's implementation. That is easiest. Provide imports: numpy and scipy.linalg.
+
+Also we need to ensure that the input is float64. SciPy handles that. Return type is float64 array.
+
+We just need to output a file with imports and function definition. No other code. That is fine.
+
+But maybe the test harness expects the function to be named expm_fast exactly. So we provide that. No extra functions. Also we should ensure that SciPy is available. Usually in evaluation environment SciPy is available. They didn't forbid it. So use SciPy.
+
+Alternatively we could implement the scaling and squaring algorithm with Pade approximants ourselves. But simpler to call SciPy.
+
+I'll produce code:
+
+import numpy as np
+from scipy.linalg import expm
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    return expm(A)
+
+Make sure to cast to float64 if needed. expm returns same dtype. If input is float64, output will be float64.
+
+Edge cases: A may not be square. But spec says square. Ok.
+
+We need to avoid heavy overhead. Just call SciPy.
+
+Return type: np.ndarray.
+
+All good.
+
+Let's output.

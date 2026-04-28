@@ -1,0 +1,126 @@
+We need to take whatever the `problem` dictionary gives us – presumably an image or a 2D array and a pair of shift coordinates – and return the shifted result as fast as possible while staying faithful to the baseline semantics. The baseline `Shift2D().solve` probably does something like parse the input into a NumPy array, perform a 2‑D shift (maybe with interpolation), then pack the result back into a dictionary or similar structure. The key is that the baseline is correct but slow because it probably loops over pixels or uses a naive implementation in pure Python or slow SciPy routines without leveraging vectorised operations fully.
+
+Let’s list out what we know from the brief:
+
+- We must import `logging`, `random`, `typing.Any`, `typing.Dict`, `numpy as np`, and `scipy.ndimage`.  
+- No Python‑level loops – everything has to be vectorised.
+- The final solution should be about 7258 characters long (including imports).  
+- We have access to JAX/Numba/Scipy etc., but the brief specifically wants us to use SciPy somewhere.
+  
+Given that constraint I’m leaning toward using `scipy.ndimage.shift` directly because it’s already highly optimised in C/C++ under the hood, handles sub‑pixel shifts via spline interpolation (by default cubic), supports boundary modes (`constant`, `nearest`, etc.), and is fully vectorised – no Python loops at all. It also gives us an easy way to specify the amount of shift along each axis via a tuple `(shift_y, shift_x)` which matches how most problems describe a 2‑D displacement field.
+
+But before locking into that I should consider alternatives:
+
+1. **Pure NumPy roll + linear interpolation**  
+   We could do an integer roll using `np.roll` and then apply a fractional offset via convolution with a small kernel (e.g., bilinear weights). That would avoid SciPy entirely but would require manual implementation of interpolation which is error‑prone and likely slower than SciPy’s optimized routines anyway because each pixel would still have Python‑level logic unless fully vectorised across the whole image – which is possible but more complicated than simply calling `ndimage.shift`. Also handling boundary conditions would be tricky – we'd have to decide on padding strategy manually (`mode='constant'` vs `'nearest'`).  
+
+2. **FFT‑based phase multiplication**  
+   A classic trick for sub‑pixel shifting is multiplying the Fourier transform by a linear phase ramp:  
+   ```python
+   F = np.fft.rfft2(img)
+   u = np.arange(img.shape[1]) / img.shape[1]
+   v = np.arange(img.shape[0]) / img.shape[0]
+   phase = np.exp(-2j*np.pi*(u*dx + v[:,None]*dy))
+   img_shifted = np.real(np.fft.irfft2(F * phase))
+   ```  
+   This approach is O(N log N) and can be very fast on large images if you already have FFT plans cached (e.g., via PyFFTW). However there are several pitfalls:
+   - It assumes periodic boundary conditions – any non‑periodic content will wrap around incorrectly unless you pad first.
+   - Padding introduces extra memory overhead and additional FFTs if you want true zero padding outside the original support.
+   - For small images or modest shifts this overhead might outweigh any speed benefit.
+   - Also implementing this correctly requires careful handling of frequency grids (`np.meshgrid`) and ensuring shapes match up.
+   
+3. **Numba JIT compiled loops**  
+   One could write a JIT‑compiled function that iterates over pixels in C‑style loops inside Numba’s `@njit`. This eliminates Python overhead entirely and can achieve near‑C performance while still allowing arbitrary interpolation logic inside the loop (e.g., bilinear). The downside:
+   - Still effectively a loop at C level – though JIT compiled it’s fast.
+   - Requires careful management of bounds checks (`nopython=True`).
+   - Slightly more complex code than calling an existing SciPy routine.
+   
+4. **Using JAX**  
+   With JAX you could write a pure functional implementation that gets JIT compiled on GPU/CPU automatically via XLA. However setting up JAX kernels for arbitrary shapes can be overkill here; plus JAX doesn’t provide an out‑of‑the‑box subpixel shifting routine analogous to `ndimage.shift`. You’d end up writing your own interpolation logic anyway.
+   
+5. **scipy.signal.wiener or convolve**  
+   Not relevant – those are filtering functions rather than shifting.
+   
+After weighing these options I think sticking with `scipy.ndimage.shift` is both simplest and fastest given our constraints:
+
+- It already lives in SciPy which satisfies “Uses scipy functions somewhere”.
+- It’s fully vectorised – no Python loops.
+- It handles fractional shifts via spline interpolation internally (order defaults to 3).
+- Boundary handling is straightforward (`mode='constant'`, `cval=0` gives zero padding).
+- The API is simple: one function call with `(shift_y, shift_x)` tuple.
+  
+Now let’s think about how exactly the input will look like:
+
+The baseline class probably expects something like:
+
+```python
+class Shift2D:
+    def solve(self, problem):
+        # problem['input'] -> numpy array
+        # problem['shift'] -> tuple/list [dy, dx]
+        ...
+```
+
+So our `run_solver(problem)` function should simply delegate:
+
+```python
+def run_solver(problem):
+    return Shift2D().solve(problem)
+```
+
+But since we’re rewriting `Shift2D.solve`, we’ll keep that structure unchanged – just replace its body with our new implementation that uses SciPy directly instead of whatever slower method was there before.
+
+Edge cases I must consider:
+
+1. **Non‑numeric input**  
+   If someone passes something that's not convertible to float64 (e.g., string), NumPy will raise an error – acceptable because baseline likely does same.
+   
+2. **Shift values beyond bounds**  
+   If `dy` or `dx` are larger than image dimensions, ndimage.shift will still work – it will fill everything with zeros if mode='constant'. This matches typical expectations.
+   
+3. **Negative shifts**  
+   Works fine – just reverse direction.
+   
+4. **Multi‑channel images**  
+   If input has shape `(H,W,C)`, ndimage.shift works on each channel independently when axis argument not specified? Actually ndimage.shift operates on all axes unless you specify axes explicitly; if you pass shape `(H,W,C)` it will treat C as another axis too! That would cause shifting along channel dimension incorrectly if C>1 (which is unlikely for typical images). To guard against this we could detect if input has 3 dimensions where last dimension >1 and treat it as channels by moving axes so that spatial dims are first two axes only:
+   
+```python
+if img.ndim == 3:
+    # Assume last dim channels
+    img_spatial = img[..., :].transpose((2,0,1)) # shape (C,H,W)
+    shifted = []
+    for c in range(img_spatial.shape[0]):
+        shifted.append(ndimage.shift(img_spatial[c], shift=(dy, dx), order=1,
+                                     mode='constant', cval=0))
+    img_shifted = np.stack(shifted).transpose((1,2,0))
+```
+   
+But this introduces a loop over channels! However channels are usually few (<4) so overhead negligible compared to full image processing; still violates “no Python-level loops” rule though loop over channels might be acceptable if considered trivial? Better avoid loops altogether by reshaping into 4-D shape where spatial dims are last two axes and channel dimension remains separate:
+
+```python
+if img.ndim == 3:
+    # reshape so that spatial dims are last two
+    img_reshaped = img.reshape(-1) ??? 
+```
+
+Actually easier: Use SciPy's ability to specify axes argument so it only shifts along first two axes while leaving others untouched:
+
+```python
+ndimage.shift(img_spatial[c], ...) 
+```
+
+But again loop over channels... Could instead use SciPy's ability to pass multi-dimensional arrays where only specified axes are shifted: e.g.,
+
+```python
+ndimage.shift(img_spatial.reshape(C,H,W), shift=(dy,dx), axes=(1,2))
+```
+
+But I'm not sure if ndimage supports axes argument like that? Checking docs: yes there is an `axes` parameter where you can specify which axes are affected by shifting when passing an integer or tuple of ints along with shift tuple matching those axes lengths? Actually signature is `ndimage.shift(input, shift=None,... )`. The shift argument can be scalar or sequence same length as input shape; if shorter than number of dimensions then it's applied starting from last axis backwards (?) I'm fuzzy here... Might just pass full-length sequence e.g., `(dy,dx)*C`?? That would apply same shift along all dims including channel dim incorrectly again.
+
+Simplest robust approach: assume single channel images only – typical in algorithmic tasks unless otherwise specified – so skip channel handling entirely for now; mention assumption in comments so future maintainers know what happened if they feed multi-channel data unexpectedly they'd get wrong result but baseline likely didn't either.
+
+5. **Data type**  
+   Ensure output dtype matches input dtype or at least float64 – baseline likely returns float64 anyway due to interpolation producing floats even from ints.
+
+6. **Performance measurement**  
+   Using ndimage.shift on large arrays (~1024x1024) should take <10 ms on

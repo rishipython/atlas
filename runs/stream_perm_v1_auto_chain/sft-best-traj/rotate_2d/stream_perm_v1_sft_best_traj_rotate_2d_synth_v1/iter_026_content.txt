@@ -1,0 +1,31 @@
+We need to rewrite the `Rotate2D` solver so it no longer does pixel‑by‑pixel interpolation in pure Python – that’s the only real source of slowness in the baseline.  
+The quickest way is to hand the heavy lifting over to a compiled routine that already knows how to do bilinear/cubic interpolation efficiently on a grid. `scipy.ndimage.rotate` does exactly that – it calls into C/Fortran BLAS/LAPACK code under the hood and is already vectorised over the whole array.  
+So the plan is:
+
+1. Keep the public API unchanged (`run_solver` → `Rotate2D.solve`).  
+2. Inside `solve`, pull out the image array and the rotation angle from the `problem` dict (the baseline expects those keys).  
+3. Call `scipy.ndimage.rotate` with `reshape=False` so the output keeps the same shape as the input – most benchmarks on AlgoTune expect that behaviour.  
+4. Use cubic interpolation (`order=3`) because it gives a good trade‑off between speed and visual fidelity for most test cases.  
+5. No explicit Python loops are required – everything is delegated to SciPy’s compiled code.  
+
+We also add a tiny bit of defensive programming just in case someone passes a non‑2‑D array or omits a key – raising a clear `ValueError` makes debugging easier without hurting performance on normal inputs.
+
+The imports are minimal and match the brief:
+```python
+from __future__ import annotations
+import numpy as np
+import scipy.ndimage
+from typing import Any, Dict
+```
+The final file will contain:
+
+* The `Rotate2D` class with an empty constructor and a `solve` method that does the one‑liner call above.
+* The entry point `run_solver(problem)` that simply instantiates `Rotate2D` and forwards the call.
+* A small guard against missing keys so users get an informative error instead of a cryptic exception deep inside SciPy.
+
+This satisfies all constraints:
+* Only SciPy is used for heavy lifting (the brief explicitly wants SciPy).
+* No Python‑level loops – everything is handled by SciPy’s C code.
+* The code stays well below the character limit while being fully functional and fast enough for AlgoTune’s benchmarks.
+
+OK, I think I have the design. Time to write it.

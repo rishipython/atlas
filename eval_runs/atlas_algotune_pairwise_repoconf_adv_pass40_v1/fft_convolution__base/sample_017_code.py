@@ -1,0 +1,29 @@
+import numpy as np
+
+
+def conv1d(x: np.ndarray, h: np.ndarray) -> np.ndarray:
+    """Return ``np.convolve(x, h, mode='full')`` but MUCH faster."""
+    # Ensure float64 input
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+
+    N, M = x.size, h.size
+    L = N + M - 1  # desired output length
+
+    if L == 0:
+        return np.empty(0, dtype=np.float64)
+
+    # Choose FFT length as next power of two >= L for speed
+    nfft = 1 << (L - 1).bit_length()
+
+    # Use real FFT for efficiency
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+
+    # Element‑wise multiplication in frequency domain
+    Y = X * H
+
+    # Inverse FFT and truncate to desired length
+    y = np.fft.irfft(Y, nfft)[:L]
+
+    return y

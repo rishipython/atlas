@@ -1,0 +1,47 @@
+We need to replace body with faster implementation. Use numpy's FFT convolution. Need to ensure same result. Use np.fft.fft with proper length. We need to handle arbitrary lengths, including small. Use np.fft.fft(x, n) etc. We can use np.fft.fftpack or np.fft. But we can also use scipy.signal.fftconvolve if allowed. But to avoid external dependency, use numpy's FFT.
+
+Implement conv1d(x, h) -> np.convolve? Using np.fft.fft with next power of two? Use n = N+M-1; pad to nfft = nextpow2? But simple: nfft = N+M-1; but FFT of length nfft will compute linear convolution. But to avoid circular convolution, we need zero padding to at least nfft. So we can do:
+
+n = N + M - 1
+nfft = 1 << (n - 1).bit_length()  # next power of two >= n
+X = np.fft.rfft(x, nfft)
+H = np.fft.rfft(h, nfft)
+Y = X * H
+y = np.fft.irfft(Y, nfft)[:n]
+Return y.
+
+But need to ensure dtype float64. Use np.fft.rfft, irfft.
+
+Edge cases: if x or h empty? Probably not. But handle zero-length arrays. If either empty, result zero array length N+M-1? If one is empty, N=0 or M=0. But N+M-1 would be negative? For empty arrays, np.convolve returns empty? Actually np.convolve([ ], [1,2]) returns array([], dtype=float64). So we can mimic that. For our function, we can just use np.fft if both non-empty else np.convolve.
+
+Simpler: just call np.convolve? But that is slow. But the reference implementation uses pure python; we can just call np.convolve which uses efficient algorithm? Actually numpy's convolve uses algorithm that might be O(N*M) for 1D? It may use FFT for large arrays? Might be efficient. But we can implement with FFT ourselves.
+
+Implement:
+
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    if x.size == 0 or h.size == 0:
+        return np.array([], dtype=np.float64)
+    n = x.size + h.size - 1
+    nfft = 1 << (n - 1).bit_length()
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X * H, nfft)[:n]
+    return y
+
+Need to ensure dtype float64. Use np.asarray with dtype.
+
+Edge: For very small arrays, FFT overhead may be high but still fine.
+
+Return array of length n. Should match np.convolve. Use np.allclose.
+
+Add imports.
+
+Let's produce file with function conv1d.
+
+Also add __all__ maybe. Provide as a file.
+
+No extra code.
+
+Let's produce final.

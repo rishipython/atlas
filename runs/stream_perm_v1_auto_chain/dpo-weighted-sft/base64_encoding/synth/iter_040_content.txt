@@ -1,0 +1,101 @@
+We need a fast Base64 encoder that works on any input format the problem might give us – strings, byte arrays or even lists of integers – and that stays completely vectorised in NumPy so we avoid any Python‑level loops.  
+The first thing that comes to mind is the classic “group‑of‑three‑bytes → four‑six‑bit values” trick. We can read the raw data into a `uint8` array and reshape it into an `N×3` block (padding the last block with zeros so the shape stays integral). From there a few bitwise shifts give us the four indices per block in one go:
+
+```
+ints   = (a << 16) | (b << 8) | c           # N×1 uint32 array
+idx0   = (ints >> 18) & 63                  # first sextet
+idx1   = (ints >> 12) & 63                  # second sextet
+idx2   = (ints >>   6) & 63                  # third sextet
+idx3   = ints & 63                          # fourth sextet
+```
+
+These indices are then looked up in a pre‑built NumPy lookup table containing the ASCII codes for the Base64 alphabet (`ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`).  
+After flattening the four index columns we can do a single fancy indexing operation:
+
+```
+encoded_bytes = alphabet[idx_flattened]
+```
+
+and finally turn that byte array into an ASCII string with `tobytes().decode('ascii')`.  
+The only thing left is padding: if the original length wasn’t a multiple of three we padded with zeroes earlier so the output contains extra characters that must be replaced by `=` signs. The standard rule is:
+
+- remainder = 1 → replace last two output characters with `==`
+- remainder = 2 → replace last character with `=`
+
+This can be handled by slicing off the appropriate number of trailing characters and appending the correct number of `=` signs:
+
+```
+if pad_len:
+    encoded_str = encoded_str[:-pad_len] + '=' * pad_len
+```
+
+Where `pad_len` is computed as `(3 - n % 3) % 3`.  
+A few sanity checks are handy:
+
+- Empty input should return an empty string immediately.
+- If the input is already a `bytes` or `bytearray`, just use it directly.
+- If it’s a string we encode it as UTF‑8 before processing.
+- If it’s an iterable of integers we cast it straight to a NumPy array of `uint8`.
+
+All these branches involve only NumPy operations or very small Python slices – no explicit loops over the data itself.  
+With this plan in place I’ll write out the module skeleton:
+
+```python
+import base64                     # kept for compatibility but not used in core logic
+from typing import Any, Dict      # type hints for clarity
+import numpy as np
+
+class Base64Encoding:
+    def solve(self, problem):
+        data = problem.get('data')
+
+        # Normalise input into raw bytes.
+        if isinstance(data, str):
+            raw_bytes = data.encode()
+        elif isinstance(data, (bytes, bytearray)):
+            raw_bytes = data
+        else:
+            raw_bytes = np.asarray(data, dtype=np.uint8).tobytes()
+
+        n_bytes = len(raw_bytes)
+        if n_bytes == 0:
+            return ''
+
+        # Pad zeros so that length is multiple of three.
+        pad_len   = (3 - n_bytes % 3) % 3          # number of zero bytes added
+        padded    = np.frombuffer(raw_bytes + b'\x00' * pad_len,
+                                  dtype=np.uint8)
+
+        blocks    = padded.reshape(-1, 3)
+
+        ints      = ((blocks[:,0].astype(np.uint32) << 16) |
+                     (blocks[:,1].astype(np.uint32) << 8) |
+                     blocks[:,2].astype(np.uint32))
+
+        idx0      = ((ints >> 18) & 63).astype(np.intp)
+        idx1      = ((ints >> 12) & 63).astype(np.intp)
+        idx2      = ((ints >>   6) & 63).astype(np.intp)
+        idx3      = (ints &                 63).astype(np.intp)
+
+        indices   = np.stack([idx0, idx1, idx2, idx3], axis=1).reshape(-1)
+
+        alphabet_bytes   = np.frombuffer(
+            b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/',
+            dtype=np.uint8)
+
+        encoded_bytes    = alphabet_bytes[indices]
+        encoded_str      = encoded_bytes.tobytes().decode('ascii')
+
+        # Apply proper padding.
+        if pad_len:
+            encoded_str     = encoded_str[:-pad_len] + '=' * pad_len
+
+        return encoded_str
+
+def run_solver(problem):
+    return Base64Encoding().solve(problem)
+```
+
+This implementation keeps everything in NumPy – no explicit Python loops – and should run in roughly linear time with very small constant factors thanks to efficient BLAS‑style operations under the hood. It also respects all edge cases such as empty input or non‑byte inputs while staying within the brief’s constraints.  
+
+OK, I think I have the design. Time to write it.

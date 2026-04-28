@@ -1,0 +1,65 @@
+We need to take the `problem` object, pull out whatever data it carries, rotate it by the specified angle, and return the result—all without any Python‑level loops and with at least one call into SciPy.  
+
+Let’s start by guessing what the problem dictionary looks like. In most “rotate_2d” tasks I’ve seen, the input is either a set of 2‑D coordinates or a 2‑D image (array). The output is the same shape but rotated by some angle `θ`. The reference solution probably does something like:
+
+```python
+def solve(problem):
+    pts = problem["points"]          # shape (N, 2)
+    ang = problem["angle"]          # in degrees
+    # slow loop over N
+```
+
+or
+
+```python
+def solve(problem):
+    img = problem["image"]          # shape (H, W)
+    ang = problem["angle"]
+    # slow interpolation
+```
+
+So first question: do we have a `points` key or an `image` key? I’ll write the solver to handle both gracefully—if `points` is present it will treat it as coordinates; otherwise if `image` is present it will treat it as a 2‑D array and use SciPy’s rotation routine.
+
+**Points case**  
+The fastest way is pure NumPy: build the rotation matrix
+
+```python
+c = np.cos(np.deg2rad(ang))
+s = np.sin(np.deg2rad(ang))
+R = np.array([[c, -s], [s, c]])
+```
+
+and then do a single matrix multiplication:
+
+```python
+rotated_pts = pts @ R.T
+```
+
+No loops at all; this is just one BLAS call (`gemm`). If the input is integer type we keep it integer; otherwise float64 is fine.
+
+**Image case**  
+For images we want SciPy’s `ndimage.rotate`. That function handles interpolation and boundary conditions efficiently in C code. We’ll call it with `reshape=False` so the output keeps the same shape as the input:
+
+```python
+rotated_img = ndimage.rotate(img, ang, reshape=False)
+```
+
+We’ll preserve the original dtype by converting back after rotation if needed (`rotated_img.astype(img.dtype)`).
+
+**Edge cases**  
+- If `ang` is exactly 0 or a multiple of 360°, we can shortcut and return the original data unchanged.
+- Negative angles are fine; `np.deg2rad` handles them.
+- For coordinate arrays with shape `(N,)` (i.e., a single point), our matrix multiplication still works because NumPy broadcasts correctly.
+- If neither key exists we raise a clear error so debugging is easy.
+
+**Putting it together**  
+The entry point `run_solver(problem)` will just instantiate a small helper class or function that performs these steps and returns a dictionary with the rotated result under the key `"rotated"` (matching what the baseline probably expects). All heavy lifting is done in NumPy or SciPy; there are no Python loops whatsoever.
+
+This design satisfies every requirement:
+- Uses NumPy (`np`) and SciPy (`scipy.ndimage`) explicitly.
+- No Python‑level loops—just vectorised ops.
+- Fast: single BLAS call for coordinates; compiled C for images.
+- Handles both common input shapes gracefully.
+- Keeps code size reasonable (~4600 characters once boilerplate added).
+
+OK, I think I have the design. Time to write it.

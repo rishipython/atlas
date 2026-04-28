@@ -1,0 +1,20 @@
+We need to implement fast matrix exponential. Use scipy.linalg.expm. But we must not rely on SciPy? The prompt says we may import scipy. So simplest: def expm_fast(A): return scipy.linalg.expm(A). But must be fast and numerically close. That is trivial. But maybe they expect to use scipy's function. Provide fallback if SciPy not available? But it's allowed. So implement using scipy.linalg.expm.
+
+Edge cases: ensure dtype float64. Input may be float64. Use np.asarray(A, dtype=np.float64). Return same dtype.
+
+Also maybe we should handle 1D or non-square? But spec says square.
+
+Thus:
+
+import numpy as np
+import scipy.linalg
+
+def expm_fast(A: np.ndarray) -> np.ndarray:
+    A = np.asarray(A, dtype=np.float64)
+    return scipy.linalg.expm(A)
+
+But we might need to ensure shape matches. This will compute with high precision. It's fast.
+
+Return as numpy array.
+
+Let's produce code.

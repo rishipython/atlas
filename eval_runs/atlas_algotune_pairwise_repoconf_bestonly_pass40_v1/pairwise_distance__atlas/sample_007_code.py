@@ -1,0 +1,33 @@
+import numpy as np
+
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    """Return the (N, N) pairwise squared Euclidean distance matrix.
+
+    This implementation uses vectorized linear algebra operations to
+    compute distances efficiently.
+
+    Args:
+        X: np.ndarray of shape (N, D), dtype float64.
+
+    Returns:
+        np.ndarray of shape (N, N), dtype float64.
+    """
+    # Ensure input is a float64 array
+    X = np.asarray(X, dtype=np.float64, order="C")
+    N, _ = X.shape
+
+    # Compute squared norms of each row
+    sq_norms = np.einsum("ij,ij->i", X, X)  # shape (N,)
+
+    # Compute Gram matrix (dot products)
+    gram = X @ X.T  # shape (N, N)
+
+    # Compute squared Euclidean distances
+    # D[i, j] = ||x_i||^2 + ||x_j||^2 - 2 * x_i·x_j
+    out = sq_norms[:, None] + sq_norms[None, :] - 2.0 * gram
+
+    # Numerical errors can cause small negative values; clip them to zero
+    out = np.maximum(out, 0.0)
+
+    return out

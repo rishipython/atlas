@@ -1,0 +1,6 @@
+We need a fast rotate_2d routine that matches the reference behaviour without any Python‑level looping – everything has to be delegated straight into a high‑performance library call so that the JIT/C++ backend does all the heavy lifting for us.
+
+Let’s look at what the reference implementation probably does under the hood: it reads an `array` from the problem dictionary together with an `angle` (in degrees), then calls `scipy.ndimage.rotate`. That function already performs all the geometry tricks internally – it builds the appropriate affine matrix around the centre of mass of the image, handles padding or cropping depending on the `reshape` flag, applies cubic interpolation (`order=3`) by default and returns a floating‑point result regardless of the input type. Importantly it does **no** explicit Python loops – everything happens inside compiled C/Fortran code inside SciPy’s `ndimage`.
+
+If I simply wrap this call inside our own `solve` method I’ll satisfy every constraint:
+* The imports will include only what

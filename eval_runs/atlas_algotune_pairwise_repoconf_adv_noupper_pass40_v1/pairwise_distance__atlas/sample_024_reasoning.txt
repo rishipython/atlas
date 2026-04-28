@@ -1,0 +1,36 @@
+We need to implement efficient pairwise squared Euclidean distance. Standard formula: D[i,j] = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. Compute squared norms: sum of squares per row. Then use broadcasting.
+
+Implementation: X: (N,D). Compute sq_norm = np.sum(X**2, axis=1) shape (N,). Then D = sq_norm[:,None] + sq_norm[None,:] - 2 * X @ X.T. Ensure dtype float64. Might produce small negative values due to floating errors; set to zero: np.maximum(D, 0). Return.
+
+Edge cases: N=0? but maybe not. Use np.asarray.
+
+We need to import numpy.
+
+Return type: np.ndarray shape (N,N).
+
+Test: allclose with reference.
+
+Also handle memory: For large N, X @ X.T memory O(N^2). But fine.
+
+Also ensure dtype float64. Use np.float64.
+
+Let's implement.
+
+Also we might use np.dot.
+
+Return out.
+
+We can also set lower triangular only but not needed.
+
+Ok.
+
+Also we might use np.linalg.norm.
+
+But straightforward.
+
+Let's produce file.
+
+Also need to keep function signature same.
+
+Let's produce code.
+

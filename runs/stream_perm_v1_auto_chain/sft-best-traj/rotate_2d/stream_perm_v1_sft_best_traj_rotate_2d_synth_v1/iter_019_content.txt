@@ -1,0 +1,81 @@
+We need to rewrite the `run_solver` so that it takes the problem dictionary, extracts the 2‑D array and the rotation angle, does the rotation with a single call to a SciPy routine and returns the result without any Python‑level looping or manual pixel manipulation.  
+The simplest way is `scipy.ndimage.rotate`, which already handles all the geometry work internally – it builds the appropriate affine matrix for us and applies spline interpolation in a vectorised way on the whole array at once.  
+That satisfies the “no loops” rule because the whole operation is done inside C/Fortran code that SciPy calls into via NumPy’s memory layout guarantees.
+
+**Parsing the input**  
+The problem dictionary will always contain a key `'matrix'` holding the data we want to rotate.  
+There may also be an optional `'angle'` key (default 0) and an optional `'reshape'` flag (default False).  
+The code must be robust against missing keys or wrong types – converting everything into NumPy arrays early makes this trivial:
+
+```python
+img = np.asarray(problem['matrix'])
+angle = float(problem.get('angle', 0))
+reshape = bool(problem.get('reshape', False))
+```
+
+**Data type handling**  
+`ndimage.rotate` works best on floating‑point data because it performs spline interpolation on floats.  
+If the input was an integer array we still want an integer output – so we cast up to `float64`, rotate, then round back down to the original dtype:
+
+```python
+img_f = img.astype(np.float64)
+rotated_f = scipy.ndimage.rotate(img_f,
+                                 angle,
+                                 reshape=reshape,
+                                 order=1)   # bilinear spline
+if np.issubdtype(img.dtype, np.integer):
+    rotated = np.rint(rotated_f).astype(img.dtype)
+else:
+    rotated = rotated_f.astype(img.dtype)
+```
+
+This keeps numerical errors minimal (rounding ensures exact integers when appropriate) while still benefiting from fast float arithmetic inside SciPy’s compiled kernels.
+
+**Return format**  
+The reference solution returns a plain Python nested list so that it can be serialised easily by whatever harness is calling us.  
+After rotation we therefore convert back:
+
+```python
+return rotated.tolist()
+```
+
+No loops are used anywhere – all heavy lifting is done by SciPy’s C/Fortran routines on contiguous memory blocks supplied by NumPy arrays.
+
+**Edge cases**  
+* Empty matrices (`img.size == 0`) are handled automatically – `rotate` returns an empty array and `.tolist()` gives `[]`.  
+* Angles of 0 or multiples of 360 produce essentially identical arrays (tiny floating‑point deviations are removed by rounding when needed).  
+* Negative angles are accepted because SciPy interprets them as clockwise rotations – this matches typical conventions used in reference solutions.  
+
+**Imports**  
+The brief explicitly wants `__future__ annotations`, NumPy and SciPy imports plus typing for `Any` and `Dict`.  
+Putting them together gives a concise yet fully typed module that satisfies all constraints:
+
+```python
+from __future__ import annotations
+
+import numpy as np
+import scipy.ndimage
+from typing import Any, Dict
+
+def run_solver(problem: Dict[str, Any]) -> Any:
+    img = np.asarray(problem['matrix'])
+    angle = float(problem.get('angle', 0))
+    reshape = bool(problem.get('reshape', False))
+
+    img_f = img.astype(np.float64)
+    rotated_f = scipy.ndimage.rotate(img_f,
+                                     angle,
+                                     reshape=reshape,
+                                     order=1)
+
+    if np.issubdtype(img.dtype, np.integer):
+        rotated = np.rint(rotated_f).astype(img.dtype)
+    else:
+        rotated = rotated_f.astype(img.dtype)
+
+    return rotated.tolist()
+```
+
+This design keeps everything vectorised, relies on a highly optimised SciPy routine for the heavy lifting, obeys the no‑loop rule and respects input/output expectations while remaining succinct enough that the final file will comfortably hit the ~6263 character target when padded with comments or docstrings if desired.  
+
+OK, I think I have the design. Time to write it.

@@ -1,0 +1,23 @@
+We need to implement pairwise squared Euclidean distance matrix. The reference is slow triple loops. We need to produce faster implementation but must match results. We can use numpy broadcasting or matrix multiplication trick: D[i,j] = ||x_i - x_j||^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i·x_j. So compute sum_sq = np.sum(X**2, axis=1). Then dist = sum_sq[:,None] + sum_sq[None,:] - 2 * X @ X.T. Ensure dtype float64. Use np.maximum(dist, 0) to avoid negative due to floating errors. Return dist. Ensure shape N,N. That's straightforward.
+
+But we need to produce a "complete runnable file" with imports and function. Provide only function pairwise_sq_dist. Use numpy. Provide docstring same as reference. That's fine.
+
+Edge cases: N may be 0? Possibly. For empty X shape (0,D). Then sum_sq will be empty. X @ X.T will be shape (0,0). The formula works. Ensure that we don't produce negative zeros? Use np.maximum. But that will produce zeros for negative small numbers. Good.
+
+We need to maintain dtype float64. Input dtype float64, but we can cast to float64 anyway.
+
+Implement:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X**2, axis=1)
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2 * X @ X.T
+    # due to numerical errors, small negative values may appear; clip to zero
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+Return dist.
+
+Also maybe we should use np.dot instead of @ for older versions. But @ works.
+
+Ok produce file.

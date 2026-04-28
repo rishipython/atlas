@@ -1,0 +1,34 @@
+We need to implement conv1d using FFT. Use np.fft.fft to compute convolution. For real input, we can use np.fft.rfft. But careful with lengths. Full convolution length L = N+M-1. The FFT length should be next power of two >= L, but we can also use np.fft.fft with length L. For speed, use rfft. Let's do:
+
+nfft = np.fft.next_fast_len(N+M-1) maybe use np.fft.next_fast_len.
+
+Compute X = np.fft.rfft(x, nfft) and H = np.fft.rfft(h, nfft). Then y = np.fft.irfft(X*H, nfft). Then take first L elements. dtype float64.
+
+Edge cases: zero-length? But inputs length >=1.
+
+We need to ensure same dtype float64. np.fft.rfft returns complex64? Actually default complex128 for float64 input. So fine.
+
+Thus:
+
+def conv1d(x,h):
+    N=len(x); M=len(h)
+    L=N+M-1
+    nfft=np.fft.next_fast_len(L)
+    X=np.fft.rfft(x, nfft)
+    H=np.fft.rfft(h, nfft)
+    y=np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+Test with small arrays.
+
+Also handle if x or h are not 1-D? We can flatten or raise error. But assume 1-D.
+
+Return np.array of dtype float64.
+
+Ok. Provide imports. Use numpy as np.
+
+Also to be safe with dtype, cast inputs to float64: x = np.asarray(x, dtype=np.float64). Similarly h.
+
+That's all.
+
+Let's produce final code.

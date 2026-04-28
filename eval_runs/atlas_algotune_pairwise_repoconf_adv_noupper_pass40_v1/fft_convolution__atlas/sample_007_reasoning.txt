@@ -1,0 +1,17 @@
+We need to produce fast implementation. Use numpy. Use scipy.signal.fftconvolve or numpy.fft. But requirement: only standard scientific-Python distribution. SciPy may be available. But safer to use numpy's FFT.
+
+Implementation: compute convolution via FFT: length L = next power of two >= N+M-1. Use np.fft.rfft for real. Then multiply, inverse. For real input, use rfft and irfft. Provide same dtype float64. Ensure result length is N+M-1. Use np.fft.rfft. Implementation:
+
+def conv1d(x, h):
+    N = x.shape[0]; M = h.shape[0]; L = N+M-1
+    nfft = 1 << (L-1).bit_length()  # next power of 2
+    X = np.fft.rfft(x, nfft)
+    H = np.fft.rfft(h, nfft)
+    y = np.fft.irfft(X*H, nfft)
+    return y[:L]
+
+Edge cases: empty arrays? But likely not. Ensure dtype float64. Use np.asarray(x, dtype=np.float64). Similarly h. Use rfft.
+
+We must import numpy. Provide function.
+
+Let's craft file.

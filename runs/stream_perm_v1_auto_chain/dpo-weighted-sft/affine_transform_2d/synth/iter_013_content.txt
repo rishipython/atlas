@@ -1,0 +1,128 @@
+We need to speed up affine_transform_2d. Let's think.
+
+We have a baseline using scipy.ndimage.affine_transform with order=3, mode='constant'. That's slow. We can try to reduce order to 1 or 0. But the problem expects cubic? The reference uses cubic but we can still produce acceptable output if we relax tolerance? The is_solution compares with rtol=1e-5, atol=1e-7. Cubic vs linear might produce differences > tolerance. So maybe we need cubic but speed up.
+
+Options: Use numba or jax. But scipy.ndimage.affine_transform is already highly optimized C code. Maybe we can use SciPy's ndimage.map_coordinates which is also vectorized but slower? No.
+
+We could use skimage.transform.warp with order=3, but also C code.
+
+Maybe we can precompute inverse matrix and use map_coordinates manually? That would be similar performance.
+
+Maybe we can use FFT-based convolution for affine? No.
+
+We could attempt to use GPU via torch or jax. But the environment may not have GPU.
+
+We could use numba's jit on a loop that applies transform per pixel, but loops are slow in Python; numba JIT can accelerate loops in compiled code, but still loops over n^2 pixels might be okay for moderate size.
+
+But we need no Python-level loops; the design brief says no Python-level loops; but numba loops are compiled so okay? Might count as Python-level loops? Probably not.
+
+But we can avoid loops by using np.meshgrid and matrix multiplication to generate coordinates, then use scipy.ndimage.map_coordinates with order=3. That is vectorized and uses C code.
+
+So design: compute grid of output coordinates, apply inverse transform to get input coords, then call map_coordinates on image with those coords flattened, reshape back.
+
+This will avoid the overhead of affine_transform which may allocate intermediate arrays? But probably similar speed.
+
+But maybe we can reduce interpolation order to 1 for speed but still pass is_solution? Likely fails due to error > tolerance. Let's test approximate error: cubic vs linear differences maybe > 0.01? Hard to know.
+
+Better keep order=3.
+
+Potential improvement: Use float32 instead of float64 to reduce memory bandwidth and speed up interpolation in map_coordinates (scipy supports float32). That might give speed boost while still within tolerance because float32 rounding error small relative to 255 range.
+
+Also we can set prefilter=False for affine_transform? In SciPy's affine_transform, prefilter is True by default for order>1; disabling prefilter might speed up but introduces errors. We can try prefilter=False and see if error small enough.
+
+Alternatively, use scipy.ndimage.affine_transform directly but set order=3, mode='constant', prefilter=False. That might be faster because no filtering step. Let's consider that: The filter step uses spline filter which is expensive; disabling reduces cost but may degrade accuracy slightly. Might still be within tolerance if error small (<1e-5 relative). But not sure.
+
+Better approach: Use map_coordinates with spline_filter only once: map_coordinates has prefilter=True default; we can set prefilter=False as well. But that also speeds up.
+
+Thus design: convert image to float32, compute inverse matrix (3x3 homogeneous). Generate output grid coordinates (n,n). Compute input coords by applying inverse transform. Then call scipy.ndimage.map_coordinates(image, [y_coords.ravel(), x_coords.ravel()], order=3, mode='constant', cval=0.0, prefilter=False). Reshape to (n,n) and cast back to float64 maybe for consistency.
+
+This should be vectorized and no Python loops.
+
+Edge cases: image shape may not be square? Problem says n x n but could be any shape; handle general shape by using image.shape[0], image.shape[1].
+
+Also need to handle dtype conversion properly; preserve dtype as float64 or float32? The reference uses original dtype float (probably float64). We'll output same shape dtype as original image dtype maybe cast back after processing.
+
+Also need to ensure coordinates correct orientation: In scipy.ndimage.affine_transform, matrix maps output coords to input coords via transformation matrix applied to output coords plus offset? Actually affine_transform expects matrix that maps output coordinates into input coordinates after transposition? Documentation: The matrix argument defines how the input coordinates are transformed into output coordinates; the offset argument defines translation applied after matrix multiplication. The transformation applied is output_coord = matrix @ input_coord + offset. Wait actually it's inverse mapping: For each output coordinate y_out, it computes corresponding input coordinate y_in = matrix @ y_out + offset, then interpolates at y_in. So our matrix is given as 2x3 (affine). We need to supply matrix and offset separately: For affine_transform(image, matrix, offset=offset,...). The provided matrix in problem likely includes translation in third column; so we should split into A (2x2) and t (2x1). For affine_transform we pass A.T ? Wait orientation matters: In SciPy docs: "The matrix argument is a 2-D array of shape (output_ndim, input_ndim) that defines the linear part of the transformation." So if we want mapping from output coordinates (x_out,y_out) to input coordinates (x_in,y_in), we provide A such that [x_in,y_in] = A @ [x_out,y_out] + offset. So our given 2x3 matrix M has first two columns as linear part A and third column as translation t applied after A multiplication on output coords? Actually typical affine representation uses homogeneous coordinates: [x_in,y_in] = M[:2,:2] @ [x_out,y_out] + M[:2,2]. So yes A=M[:,:2], t=M[:,2]. So we can pass matrix=A.T? Wait shape mismatch: We need shape (output_ndim,input_ndim) = (2,2). Our A is shape (2,2) mapping from output->input directly if orientation correct. So pass A.T if needed? Let's test small example mentally: Suppose identity transform M=[[1,0,0],[0,1,0]] -> Should return same image. If we pass A=[[1,0],[0,1]] and offset=[0,0], affine_transform will compute input coords = A @ out_coords + offset => same coords => correct. So no transpose needed.
+
+Thus algorithm:
+
+- Extract image array
+- Get shape H,W
+- Build meshgrid of indices for output grid: y indices 0..H-1 along rows axis; x indices 0..W-1 along cols.
+- Flatten them.
+- Compute input_coords = A @ [x_out,y_out] + t
+   We need stack of shape (H*W, 2). We can compute using np.dot([y_flat,x_flat].T?) Actually easier: coords = np.vstack((y_flat,x_flat)) shape(2,N); then apply A.T?? Wait A multiplies row vector or column vector? For each point p_out column vector length 2; p_in = A @ p_out + t where A is 2x2. So if we have coords array shape(2,N), then p_in = A @ coords + t[:,None]. So implement:
+   coords = np.vstack((y_flat,x_flat)) -> shape(2,N)
+   inp_coords = A @ coords + t[:,None]
+   Then inp_coords[0,:] -> y_in values; inp_coords[1,:] -> x_in values.
+- Then call map_coordinates(image.astype(np.float32), [inp_coords[0], inp_coords[1]], order=3,...)
+   Note that map_coordinates expects axes order matching array dims: first axis corresponds to row index y; second axis col index x.
+- Reshape result back to H,W
+- Cast back to original dtype maybe float64
+
+Performance wise this uses only numpy operations and one call to map_coordinates which uses C code internally with optional spline filtering if prefilter=True default; setting prefilter=False may speed up at cost of accuracy but maybe acceptable if error small (< tolerance). We'll test quickly mentally: For cubic interpolation with prefilter=False might produce small errors due to missing smoothing filter used before interpolation for higher orders >1 when input not smooth enough; but image data likely smooth enough? Hard guess.
+
+Alternatively keep prefilter=True default may be slower due to extra filtering step (~O(N)). But maybe negligible relative to interpolation cost?
+
+Given constraints no loops needed anyway; this design meets brief.
+
+Edge cases:
+- Input image may contain NaNs or infs - mapping may produce nan results - but reference likely fails similarly.
+- If image size large e.g., 1024x1024 maybe fine.
+- Need ensure dtype conversion consistent with tolerance check: is_solution compares arrays with rtol=1e-5 atol=1e-7 using np.allclose on floats presumably float64 by default from our result cast back maybe float64 so fine.
+- Ensure constant mode padding zeros implemented via map_coordinates cval=0.0 mode='constant'.
+
+Let's consider potential numeric issues: Using float32 intermediate may lead to rounding errors bigger than atol when converting back to float64 - but difference between our result and reference might exceed tolerance because reference uses float64 internally likely. However difference due solely to rounding from float32 may be around ~1e-7 relative magnitude ~255 => absolute error ~1e-5 maybe okay within atol 1e-7? Wait atol=1e-7 absolute difference allowed regardless magnitude! That's very strict! They set atol very tight relative small values! That means any rounding beyond 1e-7 absolute will fail even if relative difference small. Float32 rounding error typical ~5e-8 relative at magnitude ~255 => absolute error ~255*5e-8 ~1e-5 > atol! So using float32 will cause failure likely! So must keep float64 throughout except maybe internal operations but final result must match reference within atol 1e-7 absolute difference! That's extremely strict - basically require identical values except tiny differences < 1e-7 absolute which is about machine epsilon (~2e-16) times magnitude ~255 => ~5e-14 absolute difference allowed! So essentially require near bitwise identical results! That means any difference due to rounding from using different algorithm will fail unless exactly same result as reference's computed value within floating point precision differences less than 1e-7 absolute which is huge compared to machine epsilon times magnitude... Wait machine epsilon for double is ~2e-16 * value ~255 => ~5e-14 absolute difference allowed - far smaller than typical rounding errors of different algorithm implementations (~maybe >1e-6?). Actually typical interpolation errors due to algorithm differences could be bigger than machine epsilon by orders magnitude > tol rtol=1e-5 relative though relative tolerance allows up to 255*1e-5=~0.0025 absolute difference - that's more lenient than atol! Since rtol dominates when values large > atol threshold? np.allclose uses max(rtol*abs(a), atol). For values around 100, rtol*abs(a)=100*1e-5=0.001 >> atol so effective tolerance ~0.001 absolute difference allowed! Good! So our differences up to ~0.001 acceptable for large values; for small values <10^(-4), atol dominates giving ~1e-7 abs diff threshold which might be stricter than rtol*abs(a) when a small (<10^-7/rtol?). But images usually >0 so fine.
+
+Thus using float32 intermediate might produce differences up to few units in last decimal place (~<0.001) acceptable given rtol threshold around .001 for typical values around few hundred -> OK! Good.
+
+So proceed with float32 intermediate conversion for speed while final cast back ensures double precision near reference results within tolerance?
+
+But note that converting back from float32 results will introduce additional rounding errors relative comparison vs reference computed in double precision - difference might exceed rtol * abs(reference) maybe slightly bigger than .001 though still okay likely < .0025 per earlier estimate .0025 > typical error .001 -> safe.
+
+Thus design stands.
+
+Now confirm that map_coordinates with prefilter=False yields same result as affine_transform default with prefilter=True? Might differ slightly beyond .001 perhaps still fine due rtol .001 threshold large enough for typical differences < .0025? Possibly safe but uncertain.
+
+Alternatively keep prefilter=True default for correctness at cost of slight slowdown - but still vectorized and efficient enough maybe passes time limit?
+
+Given baseline uses affine_transform which includes filtering step too - so performance similar either way; just one function call vs two steps computing coords manually plus map_coordinates which also does filtering inside - so similar cost but more flexible maybe faster because fewer overhead?
+
+We'll implement with prefilter=True default anyway just like baseline because that's what baseline does implicitly via affine_transform's filter step before interpolation when order>1 unless you disable it explicitly in baseline they didn't disable so it's true by default anyway! Wait baseline didn't set prefilter argument so default True indeed includes filter step before interpolation which takes time O(N log N?) Actually spline_filter does O(N log N)? It's linear time per dimension maybe O(N log N)? Not sure but it's extra cost relative just computing coordinates & interpolation directly since map_coordinates also does filtering internally before interpolation when prefilter=True too - same cost essentially since it calls spline_filter inside too unless you disable it too.
+
+Thus our approach should have comparable performance albeit extra overhead of building coordinate arrays though that's vectorized cheap vs overhead of function call inside C code anyway negligible compared to interpolation cost O(N).
+
+Thus design should meet brief and likely faster because no overhead of computing inverse transform inside C each pixel separately like affine_transform does?
+
+Actually affine_transform internally calculates inverse transform once and then loops over pixels calling _inplace_interpolation etc - similar overhead as ours manual approach generating all coords first then one big call map_coordinates which may process all points in one go more efficient memory access pattern because it accesses image array multiple times per point anyway similar though?
+
+Potential improvement: Use ndimage.map_coordinates directly on flattened coordinates list rather than separate arrays for y,x which reduces memory overhead slightly vs passing tuple of arrays length N each dimension though same size anyway.
+
+Implementation details:
+
+```
+def solve(problem):
+    img = np.asarray(problem["image"], dtype=np.float64)
+    H,W = img.shape
+    M = np.asarray(problem["matrix"], dtype=np.float64)
+    A = M[:,:2]
+    t = M[:,2]
+    # generate grid
+    y_grid,x_grid = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
+    # flatten
+    y_flat = y_grid.ravel()
+    x_flat = x_grid.ravel()
+    # compute input coords
+    inp_coords = A @ np.vstack((y_flat,x_flat)) + t[:,None]
+    # Map coordinates
+    out_flat = scipy.ndimage.map_coordinates(img.astype(np.float32),
+                                             [inp_coords[0], inp_coords[1]],
+                                             order=3,
+                                             mode='constant',
+                                             cval=0,
+                                             prefilter=True)
+    out_img = out_flat.reshape(H,W)
+    return {"transformed_image": out_img}
+```
+
+But need cast back type maybe float64 else test expects list of floats possibly any type accepted by solution verification converting via np.asarray(proposed_list,dtype=float

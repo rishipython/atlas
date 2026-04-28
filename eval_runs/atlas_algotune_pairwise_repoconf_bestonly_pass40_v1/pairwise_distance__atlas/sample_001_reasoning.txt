@@ -1,0 +1,24 @@
+We need to write a fast implementation for pairwise squared Euclidean distances. Standard method: compute dot product: (X**2 sum) + (X**2 sum). Use broadcasting: dist^2 = ||x_i||^2 + ||x_j||^2 - 2 x_i dot x_j. Use np.dot or np.inner. Complexity O(N^2 D). Use vectorization.
+
+We must ensure dtype float64. Input dtype float64. Output shape (N,N). Use np.dot(X, X.T) to get Gram matrix. Compute squared norms: np.sum(X**2, axis=1). Then compute dist_sq = norms[:,None] + norms[None,:] - 2*gram. Ensure nonnegative small negative due to rounding: clip to zero or use np.maximum. Use np.maximum(dist_sq, 0.0).
+
+Return as np.float64. Should match reference exactly? They compute exact squared distances. The formula yields same results but potential rounding difference. But np.allclose should accept small differences. Use np.maximum to avoid negative.
+
+Edge cases: N=0? Input shape (0,D). Should return empty (0,0). Implementation must handle that. dot of empty? np.dot(empty, empty.T) returns (0,0). norms shape (0). Works.
+
+Ok.
+
+Let's craft final file:
+
+```
+import numpy as np
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    ...
+```
+
+Return dtype float64. Use np.array(..., dtype=np.float64) if needed.
+
+Potential memory: For large N, N^2 may be huge; but we can't change.
+
+Ok. Provide code.

@@ -1,0 +1,46 @@
+We need to implement conv1d efficiently. Use np.fft. But need to consider float64, no need for real-to-complex transforms. Use np.fft.rfft for real arrays. But we need full convolution result length N+M-1. The FFT length L = next power of two >= N+M-1. Use rfft or fft. Simpler: use np.fft.fft of complex. For speed, use rfft.
+
+Compute X = rfft(x, n=L), H = rfft(h, n=L), Y = X*H, y = irfft(Y, n=L). Then take first N+M-1 elements.
+
+Edge cases: zero length? But lengths >=1 likely. Ensure dtype float64. Use np.fft.rfft and irfft.
+
+Also possible use scipy.signal.fftconvolve but we can implement ourselves.
+
+Should also handle small sizes where direct loop might be faster? But requirement is speed; we can always use FFT.
+
+Let's implement conv1d as:
+
+```
+def conv1d(x, h):
+    x = np.asarray(x, dtype=np.float64)
+    h = np.asarray(h, dtype=np.float64)
+    N, M = x.shape[0], h.shape[0]
+    L = 1 << (N+M-1-1).bit_length()
+    X = np.fft.rfft(x, n=L)
+    H = np.fft.rfft(h, n=L)
+    Y = X * H
+    y = np.fft.irfft(Y, n=L)
+    return y[:N+M-1]
+```
+
+But we need to import numpy. That should be fine.
+
+We also need to ensure dtype float64. np.fft.rfft returns complex64 if input float32, else complex128. So input dtype float64 ensures complex128.
+
+Return as np.ndarray dtype float64.
+
+Let's test: For small arrays, should match np.convolve.
+
+Edge case: M=0? not allowed.
+
+Also we might want to handle if input shape > 1-D? But problem says 1-D arrays. Ensure flatten.
+
+We can do x = np.asarray(x).ravel().
+
+Let's produce final code.
+
+We also need to include docstring. Provide function conv1d.
+
+Return type np.ndarray.
+
+That's all.

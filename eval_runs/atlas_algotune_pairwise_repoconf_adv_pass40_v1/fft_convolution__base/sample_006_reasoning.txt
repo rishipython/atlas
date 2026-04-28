@@ -1,0 +1,39 @@
+We need to produce faster implementation. Use scipy.signal.fftconvolve or numpy. But we need to import. Let's use scipy.signal.fftconvolve. That returns float64. Should be fine. But we need to ensure same dtype. Provide same output shape.
+
+Also test may use large arrays. Need to ensure performance.
+
+Edge cases: zero-length? But arrays length >=1.
+
+Implement conv1d(x,h) that uses scipy.signal.fftconvolve(x,h,mode='full'). That uses complex or float. Use np.array with dtype float64.
+
+If scipy not available? Problem says can import scipy. We'll use it.
+
+Alternatively implement via numpy.fft.rfft. But simpler to use scipy.
+
+Let's write:
+
+import numpy as np
+from scipy.signal import fftconvolve
+
+def conv1d(x,h):
+    return fftconvolve(x, h, mode='full')
+
+But need to cast to float64: return np.asarray(..., dtype=np.float64)
+
+Also might want to ensure that if input dtype not float64, cast.
+
+Also to avoid overhead of import each call, import at top.
+
+Return type is numpy.ndarray.
+
+Also ensure that when input arrays are not 1-D? Problem says 1-D. We'll assume.
+
+Edge: if x or h are empty? But shape 0? Not likely.
+
+Let's produce file.
+
+Let's add docstring.
+
+Return value.
+
+Ok.

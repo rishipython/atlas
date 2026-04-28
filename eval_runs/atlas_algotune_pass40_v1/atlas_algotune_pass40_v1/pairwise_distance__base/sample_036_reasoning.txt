@@ -1,0 +1,27 @@
+We need to produce efficient implementation of pairwise squared Euclidean distances. We can use broadcasting or vectorized operations: compute X @ X.T etc. Standard formula: D_{ij} = ||x_i||^2 + ||x_j||^2 - 2 x_i^T x_j. So compute norms squared as vector a = np.sum(X**2, axis=1). Then use outer addition minus 2 * X @ X.T. Ensure resulting matrix is non-negative (due to numerical errors). Use np.maximum to clip negative small values to zero.
+
+Need to ensure dtype float64. Input dtype float64, but we can cast. Implementation:
+
+def pairwise_sq_dist(X: np.ndarray) -> np.ndarray:
+    X = np.asarray(X, dtype=np.float64)
+    sq_norms = np.sum(X * X, axis=1)
+    dist = sq_norms[:, None] + sq_norms[None, :] - 2.0 * X @ X.T
+    # ensure non-negative
+    dist = np.maximum(dist, 0.0)
+    return dist
+
+This is efficient. But we also need to consider memory: N up to maybe 10000? 10000x10000 matrix 800MB. But okay. Implementation is straightforward.
+
+Edge cases: N=0? But N>0. But we can handle.
+
+Return dtype float64.
+
+Should we use np.linalg.norm? no.
+
+Return shape (N,N). Ok.
+
+Let's produce final file with imports.
+
+Also we might consider using np.einsum for memory, but matrix multiplication is fine.
+
+Let's produce final code.

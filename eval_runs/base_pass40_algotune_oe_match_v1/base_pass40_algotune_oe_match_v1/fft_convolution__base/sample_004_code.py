@@ -1,0 +1,118 @@
+import numpy as np
+from scipy.fft import rfft, irfft, fft, ifft, next_fast_len
+from typing import Dict, Any
+
+# -------------------------------------------------------------
+# Optimised FFT convolution implementation
+# -------------------------------------------------------------
+class FFTConvolution:
+    """Fast FFT‑based convolution with small‑signal fallback and mode handling."""
+
+    def __init__(self, small_threshold: int = 64):
+        """
+        Parameters
+        ----------
+        small_threshold : int
+            For signals shorter than this length direct convolution is used
+            (overhead of FFT dominates for very short signals).
+        """
+        self.small_threshold = small_threshold
+
+    def _fft_convolve(self, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        """Linear convolution of two real/complex 1‑D arrays using FFT."""
+        # Zero‑pad to linear convolution length
+        n = len(x) + len(y) - 1
+        # Choose efficient FFT length
+        fft_len = next_fast_len(n)
+
+        # Use real FFT if both signals are real
+        if np.isrealobj(x) and np.isrealobj(y):
+            X = rfft(x, fft_len)
+            Y = rfft(y, fft_len)
+            Z = X * Y
+            z = irfft(Z, fft_len)
+        else:
+            X = fft(x, fft_len)
+            Y = fft(y, fft_len)
+            Z = X * Y
+            z = ifft(Z).real  # discard tiny imaginary part
+
+        # Truncate to exact linear convolution length
+        return z[:n]
+
+    def solve(self, problem: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Compute the convolution of two signals using FFT.
+
+        Parameters
+        ----------
+        problem : dict
+            Dictionary with keys:
+                'signal_x' : list[float]
+                'signal_y' : list[float]
+                'mode'     : str, one of 'full', 'same', 'valid' (default 'full')
+
+        Returns
+        -------
+        dict
+            Dictionary with key 'convolution' containing the result as a list.
+        """
+        try:
+            x = np.asarray(problem.get("signal_x", []), dtype=float)
+            y = np.asarray(problem.get("signal_y", []), dtype=float)
+            mode = problem.get("mode", "full")
+
+            # Handle empty inputs
+            if x.size == 0 or y.size == 0:
+                return {"convolution": []}
+
+            # For very short signals use direct convolution to avoid FFT overhead
+            if min(x.size, y.size) < self.small_threshold:
+                z_full = np.convolve(x, y, mode="full")
+            else:
+                z_full = self._fft_convolve(x, y)
+
+            # Extract the requested mode
+            len_x, len_y = x.size, y.size
+            if mode == "full":
+                result = z_full
+            elif mode == "same":
+                m = max(len_x, len_y)
+                start = (z_full.size - m) // 2
+                result = z_full[start : start + m]
+            elif mode == "valid":
+                valid_len = abs(len_x - len_y) + 1
+                if valid_len <= 0:
+                    result = np.array([], dtype=float)
+                else:
+                    start = min(len_x, len_y) - 1
+                    result = z_full[start : start + valid_len]
+            else:
+                raise ValueError(f"Unsupported mode: {mode}")
+
+            return {"convolution": result.tolist()}
+
+        except Exception as exc:
+            # In production we would log the error; here we simply re‑raise
+            raise RuntimeError(f"Error in FFTConvolution.solve: {exc}") from exc
+
+
+# -------------------------------------------------------------
+# Entry point used by the evaluation harness
+# -------------------------------------------------------------
+def run_solver(problem: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Main entry point for the FFT convolution solver.
+
+    Parameters
+    ----------
+    problem : dict
+        Problem definition dictionary.
+
+    Returns
+    -------
+    dict
+        Solution dictionary containing the convolution result.
+    """
+    solver = FFTConvolution()
+    return solver.solve(problem)
