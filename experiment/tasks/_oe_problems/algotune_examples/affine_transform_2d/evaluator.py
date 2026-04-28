@@ -30,7 +30,7 @@ def setup_algotune_paths():
     # The AlgoTune path should be passed as a parameter to the evaluator
     possible_algotune_paths = [
         Path("/atlas/AlgoTune"),
-        Path("/Users/rishi/cs288/atlas/AlgoTune"),
+        Path.cwd() / "AlgoTune",
         Path("/Users/asankhaya/Documents/GitHub/AlgoTune"),
         Path(__file__).parent.parent.parent.parent / "AlgoTune",
         Path.home() / "github" / "AlgoTune",
@@ -319,27 +319,21 @@ def evaluate(program_path, config=None):
         # Check if the required function exists
         if not hasattr(program, "run_solver"):
             print(f"Error: program does not have 'run_solver' function")
-            return EvaluationResult(
-                metrics={
-                    "correctness": 0.0,
-                    "correctness_score": 0.0,
-                    "performance_score": 0.0,
-                    "combined_score": 0.0,
-                    "speedup": 0.0,
-                    "speedup_score": 0.0,
+            return {
+                "correctness_score": 0.0,
+                "performance_score": 0.0,
+                "combined_score": 0.0,
+                "speedup_score": 0.0,  # Primary fitness score
+                "baseline_comparison": {
+                    "mean_speedup": None,
+                    "median_speedup": None,
+                    "success_rate": 0.0,
+                    "baseline_times": [],
+                    "evolved_times": [],
+                    "speedups": []
                 },
-                artifacts={
-                    "baseline_comparison": {
-                        "mean_speedup": None,
-                        "median_speedup": None,
-                        "success_rate": 0.0,
-                        "baseline_times": [],
-                        "evolved_times": [],
-                        "speedups": [],
-                    },
-                    "feedback": "Missing run_solver function",
-                },
-            )
+                "error": "Missing run_solver function",
+            }
 
         # Get the original task for reference solutions and problem generation
         task_class = None
@@ -433,27 +427,21 @@ def evaluate(program_path, config=None):
 
         # If all trials failed, return zero scores
         if success_count == 0:
-            return EvaluationResult(
-                metrics={
-                    "correctness": 0.0,
-                    "correctness_score": 0.0,
-                    "performance_score": 0.0,
-                    "combined_score": 0.0,
-                    "speedup": 0.0,
-                    "speedup_score": 0.0,
+            return {
+                "correctness_score": 0.0,
+                "performance_score": 0.0,
+                "combined_score": 0.0,
+                "speedup_score": 0.0,  # Primary fitness score
+                "baseline_comparison": {
+                    "mean_speedup": None,
+                    "median_speedup": None,
+                    "success_rate": 0.0,
+                    "baseline_times": [],
+                    "evolved_times": [],
+                    "speedups": []
                 },
-                artifacts={
-                    "baseline_comparison": {
-                        "mean_speedup": None,
-                        "median_speedup": None,
-                        "success_rate": 0.0,
-                        "baseline_times": [],
-                        "evolved_times": [],
-                        "speedups": [],
-                    },
-                    "feedback": "All trials failed",
-                },
-            )
+                "error": "All trials failed",
+            }
 
         # Calculate metrics
         avg_correctness = float(np.mean(correctness_scores))
@@ -486,44 +474,34 @@ def evaluate(program_path, config=None):
             "num_total_trials": success_count
         }
 
-        return EvaluationResult(
-            metrics={
-                "correctness": avg_correctness,
-                "correctness_score": avg_correctness,
-                "performance_score": avg_performance,
-                "reliability_score": reliability_score,
-                "combined_score": combined_score,
-                "speedup": speedup_score,
-                "speedup_score": speedup_score,
-                "success_rate": reliability_score,
-            },
-            artifacts={"baseline_comparison": baseline_comparison},
-        )
+        return {
+            "correctness_score": avg_correctness,
+            "performance_score": avg_performance,
+            "reliability_score": reliability_score,
+            "combined_score": combined_score,
+            "speedup_score": speedup_score,  # Primary fitness score for evolution
+            "success_rate": reliability_score,
+            "baseline_comparison": baseline_comparison,
+        }
 
     except Exception as e:
         print(f"Evaluation failed completely: {str(e)}")
         print(traceback.format_exc())
-        return EvaluationResult(
-            metrics={
-                "correctness": 0.0,
-                "correctness_score": 0.0,
-                "performance_score": 0.0,
-                "combined_score": 0.0,
-                "speedup": 0.0,
-                "speedup_score": 0.0,
+        return {
+            "correctness_score": 0.0,
+            "performance_score": 0.0,
+            "combined_score": 0.0,
+            "speedup_score": 0.0,  # Primary fitness score
+            "baseline_comparison": {
+                "mean_speedup": None,
+                "median_speedup": None,
+                "success_rate": 0.0,
+                "baseline_times": [],
+                "evolved_times": [],
+                "speedups": []
             },
-            artifacts={
-                "baseline_comparison": {
-                    "mean_speedup": None,
-                    "median_speedup": None,
-                    "success_rate": 0.0,
-                    "baseline_times": [],
-                    "evolved_times": [],
-                    "speedups": [],
-                },
-                "feedback": str(e),
-            },
-        )
+            "error": str(e),
+        }
 
 # Stage-based evaluation for cascade evaluation
 def evaluate_stage1(program_path, config=None):

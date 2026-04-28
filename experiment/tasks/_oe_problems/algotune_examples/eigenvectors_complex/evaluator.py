@@ -1,5 +1,5 @@
 """
-Evaluator for the convolve2d_full_fill task with baseline comparison
+Evaluator for the eigenvectors_complex task with baseline comparison
 
 This evaluator compares OpenEvolve's evolved solutions against the reference
 AlgoTune baseline implementation to measure performance improvements.
@@ -56,9 +56,9 @@ def setup_algotune_paths():
 if setup_algotune_paths():
     try:
         from AlgoTuneTasks.base import TASK_REGISTRY
-        # Import the specific convolve2d_full_fill task to register it
-        from AlgoTuneTasks.convolve2d_full_fill.convolve2d_full_fill import Convolve2DFullFill
-        print("Successfully imported AlgoTune tasks and convolve2d_full_fill")
+        # Import the specific eigenvectors_complex task to register it
+        from AlgoTuneTasks.eigenvectors_complex.eigenvectors_complex import EigenvectorsComplex
+        print("Successfully imported AlgoTune tasks and eigenvectors_complex")
     except ImportError as e:
         print(f"Error: Could not import AlgoTune tasks: {e}")
         print("Make sure AlgoTune is properly installed and accessible")
@@ -261,7 +261,7 @@ def measure_evolved_performance(program, problem, num_runs=3, warmup_runs=1, tim
 
 def evaluate(program_path, config=None):
     """
-    Enhanced evaluation with baseline comparison for convolve2d_full_fill task.
+    Enhanced evaluation with baseline comparison for eigenvectors_complex task.
     
     This evaluator:
     1. Loads the evolved solve method from initial_program.py
@@ -337,13 +337,13 @@ def evaluate(program_path, config=None):
 
         # Get the original task for reference solutions and problem generation
         task_class = None
-        if "convolve2d_full_fill" in TASK_REGISTRY:
-            task_class = TASK_REGISTRY["convolve2d_full_fill"]
-            print(f"Successfully loaded convolve2d_full_fill task from registry")
+        if "eigenvectors_complex" in TASK_REGISTRY:
+            task_class = TASK_REGISTRY["eigenvectors_complex"]
+            print(f"Successfully loaded eigenvectors_complex task from registry")
         else:
-            print(f"Error: convolve2d_full_fill task not found in TASK_REGISTRY")
+            print(f"Error: eigenvectors_complex task not found in TASK_REGISTRY")
             print(f"Available tasks: {list(TASK_REGISTRY.keys())}")
-            raise Exception("Could not load convolve2d_full_fill task from AlgoTune registry")
+            raise Exception("Could not load eigenvectors_complex task from AlgoTune registry")
 
         # Generate test problems and evaluate
         correctness_scores = []
@@ -393,7 +393,7 @@ def evaluate(program_path, config=None):
                     try:
                         # Use the evolved program's own is_solution method for validation
                         # This ensures consistency between the extracted solve and validation logic
-                        evolved_solver = program.Convolve2DFullFill()
+                        evolved_solver = program.EigenvectorsComplex()
                         is_valid = evolved_solver.is_solution(problem, evolved_solution)
                         correctness_score = 1.0 if is_valid else 0.0
                     except Exception as e:
@@ -547,10 +547,10 @@ def evaluate_stage1(program_path, config=None):
 
         # Get the original task for reference solutions and problem generation
         task_class = None
-        if "convolve2d_full_fill" in TASK_REGISTRY:
-            task_class = TASK_REGISTRY["convolve2d_full_fill"]
+        if "eigenvectors_complex" in TASK_REGISTRY:
+            task_class = TASK_REGISTRY["eigenvectors_complex"]
         else:
-            print(f"Error: convolve2d_full_fill task not found in TASK_REGISTRY")
+            print(f"Error: eigenvectors_complex task not found in TASK_REGISTRY")
             print(f"Available tasks: {list(TASK_REGISTRY.keys())}")
 
         try:
